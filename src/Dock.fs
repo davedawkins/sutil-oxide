@@ -2,8 +2,6 @@ module Dock
 
 open Browser.Dom
 open Browser.CssExtensions
-//open Browser.DomExtensions
-
 
 open Sutil.DOM
 open Sutil
@@ -12,23 +10,36 @@ open type Feliz.length
 open Fable.Core
 open Fable.Core.JsInterop
 open Browser.Types
+open Css
 
 type UI =
     static member divc (cls:string) (items : seq<SutilElement>) =
         Html.div [ Attr.className cls ; yield! items ]
 
-module Palette =
-    let border = "#EEEEEE"
-    let background = "#FFFFFF"
-    let backgroundHover = "#EEEEEE"
-    let backgroundSelected = "#CCCCCC"
-    let handle = border
-    let icon = "#AAAAAA"
-    let preview = "#b9d3de"
-
-
 type TabHalf =
     | FirstHalf | SecondHalf
+
+type Orientation =
+    | Horizontal | Vertical
+with
+    member __.Opposite = if __ = Horizontal then Vertical else Horizontal
+
+type BasicLocation =
+    | Left
+    | Right
+    | Top
+    | Bottom
+with
+    member __.LowerName = __.ToString().ToLower()
+    member __.Orientation =
+        match __ with Left|Right -> Horizontal | _ -> Vertical
+    member __.Opposite =
+        match __ with
+        |Left -> Right
+        |Right -> Left
+        |Top -> Bottom
+        |Bottom -> Top
+
 
 type DockLocation =
     | LeftTop
@@ -37,11 +48,30 @@ type DockLocation =
     | BottomRight
     | RightTop
     | RightBottom
+    //| TopLeft
+    //| TopRight
 with
     static member All =
         [
-            LeftTop; LeftBottom; BottomLeft; BottomRight; RightTop; RightBottom
+            LeftTop; LeftBottom; BottomLeft; BottomRight; RightTop; RightBottom; // TopLeft; TopRight
         ]
+
+    member __.Primary =
+        match __ with
+        | LeftTop | LeftBottom -> Left
+        | RightTop | RightBottom -> Right
+        | BottomLeft | BottomRight -> Bottom
+        //| TopLeft | TopRight -> Top
+
+    member __.Secondary=
+        match __ with
+        | LeftTop | RightTop -> Top
+        | LeftBottom | RightBottom -> Bottom
+        | BottomLeft (* | TopLeft *) -> Left
+        | BottomRight (* | TopRight *) -> Right
+
+    member __.CssName =
+        __.Primary.LowerName + "-" + __.Secondary.LowerName
 
 type DockPane = {
     Name : string
@@ -96,9 +126,14 @@ module DomHelpers =
     let getContentParentNode (location : DockLocation) =
         let contentId =
             match location with
-            | LeftTop | LeftBottom -> "#dock-left-content-id"
-            | RightTop | RightBottom -> "#dock-right-content-id"
-            | BottomLeft | BottomRight -> "#dock-bottom-content-id"
+            | LeftTop     -> "#dock-left-top-content-id"
+            | LeftBottom  -> "#dock-left-bottom-content-id"
+            | RightTop    -> "#dock-right-top-content-id"
+            | RightBottom -> "#dock-right-bottom-content-id"
+            | BottomLeft  -> "#dock-bottom-left-content-id"
+            | BottomRight -> "#dock-bottom-right-content-id"
+            // | TopLeft -> "#dock-top-left-content-id"
+            // | TopRight -> "#dock-top-right-content-id"
         document.querySelector (contentId) :?> HTMLElement
 
     let getWrapperNode (name : string) =
@@ -280,9 +315,10 @@ let update msg model =
 
                         { m with
                             DraggingTab = None
+                            SelectedPanes = m.SelectedPanes.Add(loc, Some dt.BeingDragged)
                         }
                 ))
-        m |> Option.defaultValue model |> DockHelpers.ensurePaneSelected, Cmd.none
+        m |> Option.defaultValue model, Cmd.none
 
     | CancelDrag ->
         { model with DraggingTab = None }, Cmd.none
@@ -294,326 +330,6 @@ let update msg model =
             | Some d ->
                 { model with DraggingTab = Some { d with Preview = dockLoc } }
         m, Cmd.none
-
-
-let private css = [
-
-    rule ".dock-container" [
-        Css.width (percent 100)
-        Css.height (percent 100)
-        Css.backgroundColor Palette.background
-        Css.displayGrid
-        Css.custom("grid-template-columns", "max-content auto max-content")
-        Css.custom("grid-template-rows", "auto max-content")
-    ]
-
-    rule ".dock-main-grid" [
-        Css.displayGrid
-        Css.gridRow ("1","1")
-        Css.gridColumn ("2", "2")
-        Css.custom("grid-template-columns", "max-content auto max-content")
-        Css.custom("grid-template-rows", "auto max-content")
-    ]
-
-    rule ".dock-right-container" [
-        Css.positionRelative
-        Css.width (px 400)
-        Css.minWidth (rem 2)
-        Css.gridRow ("1","1")
-        Css.gridColumn ("3", "3")
-    ]
-
-    rule ".dock-left-container" [
-        Css.positionRelative
-        Css.width (px 400)
-        Css.minWidth (rem 2)
-        Css.gridRow ("1","1")
-        Css.gridColumn ("1", "1")
-    ]
-
-
-    rule ".dock-main" [
-        Css.positionRelative
-        Css.height (percent 100)
-        Css.width (percent 100)
-        Css.minHeight (rem 2)
-        Css.gridRow ("1","1")
-        Css.gridColumn ("2", "2")
-    ]
-
-    rule ".dock-bottom-container" [
-        Css.positionRelative
-        Css.height (px 200)
-        Css.minHeight (rem 2)
-        Css.gridRow ("2","2")
-        Css.gridColumn ("1", "4")
-    ]
-
-    // ------------------------------------------------------------------------
-    // Tabs
-
-    rule ".dock-tabs" [
-        Css.positionRelative
-        Css.displayGrid
-        Css.custom("grid-template-columns", "repeat(10,max-content)")
-        Css.userSelectNone
-        //Css.gap (rem 1)
-    ]
-
-    rule ".tabs-left" [
-        Css.gridRow ("1","1")
-        Css.gridColumn ("1", "1")
-        Css.minWidth (rem 1)
-
-        Css.custom ("writing-mode", "sideways-lr")
-        Css.custom ("justify-content", "end")
-    ]
-
-    rule ".tabs-right" [
-        Css.gridRow ("1","1")
-        Css.gridColumn ("3", "3")
-        Css.minWidth (rem 1)
-
-        Css.custom ("writing-mode", "sideways-rl")
-        Css.custom ("justify-content", "start")
-    ]
-
-    rule ".tabs-bottom" [
-        Css.gridRow ("2","2")
-        Css.gridColumn ("2", "2")
-        Css.minHeight (rem 1.5)
-    ]
-
-    rule ".tabs-bottom-left" [
-        Css.gridRow ("2","2")
-        Css.gridColumn ("1", "1")
-        Css.minHeight (rem 1.5)
-    ]
-
-    rule ".tabs-bottom-right" [
-        Css.gridRow ("2","2")
-        Css.gridColumn ("3", "3")
-        Css.minHeight (rem 1.5)
-    ]
-
-
-    rule ".xxdock-left-tabs>div" [
-        Css.displayFlex
-        Css.flexDirectionColumn
-        Css.alignItemsCenter
-        //Css.gap (px 4)
-    ]
-
-    // ------------------------------------------------------------------------
-    // Tab labels
-
-    rule ".tab-label" [
-        Css.positionRelative
-        Css.fontSize (percent 75)
-        Css.cursorPointer
-        Css.displayFlex
-        Css.flexDirectionRow
-        Css.alignItemsCenter
-        Css.gap (rem 0.2)
-    ]
-
-    rule ".tab-label i" [
-        Css.color Palette.icon
-    ]
-
-    rule ".dragging.tab-label i" [
-        Css.color Palette.preview
-    ]
-
-    rule ".tab-label:hover" [
-        Css.backgroundColor Palette.backgroundHover
-    ]
-
-    rule ".tab-label.selected" [
-        Css.backgroundColor Palette.backgroundSelected
-    ]
-
-
-    rule ".tabs-bottom .tab-label" [
-        Css.paddingRight (rem 0.5)
-        Css.paddingTop (rem 0)
-        Css.paddingLeft (rem 0.5)
-        Css.paddingBottom (px 2)
-//        Css.custom("writing-mode","sideways-lr")
-    ]
-
-    rule ".tabs-left .tab-label" [
-        Css.paddingBottom (rem 0.5)
-        Css.paddingRight (rem 0)
-        Css.paddingTop (rem 0.5)
-        Css.paddingLeft (px 2)
-//        Css.custom("writing-mode","sideways-lr")
-    ]
-
-    rule ".tabs-right .tab-label" [
-        Css.paddingBottom (rem 0.5)
-        Css.paddingRight (rem 0)
-        Css.paddingTop (rem 0.5)
-        Css.paddingLeft (px 2)
-//        Css.custom("writing-mode","sideways-lr")
-    ]
-
-    rule ".tabs-left .tab-label>i" [
-        Css.custom("writing-mode","tb")
-    ]
-
-    rule ".tabs-right .tab-label>i" [
-        Css.custom("writing-mode","tb")
-    ]
-
-
-    rule ".dock-resize-handle" [
-        Css.positionAbsolute
-        Css.backgroundColor Palette.handle
-        Css.custom( "--resize-handle-thickness", "1px" )
-        Css.zIndex (99)
-    ]
-
-    rule ".dock-resize-handle.top" [
-        Css.top (px 0)
-        Css.custom( "height", "var(--resize-handle-thickness)")
-        Css.width (percent 100)
-        Css.cursorNorthSouthResize
-    ]
-
-    rule ".dock-resize-handle.bottom" [
-        Css.bottom (px 0)
-        Css.width (percent 100)
-        Css.custom( "height", "var(--resize-handle-thickness)")
-        Css.cursorNorthSouthResize
-    ]
-
-    rule ".dock-resize-handle.right" [
-        Css.right (px 0)
-        Css.height (percent 100)
-        Css.custom( "width", "var(--resize-handle-thickness)")
-        Css.cursorEastWestResize
-    ]
-
-    rule ".dock-resize-handle.left" [
-        Css.left (px 0)
-        Css.height (percent 100)
-        Css.custom( "width", "var(--resize-handle-thickness)")
-        Css.cursorEastWestResize
-    ]
-
-    // Borders
-
-    rule ".border" [
-        Css.borderStyleSolid
-        Css.borderColor Palette.border
-        Css.borderWidth (px 0)
-    ]
-
-    rule ".border-top" [
-        Css.borderTopWidth  (px 1)
-    ]
-
-    rule ".border-bottom" [
-        Css.borderBottomWidth  (px 1)
-    ]
-
-    rule ".border-left" [
-        Css.borderLeftWidth  (px 1)
-    ]
-
-    rule ".border-right" [
-        Css.borderRightWidth  (px 1)
-    ]
-
-    // Miscellaneous
-
-    rule "outline-debug" [
-        Css.outlineStyleSolid
-        Css.outlineWidth (px 1)
-        Css.outlineColor "red"
-    ]
-
-    rule ".sideways-lr" [
-        Css.custom("writing-mode","sideways-lr")
-    ]
-
-    rule ".dock-tabs .preview" [
-        Css.backgroundColor Palette.preview
-    ]
-
-    rule ".preview" [
-        Css.backgroundColor Palette.preview
-    ]
-
-    rule ".drag-overlay" [
-        Css.displayNone
-        Css.positionAbsolute
-        Css.backgroundColor (Palette.preview)
-        Css.zIndex 99
-    ]
-
-    rule ".drag-overlay.left-top" [
-        Css.top (px 0)
-        Css.left (px 0)
-        Css.width (px 150)
-        Css.height (percent 100)
-    ]
-
-    rule ".drag-overlay.right-top" [
-        Css.top (px 0)
-        Css.right (px 0)
-        Css.width (px 150)
-        Css.height (percent 100)
-    ]
-
-    rule ".drag-overlay.bottom-left" [
-        Css.width (percent 100)
-        Css.left (px 0)
-        Css.right (px 0)
-        Css.bottom (px 0)
-        Css.height (px 150)
-    ]
-
-    rule ".drag-overlay.visible" [
-        Css.displayBlock
-    ]
-
-    rule ".tab-label.dragging" [
-        //Css.displayNone
-        Css.backgroundColor Palette.preview
-        Css.color Palette.preview
-    ]
-
-    let beforeAfter (sideways) = [
-        Css.custom("content","\"\"")
-        if sideways then
-            Css.width (rem 1)
-            Css.height (px 80)
-        else
-            Css.height (rem 1)
-            Css.width (px 80)
-        Css.backgroundColor Palette.preview
-    ]
-
-    rule ".tabs-left .tab-label.preview-insert-before::before" (beforeAfter true)
-    rule ".tabs-left .tab-label.preview-insert-after::after"   (beforeAfter true)
-
-    rule ".tabs-bottom .tab-label.preview-insert-before::before" (beforeAfter false)
-    rule ".tabs-bottom .tab-label.preview-insert-after::after"   (beforeAfter false)
-
-    rule ".dragimage" [
-        Css.positionAbsolute
-        Css.left (px -200)
-        Css.top (px -200)
-    ]
-
-    rule ".hidden" [
-        Css.displayNone
-    ]
-]
-
-
 
 [<AutoOpen>]
 module ModelHelpers =
@@ -653,33 +369,53 @@ module EventHandlers =
                 i
         ) |> Option.defaultValue -1
 
+    let closestDock cx cy (r : ClientRect) =
+        let x, y = cx - r.left, cy - r.top
+        let distanceTo loc =
+            match loc with
+            | LeftTop when y < (r.height/2.0) -> x
+            | LeftBottom when y >= (r.height/2.0) -> x
+            | RightTop when y < (r.height/2.0) -> (r.width - x)
+            | RightBottom when y >= (r.height/2.0) -> (r.width - x)
+            | BottomLeft when x < (r.width/2.0) -> (r.height - y)
+            | BottomRight when x > (r.width/2.0) -> (r.height - y)
+            | _ -> System.Double.MaxValue
+            //| TopLeft  -> if x < (r.width/2.0) then y else 999
+            //| TopRight -> if x > (r.width/2.0) then y else 999
+
+        let (loc, dist) = DockLocation.All |> List.map (fun loc -> loc, distanceTo loc) |> List.minBy snd
+        if System.Math.Abs dist < 200 then Some loc else None
+
     let dragOver dispatch (e : DragEvent) =
         try
             e.preventDefault()
             //let tabName = e.dataTransfer.getData("text/plain")
             let el = e.currentTarget |> toEl
             let r = el.getBoundingClientRect()
-            let x, y = e.clientX - r.left, e.clientY -  r.top
 
             clearPreview()
             let dragEl = document.querySelector(".dragging") |> toEl
 
-            if (y > (r.height - 200.0)) then
-                let i = previewOver dragEl ".tabs-bottom> div" (e.clientX) containsByWidth whichHalfX
-                console.log($"BottomLeft {i}")
-                if i <> -1 then (Some (BottomLeft,i)) |> PreviewDockLocation |> dispatch
+            let invert = function FirstHalf-> SecondHalf|_-> FirstHalf
 
-            elif (x < 200) then
-                let invert = function FirstHalf-> SecondHalf|_-> FirstHalf
-                let i = previewOver dragEl ".tabs-left> div" (e.clientY) containsByHeight (fun a b -> whichHalfY a b |> invert)
-                console.log($"LeftTop {i}")
-                if i <> -1 then (Some (LeftTop,i)) |> PreviewDockLocation |> dispatch
+            let previewOverLoc (loc : DockLocation) =
+                previewOver dragEl $".tabs-{loc.CssName} > div"
 
-            elif (x > (r.width - 200.0)) then
-                let i = previewOver dragEl ".tabs-right> div" (e.clientY) containsByHeight whichHalfY
-                console.log($"RightTop {i}")
-                if i <> -1 then (Some (RightTop,i)) |> PreviewDockLocation |> dispatch
-            else
+            match closestDock e.clientX e.clientY r with
+            | Some loc ->
+                let i =
+                    match loc.Primary with
+                    | Left ->
+                        previewOverLoc loc (e.clientY) containsByHeight (fun a b -> whichHalfY a b |> invert)
+                    | Right ->
+                        previewOverLoc loc (e.clientY) containsByHeight whichHalfY
+                    | Bottom | Top ->
+                        previewOverLoc loc (e.clientX) containsByWidth whichHalfX
+
+                if i <> -1 then
+                    (Some (loc,i)) |> PreviewDockLocation |> dispatch
+
+            | _ ->
                 None|> PreviewDockLocation |> dispatch
         with
         | x -> console.log(x.Message)
@@ -709,7 +445,7 @@ module EventHandlers =
         (dockLocation,(tabLabel.Name)) |> TogglePane |>  dispatch
 
 let viewTabLabel (model : System.IObservable<Model>) dispatch dockLocation (tabLabel : DockPane) =
-    console.log($"{tabLabel.Name} @ {dockLocation}")
+    //console.log($"{tabLabel.Name} @ {dockLocation}")
     UI.divc "tab-label" [
         Bind.toggleClass(
             model
@@ -731,72 +467,21 @@ let viewTabLabel (model : System.IObservable<Model>) dispatch dockLocation (tabL
     ]
 
 
-type Orientation =
-    | Horizontal | Vertical
-with
-    member __.Opposite = if __ = Horizontal then Vertical else Horizontal
-
-type BasicLocation =
-    | Left
-    | Right
-    | Top
-    | Bottom
-with
-    member __.LowerName = __.ToString().ToLower()
-    member __.Orientation =
-        match __ with Left|Right -> Horizontal | _ -> Vertical
-    member __.Opposite =
-        match __ with
-        |Left -> Right
-        |Right -> Left
-        |Top -> Bottom
-        |Bottom -> Top
-
-let primaryFromLocation (loc : DockLocation) =
-    match loc with
-    | LeftTop | LeftBottom -> Left
-    | RightTop | RightBottom -> Right
-    | BottomLeft | BottomRight -> Bottom
-    //| TopLeft | TopRight -> Top
-
-let secondaryFromLocation (loc : DockLocation) =
-    match loc with
-    | LeftTop | RightTop -> Top
-    | LeftBottom | RightBottom -> Bottom
-    | BottomLeft (* | TopLeft *) -> Left
-    | BottomRight (* | TopRight *) -> Right
-
-let oppositeOf (loc : BasicLocation) = loc.Opposite
 
 let dockContainer model (loc : DockLocation) =
-    let primary = (primaryFromLocation loc)
-    let secondary = (secondaryFromLocation loc)
-    let pname = primary.LowerName
-    let sname = secondary.LowerName
 
-    UI.divc $"dock-{pname}-container" [
+    UI.divc $"dock-{loc.CssName}-container" [
 
         Bind.toggleClass( model |> Store.map (fun m -> m.SelectedPanes[loc].IsNone), "hidden" )
 
-        UI.divc $"drag-overlay {pname}-{sname}" [
+        UI.divc $"drag-overlay {loc.Primary.LowerName}" [
             Bind.toggleClass(showOverlay model loc, "visible")
         ]
 
-        UI.divc $"dock-{pname}-content" [
-            Attr.id $"dock-{pname}-content-id"
+        UI.divc $"dock-{loc.CssName}-content" [
+            Attr.id $"dock-{loc.CssName}-content-id"
         ]
 
-        UI.divc $"dock-resize-handle {primary.Opposite.LowerName}" [
-            match primary with
-            | Left ->
-                resizeControllerEw -1
-            | Right ->
-                resizeControllerEw 1
-            | Top ->
-                resizeControllerNs -1
-            | Bottom ->
-                resizeControllerNs 1
-        ]
     ]
 
 
@@ -810,81 +495,86 @@ type DockContainer() =
             Ev.onDrop (EventHandlers.drop dispatch)
 
             Bind.el( model |> Store.map (fun m -> m.Docks.GetPanes(LeftTop)) |> Observable.distinctUntilChanged, fun tabs ->
-                UI.divc "dock-tabs tabs-left border border-right" [
+                UI.divc "dock-tabs tabs-left tabs-left-top border border-right" [
                     yield! tabs |> List.map (viewTabLabel model dispatch LeftTop)
+                ]
+            )
+
+            Bind.el( model |> Store.map (fun m -> m.Docks.GetPanes(LeftBottom)) |> Observable.distinctUntilChanged, fun tabs ->
+                UI.divc "dock-tabs tabs-left tabs-left-bottom border border-right" [
+                    yield! tabs |> List.map (viewTabLabel model dispatch LeftBottom)
                 ]
             )
 
             UI.divc "dock-main-grid" [
 
                 // Row 1
-                dockContainer model LeftTop
-                // UI.divc "dock-left-container" [
+                UI.divc "dock-left-container" [
+                    Bind.toggleClass( model |> Store.map (fun m -> (m.SelectedPanes[LeftTop], m.SelectedPanes[LeftBottom]) = (None,None)), "hidden" )
 
-                //     Bind.toggleClass( model |> Store.map (fun m -> m.SelectedPanes[LeftTop].IsNone), "hidden" )
+                    dockContainer model LeftTop
+                    dockContainer model LeftBottom
 
-                //     UI.divc "drag-overlay left-top" [
-                //         Bind.toggleClass(showOverlay model LeftTop, "visible")
-                //     ]
-                //     UI.divc "dock-left-content" [
-                //         Attr.id "dock-left-content-id"
-                //     ]
-                //     UI.divc "dock-resize-handle right" [
-                //         resizeControllerEw -1
-                //     ]
-                // ]
+                    UI.divc $"dock-resize-handle right" [
+                        resizeControllerEw -1
+                    ]
+                ]
 
                 UI.divc "dock-main" []
 
-                dockContainer model RightTop
-                // UI.divc "dock-right-container" [
-                //     Bind.toggleClass( model |> Store.map (fun m -> m.SelectedPanes[RightTop].IsNone), "hidden" )
+                UI.divc "dock-right-container" [
+                    Bind.toggleClass( model |> Store.map (fun m -> (m.SelectedPanes[RightTop], m.SelectedPanes[RightBottom]) = (None,None)), "hidden" )
 
-                //     UI.divc "drag-overlay right-top" [
-                //         Bind.toggleClass(showOverlay model RightTop, "visible")
-                //     ]
-                //     UI.divc "dock-right-content" [
-                //         Attr.id "dock-right-content-id"
-                //     ]
-                //     UI.divc "dock-resize-handle left" [
-                //         resizeControllerEw 1
-                //     ]
-                // ]
+                    dockContainer model RightTop
+                    dockContainer model RightBottom
+
+                    UI.divc $"dock-resize-handle left" [
+                        resizeControllerEw 1
+                    ]
+                ]
 
                 // Row 2
-                dockContainer model BottomLeft
-                // UI.divc "dock-bottom-container" [
-                //     Bind.toggleClass( model |> Store.map (fun m -> m.SelectedPanes[BottomLeft].IsNone), "hidden" )
+                UI.divc "dock-bottom-container" [
+                    Bind.toggleClass( model |> Store.map (fun m -> (m.SelectedPanes[BottomLeft], m.SelectedPanes[BottomRight]) = (None,None)), "hidden" )
 
-                //     UI.divc "drag-overlay bottom" [
-                //         Bind.toggleClass(showOverlay model BottomLeft, "visible")
-                //     ]
-                //     UI.divc "dock-bottom-content" [
-                //         Attr.id "dock-bottom-content-id"
-                //     ]
-                //     UI.divc "dock-resize-handle top" [
-                //         resizeControllerNs 1
-                //     ]
-                // ]
+                    dockContainer model BottomLeft
+                    dockContainer model BottomRight
 
+                    UI.divc $"dock-resize-handle top" [
+                        resizeControllerNs 1
+                    ]
+                ]
             ]
 
             Bind.el( model |> Store.map (fun m -> m.Docks.GetPanes(RightTop)) |> Observable.distinctUntilChanged, fun tabs ->
-                UI.divc "dock-tabs tabs-right border border-left" [
+                UI.divc "dock-tabs tabs-right tabs-right-top border border-left" [
                     yield! tabs |> List.map (viewTabLabel model dispatch RightTop)
                 ]
             )
 
+            Bind.el( model |> Store.map (fun m -> m.Docks.GetPanes(RightBottom)) |> Observable.distinctUntilChanged, fun tabs ->
+                UI.divc "dock-tabs tabs-right tabs-right-bottom border border-left" [
+                    yield! tabs |> List.map (viewTabLabel model dispatch RightBottom)
+                ]
+            )
+
             // Bottom left corner, so we can place a border on top
-            UI.divc "dock-tabs tabs-bottom-left border border-top" []
+            UI.divc "dock-tabs box-left border border-top" []
 
             Bind.el( model |> Store.map (fun m -> m.Docks.GetPanes(BottomLeft)) |> Observable.distinctUntilChanged, fun tabs ->
-                UI.divc "dock-tabs tabs-bottom border border-top" [
+                UI.divc "dock-tabs tabs-bottom tabs-bottom-left border border-top" [
                     yield! tabs |> List.map (viewTabLabel model dispatch BottomLeft)
                 ]
             )
+
+            Bind.el( model |> Store.map (fun m -> m.Docks.GetPanes(BottomRight)) |> Observable.distinctUntilChanged, fun tabs ->
+                UI.divc "dock-tabs tabs-bottom tabs-bottom-right border border-top" [
+                    yield! tabs |> List.map (viewTabLabel model dispatch BottomRight)
+                ]
+            )
+
             // Bottom right corner, so we can place a border on top
-            UI.divc "dock-tabs tabs-bottom-right border border-top" []
+            UI.divc "dock-tabs box-right border border-top" []
 
         ] |> withStyle css
 
@@ -894,15 +584,37 @@ with
     member __.View  = view
 
     member __.AddPane (name : string, location : DockLocation, content : SutilElement ) =
-        let contentId =
-            match location with
-            | LeftTop | LeftBottom -> "#dock-left-content-id"
-            | RightTop | RightBottom -> "#dock-right-content-id"
-            | BottomLeft | BottomRight -> "#dock-bottom-content-id"
+
+        let debugWrapper =
+            UI.divc "dock-pane-wrapper" [
+                Attr.id ("pane-" + name.ToLower())
+                Html.div [
+                    Attr.style [
+                        Css.width (percent 100)
+                        Css.height (percent 100)
+                        Css.overflowAuto
+                    ]
+                    content
+                ]
+                Bind.toggleClass(
+                    model |> Store.map (fun m -> (DockHelpers.findPaneLocation m.Docks name |> Option.bind (fun l -> m.SelectedPanes[l]) |> Option.defaultValue "") = name),
+                    "selected")
+            ]|> withStyle [
+                rule ".dock-pane-wrapper" [
+                    Css.displayNone
+                    Css.width (percent 100)
+                    Css.height (percent 100)
+                ]
+
+                rule ".dock-pane-wrapper.selected" [
+                    Css.displayBlock
+                ]
+            ]
 
         let wrapper =
             UI.divc "dock-pane-wrapper" [
                 Attr.id ("pane-" + name.ToLower())
+
                 Bind.toggleClass(
                     model |> Store.map (fun m -> (DockHelpers.findPaneLocation m.Docks name |> Option.bind (fun l -> m.SelectedPanes[l]) |> Option.defaultValue "") = name),
                     "selected")
@@ -938,14 +650,13 @@ with
             ] |> withStyle [
                 rule ".dock-pane-wrapper" [
                     Css.displayNone
-                    Css.flexDirectionColumn
-                    Css.positionAbsolute
                     Css.width (percent 100)
                     Css.height (percent 100)
                 ]
 
                 rule ".dock-pane-wrapper.selected" [
                     Css.displayFlex
+                    Css.flexDirectionColumn
                 ]
             ]
 

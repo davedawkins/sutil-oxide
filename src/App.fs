@@ -39,19 +39,26 @@ let initPanes() =
     dc.AddPane( "Database", LeftTop, dummy "Database" "pink" )
     dc.AddPane( "Solution", LeftTop, dummy "Solution" "lightgreen" )
 
+    dc.AddPane( "Insights", LeftBottom, dummy "Insights" "pink" )
+    dc.AddPane( "Translation", LeftBottom, dummy "Translation" "lightgreen" )
+
     dc.AddPane( "Events", RightTop, dummy "Events" "azure" )
     dc.AddPane( "Files", RightTop, dummy "Files" "pink" )
     dc.AddPane( "Instructions", RightTop, dummy "Instructions" "lightgreen" )
 
+    dc.AddPane( "Links", RightBottom, dummy "Links" "azure" )
+    dc.AddPane( "Objects", RightBottom, dummy "Objects" "pink" )
+
     dc.AddPane( "Console", BottomLeft, dummy "Console" "azure" )
     dc.AddPane( "Messages", BottomLeft, dummy "Messages" "pink" )
     dc.AddPane( "Help", BottomLeft, dummy "Help" "lightgreen" )
-    dc.AddPane( "Catalogs", BottomLeft, dummy "Catalogs" "lightblue" )
-    dc.AddPane( "Components", BottomLeft, dummy "Components" "teal" )
-    dc.AddPane( "Knowledgebase", BottomLeft, dummy "Knowledgebase" "lightpink" )
+
+    dc.AddPane( "Catalogs", BottomRight, dummy "Catalogs" "lightblue" )
+    dc.AddPane( "Components", BottomRight, dummy "Components" "teal" )
+    dc.AddPane( "Knowledgebase", BottomRight, dummy "Knowledgebase" "lightpink" )
+    ()
 
 let view () =
-    console.log("view()")
     Html.div [
         Sutil.Attr.onMount (fun e ->
             initPanes()
