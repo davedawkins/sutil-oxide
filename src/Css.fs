@@ -47,11 +47,6 @@ let css = [
         Css.custom("grid-template-rows", "auto max-content")
     ]
 
-    let dockStarContainer =
-        [
-
-        ]
-
     rule ".dock-left-container" [
         Css.positionRelative
         Css.width (px 400)
