@@ -268,6 +268,7 @@ let css = [
     ]
 
     rule ".dock-resize-handle.right" [
+        Css.top (px 0)
         Css.right (px 0)
         Css.height (percent 100)
         Css.custom( "width", "var(--resize-handle-thickness)")
@@ -275,6 +276,7 @@ let css = [
     ]
 
     rule ".dock-resize-handle.left" [
+        Css.top (px 0)
         Css.left (px 0)
         Css.height (percent 100)
         Css.custom( "width", "var(--resize-handle-thickness)")

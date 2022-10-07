@@ -110,6 +110,16 @@ module DomHelpers =
     let toEl (et : EventTarget) = et :?> HTMLElement
     let targetEl (e : Event) = e.target |> toEl
 
+    let getPaneFlexGrow (el : HTMLElement) =
+        let cs = (window.getComputedStyle el)
+        try
+            cs.flexGrow |> System.Double.Parse |> int
+        with
+        | _ -> 0
+
+    let setPaneFlexGrow (el : HTMLElement) (w : int) =
+        el.style.flexGrow <- $"{w}"
+
     let getPaneWidth (el : HTMLElement) =
         (window.getComputedStyle el).width[..(-3)] |> System.Double.Parse |> int
 
@@ -122,6 +132,19 @@ module DomHelpers =
 
     let setPaneHeight (el : HTMLElement) (h : int) =
         el.style.height <- $"{h}px"
+
+    let setPaneSizeUsingFlexGrow (getSize : HTMLElement -> int) (el : HTMLElement) (size : int) =
+        let parentSz = getSize (el.parentElement)
+        let pct = (float size) / (float parentSz)
+
+        setPaneFlexGrow el (int (pct * 10000.0))
+        setPaneFlexGrow (el.previousElementSibling |> toEl) (int ( (1.0 - pct) * 10000.0))
+
+    let setPaneWidthUsingFlexGrow =
+        setPaneSizeUsingFlexGrow getPaneWidth
+
+    let setPaneHeightUsingFlexGrow  =
+        setPaneSizeUsingFlexGrow getPaneHeight
 
     let getContentParentNode (location : DockLocation) =
         let contentId =
@@ -139,11 +162,13 @@ module DomHelpers =
     let getWrapperNode (name : string) =
         document.querySelector("#pane-" + name.ToLower())
 
+
     // https://jsfiddle.net/x9o7y561/
     let resizeController
             (pos : MouseEvent -> float)
             (getSize : HTMLElement -> int)
             (setSize : HTMLElement -> int -> unit)
+            (commit : HTMLElement -> int -> unit)
             (direction : int) =
         Ev.onMouseDown (fun e ->
             e.preventDefault()
@@ -155,6 +180,7 @@ module DomHelpers =
                 let primaryButtonPressed = e.buttons = 1
 
                 if not primaryButtonPressed then
+                    commit pane (int ((posOffset - pos e) * (float direction) + startSize))
                     document.body.removeEventListener("pointermove", !!mouseDragHandler)
                 else
                     setSize pane (int ((posOffset - pos e) * (float direction) + startSize))
@@ -163,10 +189,17 @@ module DomHelpers =
         )
 
     let resizeControllerEw (direction : int) =
-        resizeController (fun e -> e.pageX) getPaneWidth setPaneWidth direction
+        resizeController (fun e -> e.pageX) getPaneWidth setPaneWidth setPaneWidth direction
 
     let resizeControllerNs (direction : int) =
-        resizeController (fun e -> e.pageY) getPaneHeight setPaneHeight direction
+        resizeController (fun e -> e.pageY) getPaneHeight setPaneHeight setPaneHeight direction
+
+    let resizeControllerNsFlex (direction : int) =
+        resizeController (fun e -> e.pageY) getPaneHeight setPaneHeightUsingFlexGrow setPaneHeightUsingFlexGrow direction
+
+    let resizeControllerEwFlex (direction : int) =
+        resizeController (fun e -> e.pageX) getPaneWidth setPaneWidthUsingFlexGrow setPaneWidthUsingFlexGrow direction
+
     let toListFromNodeList (l : NodeListOf<'a>) =
         [0..l.length-1] |> List.map (fun i -> l.item(i),i)
 
@@ -482,6 +515,16 @@ let dockContainer model (loc : DockLocation) =
             Attr.id $"dock-{loc.CssName}-content-id"
         ]
 
+        match loc with
+        | LeftBottom | RightBottom ->
+            UI.divc $"dock-resize-handle top" [
+                resizeControllerNsFlex 1
+            ]
+        | (*TopRight |*) BottomRight ->
+            UI.divc $"dock-resize-handle left" [
+                resizeControllerEwFlex 1
+            ]
+        | _ -> ()
     ]
 
 
