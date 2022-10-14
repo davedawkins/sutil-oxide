@@ -12,10 +12,15 @@ let appCss = [
         Css.height (vh 100)
         Css.width (vw 100)
     ]
-    rule ".ribbon" [
-        Css.backgroundColor "darkgray"
+    rule ".toolbar" [
+        Css.backgroundColor "#EEEEEE"
         Css.width (percent 100)
-        Css.height (rem 2)
+        Css.height (rem 1.5)
+    ]
+    rule ".status-footer" [
+        Css.backgroundColor "#EEEEEE"
+        Css.width (percent 100)
+        Css.height (rem 1.5)
     ]
 ]
 
@@ -34,28 +39,32 @@ let dummy name colour =
 
 let dc = DockContainer()
 
+let dummyColor = "transparent"
+
 let initPanes() =
-    dc.AddPane( "Explorer", LeftTop, dummy "Explorer" "azure" )
-    dc.AddPane( "Database", LeftTop, dummy "Database" "pink" )
-    dc.AddPane( "Solution", LeftTop, dummy "Solution" "lightgreen" )
+    dc.AddPane( "Explorer",      LeftTop,     dummy "Explorer" dummyColor )
+    dc.AddPane( "Database",      LeftTop,     dummy "Database" dummyColor )
+    dc.AddPane( "Solution",      LeftTop,     dummy "Solution" dummyColor )
 
-    dc.AddPane( "Insights", LeftBottom, dummy "Insights" "pink" )
-    dc.AddPane( "Translation", LeftBottom, dummy "Translation" "lightgreen" )
+    dc.AddPane( "Insights",      LeftBottom,  dummy "Insights" dummyColor )
+    dc.AddPane( "Translation",   LeftBottom,  dummy "Translation" dummyColor )
 
-    dc.AddPane( "Events", RightTop, dummy "Events" "azure" )
-    dc.AddPane( "Files", RightTop, dummy "Files" "pink" )
-    dc.AddPane( "Instructions", RightTop, dummy "Instructions" "lightgreen" )
+    dc.AddPane( "Events",        RightTop,    dummy "Events" dummyColor )
+    dc.AddPane( "Files",         RightTop,    dummy "Files" dummyColor )
+    dc.AddPane( "Instructions",  RightTop,    dummy "Instructions" dummyColor )
 
-    dc.AddPane( "Links", RightBottom, dummy "Links" "azure" )
-    dc.AddPane( "Objects", RightBottom, dummy "Objects" "pink" )
+    dc.AddPane( "Links",         RightBottom, dummy "Links" dummyColor )
+    dc.AddPane( "Objects",       RightBottom, dummy "Objects" dummyColor )
 
-    dc.AddPane( "Console", BottomLeft, dummy "Console" "azure" )
-    dc.AddPane( "Messages", BottomLeft, dummy "Messages" "pink" )
-    dc.AddPane( "Help", BottomLeft, dummy "Help" "lightgreen" )
+    dc.AddPane( "Console",       BottomLeft,  dummy "Console" dummyColor )
+    dc.AddPane( "Messages",      BottomLeft,  dummy "Messages" dummyColor )
+    dc.AddPane( "Help",          BottomLeft,  dummy "Help" dummyColor )
 
-    dc.AddPane( "Catalogs", BottomRight, dummy "Catalogs" "lightblue" )
-    dc.AddPane( "Components", BottomRight, dummy "Components" "teal" )
-    dc.AddPane( "Knowledgebase", BottomRight, dummy "Knowledgebase" "lightpink" )
+    dc.AddPane( "Catalogs",      BottomRight, dummy "Catalogs" dummyColor )
+    dc.AddPane( "Components",    BottomRight, dummy "Components" dummyColor )
+    dc.AddPane( "Knowledgebase", BottomRight, dummy "Knowledgebase" dummyColor )
+
+    dc.AddPane( "Editor",        CentreCentre, dummy "Editor" "white" )
     ()
 
 let view () =
@@ -64,8 +73,9 @@ let view () =
             initPanes()
             ) [ Sutil.Attr.EventModifier.Once ]
         Attr.className "main-container"
-        Html.div [ Attr.className "ribbon"]
+        Html.div [ Attr.className "toolbar"]
         dc.View
+        Html.div [ Attr.className "status-footer"]
     ] |> withStyle appCss
 
 view() |> Program.mountElement "sutil-app"

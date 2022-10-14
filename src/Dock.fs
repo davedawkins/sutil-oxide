@@ -27,6 +27,7 @@ with
 type BasicLocation =
     | Left
     | Right
+    | Centre
     | Top
     | Bottom
 with
@@ -35,6 +36,7 @@ with
         match __ with Left|Right -> Horizontal | _ -> Vertical
     member __.Opposite =
         match __ with
+        |Centre -> Centre
         |Left -> Right
         |Right -> Left
         |Top -> Bottom
@@ -45,30 +47,39 @@ type DockLocation =
     | LeftTop
     | LeftBottom
     | BottomLeft
+    | CentreCentre
     | BottomRight
     | RightTop
     | RightBottom
-    //| TopLeft
-    //| TopRight
+    | TopLeft
+    | TopRight
 with
     static member All =
         [
-            LeftTop; LeftBottom; BottomLeft; BottomRight; RightTop; RightBottom; // TopLeft; TopRight
+            LeftTop; LeftBottom; BottomLeft; BottomRight; RightTop; RightBottom; CentreCentre; TopLeft; TopRight
         ]
+
+    member __.Hand =
+        match __.Primary, __.Secondary with
+        | _,Left | Left,_ -> Left
+        | _ -> Right
+
 
     member __.Primary =
         match __ with
+        | CentreCentre -> Centre
         | LeftTop | LeftBottom -> Left
         | RightTop | RightBottom -> Right
         | BottomLeft | BottomRight -> Bottom
-        //| TopLeft | TopRight -> Top
+        | TopLeft | TopRight -> Top
 
     member __.Secondary=
         match __ with
+        | CentreCentre -> Centre
         | LeftTop | RightTop -> Top
         | LeftBottom | RightBottom -> Bottom
-        | BottomLeft (* | TopLeft *) -> Left
-        | BottomRight (* | TopRight *) -> Right
+        | BottomLeft | TopLeft  -> Left
+        | BottomRight | TopRight -> Right
 
     member __.CssName =
         __.Primary.LowerName + "-" + __.Secondary.LowerName
@@ -109,6 +120,7 @@ module DomHelpers =
 
     let toEl (et : EventTarget) = et :?> HTMLElement
     let targetEl (e : Event) = e.target |> toEl
+    let currentEl (e : Event) = e.currentTarget |> toEl
 
     let getPaneFlexGrow (el : HTMLElement) =
         let cs = (window.getComputedStyle el)
@@ -149,14 +161,15 @@ module DomHelpers =
     let getContentParentNode (location : DockLocation) =
         let contentId =
             match location with
-            | LeftTop     -> "#dock-left-top-content-id"
-            | LeftBottom  -> "#dock-left-bottom-content-id"
-            | RightTop    -> "#dock-right-top-content-id"
-            | RightBottom -> "#dock-right-bottom-content-id"
-            | BottomLeft  -> "#dock-bottom-left-content-id"
-            | BottomRight -> "#dock-bottom-right-content-id"
-            // | TopLeft -> "#dock-top-left-content-id"
-            // | TopRight -> "#dock-top-right-content-id"
+            | LeftTop     -> "#dock-left-top"
+            | LeftBottom  -> "#dock-left-bottom"
+            | RightTop    -> "#dock-right-top"
+            | RightBottom -> "#dock-right-bottom"
+            | BottomLeft  -> "#dock-bottom-left"
+            | BottomRight -> "#dock-bottom-right"
+            | TopLeft -> "#dock-top-left"
+            | TopRight -> "#dock-top-right"
+            | CentreCentre -> "#dock-centre-centre"
         document.querySelector (contentId) :?> HTMLElement
 
     let getWrapperNode (name : string) =
@@ -299,6 +312,9 @@ type Message =
     | CommitDrag
     | SelectPane of DockLocation*string option
     | TogglePane of DockLocation*string
+    | MinimizePane of string
+    | MoveTo of string*DockLocation
+
 
 let init docks =
     {
@@ -331,8 +347,26 @@ let update msg model =
         console.log(sprintf "Select: %A %A" loc selected)
         { model with SelectedPanes = model.SelectedPanes.Add(loc,selected) }, Cmd.none
 
+    | MinimizePane pane ->
+        DockHelpers.findPaneLocation model.Docks pane
+        |> Option.map (fun loc ->
+            { model with SelectedPanes = model.SelectedPanes.Add(loc,None) }, Cmd.none
+        )
+        |> Option.defaultValue (model, Cmd.none)
+
     | SetDragging d ->
         { model with DraggingTab = Some { BeingDragged = d; Preview = None} }, Cmd.none
+
+    | MoveTo (pane,loc) ->
+        let m = DockHelpers.moveTab model pane loc 999
+        let wrapper = DomHelpers.getWrapperNode pane
+        let parent = DomHelpers.getContentParentNode loc
+        parent.appendChild wrapper |> ignore
+
+        { m with
+            DraggingTab = None
+            SelectedPanes = m.SelectedPanes.Add(loc, Some pane)
+        }, Cmd.none
 
     | CommitDrag ->
         let m =
@@ -412,6 +446,8 @@ module EventHandlers =
             | RightBottom when y >= (r.height/2.0) -> (r.width - x)
             | BottomLeft when x < (r.width/2.0) -> (r.height - y)
             | BottomRight when x > (r.width/2.0) -> (r.height - y)
+            | TopLeft when x < (r.width/2.0) -> y
+            | TopRight when x > (r.width/2.0) -> y
             | _ -> System.Double.MaxValue
             //| TopLeft  -> if x < (r.width/2.0) then y else 999
             //| TopRight -> if x > (r.width/2.0) then y else 999
@@ -444,6 +480,8 @@ module EventHandlers =
                         previewOverLoc loc (e.clientY) containsByHeight whichHalfY
                     | Bottom | Top ->
                         previewOverLoc loc (e.clientX) containsByWidth whichHalfX
+                    | Centre ->
+                        -1
 
                 if i <> -1 then
                     (Some (loc,i)) |> PreviewDockLocation |> dispatch
@@ -500,33 +538,138 @@ let viewTabLabel (model : System.IObservable<Model>) dispatch dockLocation (tabL
     ]
 
 
+let dragOverlay model (loc:DockLocation) =
+    UI.divc $"drag-overlay {loc.Primary.LowerName} {loc.CssName}" [
+        Bind.toggleClass(showOverlay model loc, "visible")
+    ]
+
 
 let dockContainer model (loc : DockLocation) =
 
-    UI.divc $"dock-{loc.CssName}-container" [
+    UI.divc $"dock-{loc.CssName}-container dock-{loc.Hand.LowerName}-hand" [
 
         Bind.toggleClass( model |> Store.map (fun m -> m.SelectedPanes[loc].IsNone), "hidden" )
 
-        UI.divc $"drag-overlay {loc.Primary.LowerName}" [
-            Bind.toggleClass(showOverlay model loc, "visible")
-        ]
-
-        UI.divc $"dock-{loc.CssName}-content" [
-            Attr.id $"dock-{loc.CssName}-content-id"
-        ]
+        Attr.id $"dock-{loc.CssName}"
 
         match loc with
         | LeftBottom | RightBottom ->
-            UI.divc $"dock-resize-handle top" [
+            UI.divc $"dock-resize-handle top vertical" [
                 resizeControllerNsFlex 1
             ]
-        | (*TopRight |*) BottomRight ->
-            UI.divc $"dock-resize-handle left" [
+        | TopRight | BottomRight ->
+            UI.divc $"dock-resize-handle left horizontal" [
                 resizeControllerEwFlex 1
             ]
         | _ -> ()
     ]
 
+type ButtonProperty =
+    | Label of string
+    | Icon of string
+    | OnClick of (MouseEvent -> unit)
+
+type Button = {
+    Label : string option
+    Icon : string option
+    OnClick : (MouseEvent -> unit) option
+}
+with
+    static member Empty = { Label = None; Icon = None; OnClick = None}
+    member __.With (p : ButtonProperty) =
+        match p with
+        | Label s -> { __ with Label = Some s }
+        | Icon s -> { __ with Icon = Some s }
+        | OnClick s -> { __ with OnClick = Some s }
+    static member From (p : ButtonProperty seq) =
+        p |> Seq.fold (fun (b:Button) x -> b.With(x)) Button.Empty
+
+let buttonGroup items =
+    UI.divc "button-group" items
+
+let menuStack items =
+    UI.divc "menu-stack" items
+
+let buttonItem props =
+    let b = Button.From props
+
+    Html.a [
+        Attr.className "item-button"
+
+        b.Icon
+            |> Option.map (fun icon ->  Html.i [ Attr.className ("fa " + icon) ])
+            |> Option.defaultValue (Html.i [])
+
+        b.Label
+            |> Option.map (fun label ->  Html.span label)
+            |> Option.defaultValue (Html.span "")
+
+        b.OnClick
+            |> Option.map (fun cb ->  Ev.onClick (fun e -> e.preventDefault(); cb e))
+            |> Option.defaultValue nothing
+
+        Attr.href "#"
+    ]
+
+let menuItem props items =
+    let b = Button.From props
+
+    Html.a [
+        Attr.className "item-button item-menu"
+
+        b.Icon
+            |> Option.map (fun icon ->  Html.i [ Attr.className ("fa " + icon) ])
+            |> Option.defaultValue (Html.i [])
+
+        b.Label
+            |> Option.map (fun label ->  Html.span label)
+            |> Option.defaultValue (Html.span "")
+
+        b.OnClick
+            |> Option.map (fun cb ->  Ev.onClick (fun e -> e.preventDefault(); cb e))
+            |> Option.defaultValue nothing
+
+        Html.i [ Attr.className "fa fa-angle-right"]
+
+        Attr.href "#"
+
+        menuStack items
+    ]
+
+
+
+let dropDownItem props items =
+    Html.a [
+        Attr.className "item-button"
+
+        yield! props |> Seq.map (fun p ->
+
+            match p with
+
+            | Label label ->
+                Html.span label
+
+            | Icon icon ->
+                Html.i [ Attr.className ("fa " + icon) ]
+
+            | OnClick cb ->
+                nothing
+
+        )
+
+        Attr.href "#"
+
+        Ev.onClick (fun e ->
+            props |> Seq.iter (fun p -> match p with OnClick cb -> cb e | _ -> ())
+            if not e.defaultPrevented then
+                e.preventDefault()
+                let el = (currentEl e)
+                console.log(el)
+                //el.classList.toggle("active") |> ignore
+        )
+        menuStack items
+
+    ]
 
 type DockContainer() =
     let model, dispatch = DockCollection.Empty |> Store.makeElmish init update ignore
@@ -536,6 +679,18 @@ type DockContainer() =
         UI.divc "dock-container" [
             Ev.onDragOver (EventHandlers.dragOver dispatch)
             Ev.onDrop (EventHandlers.drop dispatch)
+
+            Bind.el( model |> Store.map (fun m -> m.Docks.GetPanes(TopLeft)) |> Observable.distinctUntilChanged, fun tabs ->
+                UI.divc "dock-tabs tabs-top tabs-top-left border border-bottom" [
+                    yield! tabs |> List.map (viewTabLabel model dispatch TopLeft)
+                ]
+            )
+
+            Bind.el( model |> Store.map (fun m -> m.Docks.GetPanes(TopRight)) |> Observable.distinctUntilChanged, fun tabs ->
+                UI.divc "dock-tabs tabs-top tabs-top-right border border-bottom" [
+                    yield! tabs |> List.map (viewTabLabel model dispatch TopRight)
+                ]
+            )
 
             Bind.el( model |> Store.map (fun m -> m.Docks.GetPanes(LeftTop)) |> Observable.distinctUntilChanged, fun tabs ->
                 UI.divc "dock-tabs tabs-left tabs-left-top border border-right" [
@@ -551,29 +706,46 @@ type DockContainer() =
 
             UI.divc "dock-main-grid" [
 
-                // Row 1
-                UI.divc "dock-left-container" [
-                    Bind.toggleClass( model |> Store.map (fun m -> (m.SelectedPanes[LeftTop], m.SelectedPanes[LeftBottom]) = (None,None)), "hidden" )
+                UI.divc "dock-top-container" [
+                    Bind.toggleClass( model |> Store.map (fun m -> (m.SelectedPanes[TopLeft], m.SelectedPanes[TopRight]) = (None,None)), "hidden" )
 
-                    dockContainer model LeftTop
-                    dockContainer model LeftBottom
+                    dockContainer model TopLeft
+                    dockContainer model TopRight
 
-                    UI.divc $"dock-resize-handle right" [
-                        resizeControllerEw -1
+                    UI.divc $"dock-resize-handle bottom vertical" [
+                        resizeControllerNs -1
                     ]
                 ]
 
-                UI.divc "dock-main" []
+                UI.divc "dock-centre-container" [
 
-                UI.divc "dock-right-container" [
-                    Bind.toggleClass( model |> Store.map (fun m -> (m.SelectedPanes[RightTop], m.SelectedPanes[RightBottom]) = (None,None)), "hidden" )
+                    // Row 1
+                    UI.divc "dock-left-container" [
+                        Bind.toggleClass( model |> Store.map (fun m -> (m.SelectedPanes[LeftTop], m.SelectedPanes[LeftBottom]) = (None,None)), "hidden" )
 
-                    dockContainer model RightTop
-                    dockContainer model RightBottom
+                        dockContainer model LeftTop
+                        dockContainer model LeftBottom
 
-                    UI.divc $"dock-resize-handle left" [
-                        resizeControllerEw 1
+                        UI.divc $"dock-resize-handle right horizontal" [
+                            resizeControllerEw -1
+                        ]
                     ]
+
+                    UI.divc "dock-main" [
+                        dockContainer model CentreCentre
+                    ]
+
+                    UI.divc "dock-right-container" [
+                        Bind.toggleClass( model |> Store.map (fun m -> (m.SelectedPanes[RightTop], m.SelectedPanes[RightBottom]) = (None,None)), "hidden" )
+
+                        dockContainer model RightTop
+                        dockContainer model RightBottom
+
+                        UI.divc $"dock-resize-handle left horizontal" [
+                            resizeControllerEw 1
+                        ]
+                    ]
+
                 ]
 
                 // Row 2
@@ -583,9 +755,19 @@ type DockContainer() =
                     dockContainer model BottomLeft
                     dockContainer model BottomRight
 
-                    UI.divc $"dock-resize-handle top" [
+                    UI.divc $"dock-resize-handle top vertical" [
                         resizeControllerNs 1
                     ]
+                ]
+            ]
+
+            UI.divc "overlays" [
+                UI.divc "overlays-left" [
+                    yield! DockLocation.All |> List.filter (fun l -> l.Primary = Left || l.Secondary = Left) |> List.map (fun l -> dragOverlay model l)
+                ]
+
+                UI.divc "overlays-right" [
+                    yield! DockLocation.All |> List.filter (fun l -> l.Primary = Right || l.Secondary = Right) |> List.map (fun l -> dragOverlay model l)
                 ]
             ]
 
@@ -626,11 +808,13 @@ type DockContainer() =
 with
     member __.View  = view
 
-    member __.AddPane (name : string, location : DockLocation, content : SutilElement ) =
+    member __.AddPane (name : string, initLoc : DockLocation, content : SutilElement ) =
+
+        let lname = name.ToLower()
 
         let debugWrapper =
             UI.divc "dock-pane-wrapper" [
-                Attr.id ("pane-" + name.ToLower())
+                Attr.id ("pane-" + lname)
                 Html.div [
                     Attr.style [
                         Css.width (percent 100)
@@ -654,9 +838,12 @@ with
                 ]
             ]
 
+        let loc = model |> Store.map (fun m -> (DockHelpers.findPaneLocation m.Docks name)) |> Observable.distinctUntilChanged
+
         let wrapper =
             UI.divc "dock-pane-wrapper" [
-                Attr.id ("pane-" + name.ToLower())
+                Attr.id ("pane-" + lname)
+
 
                 Bind.toggleClass(
                     model |> Store.map (fun m -> (DockHelpers.findPaneLocation m.Docks name |> Option.bind (fun l -> m.SelectedPanes[l]) |> Option.defaultValue "") = name),
@@ -668,7 +855,7 @@ with
                         Css.paddingLeft (rem 0.5)
                         Css.paddingRight (rem 0.5)
                         //Css.height (rem 1.5)
-                        Css.backgroundColor (Palette.backgroundHover)
+                        Css.backgroundColor (Palette.controlBackground)
                         Css.fontSize (percent 75)
                     ]
                     Html.div [
@@ -678,7 +865,30 @@ with
                             Css.justifyContentSpaceBetween
                         ]
                         text name
-                        Html.i [ Attr.className "fa fa-window-minimize"]
+
+                        Bind.el( loc, fun optLoc ->
+                            if optLoc.IsSome && optLoc <> Some CentreCentre then
+                                buttonGroup [
+                                    buttonItem [ Icon "fa-window-minimize"; Label ""; OnClick (fun _ -> MinimizePane name |> dispatch) ]
+                                    dropDownItem [ Icon "fa-cog"; Label ""] [
+                                        menuItem [
+                                            Label "Move To"
+                                        ] [
+                                            buttonItem [ Icon "fa-caret-square-left"; Label "Left Top"; OnClick (fun _ -> MoveTo (name,LeftTop) |> dispatch) ]
+                                            buttonItem [ Icon "fa-caret-square-left"; Label "Left Bottom"; OnClick (fun _ -> MoveTo (name,LeftBottom) |> dispatch) ]
+                                            buttonItem [ Icon "fa-caret-square-right"; Label "Right Top"; OnClick (fun _ -> MoveTo (name,RightTop) |> dispatch) ]
+                                            buttonItem [ Icon "fa-caret-square-right"; Label "Right Bottom"; OnClick (fun _ -> MoveTo (name,RightBottom) |> dispatch) ]
+                                            buttonItem [ Icon "fa-caret-square-down"; Label "Bottom Left"; OnClick (fun _ -> MoveTo (name,BottomLeft) |> dispatch) ]
+                                            buttonItem [ Icon "fa-caret-square-down"; Label "Bottom Right"; OnClick (fun _ -> MoveTo (name,BottomRight) |> dispatch) ]
+                                            buttonItem [ Icon "fa-caret-square-up"; Label "Top Left"; OnClick (fun _ -> MoveTo (name,TopLeft) |> dispatch) ]
+                                            buttonItem [ Icon "fa-caret-square-up"; Label "Top Right"; OnClick (fun _ -> MoveTo (name,TopRight) |> dispatch) ]
+                                            //buttonItem [ Icon "fa-square"; Label "Centre"; OnClick (fun _ -> MoveTo (name,CentreCentre) |> dispatch) ]
+                                        ]
+                                    ]
+                                ]
+                            else
+                                nothing
+                        )
                     ]
                 ]
 
@@ -687,25 +897,15 @@ with
                         Css.width (percent 100)
                         Css.height (percent 100)
                         Css.overflowAuto
+                        Css.backgroundColor Palette.contentBackground
                     ]
                     content
                 ]
-            ] |> withStyle [
-                rule ".dock-pane-wrapper" [
-                    Css.displayNone
-                    Css.width (percent 100)
-                    Css.height (percent 100)
-                ]
-
-                rule ".dock-pane-wrapper.selected" [
-                    Css.displayFlex
-                    Css.flexDirectionColumn
-                ]
             ]
 
-        DomHelpers.getContentParentNode location |> DOM.mountOn wrapper |> ignore
+        DomHelpers.getContentParentNode initLoc |> DOM.mountOn wrapper |> ignore
 
-        dispatch <| Message.AddTab (name,"",location)
+        dispatch <| Message.AddTab (name,"",initLoc)
 
 let container (tabLabels : DockCollection) =
     let c = DockContainer()
