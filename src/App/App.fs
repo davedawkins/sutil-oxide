@@ -4,6 +4,7 @@ open Sutil
 open Sutil.DOM
 open Sutil.Styling
 open type Feliz.length
+open Feliz
 
 let appCss = [
     rule ".main-container" [
@@ -16,11 +17,13 @@ let appCss = [
         Css.backgroundColor "#EEEEEE"
         Css.width (percent 100)
         Css.height (rem 1.5)
+        Css.borderBottom (px 1, borderStyle.solid, Dock.Css.Palette.border)
     ]
     rule ".status-footer" [
         Css.backgroundColor "#EEEEEE"
         Css.width (percent 100)
         Css.height (rem 1.5)
+        Css.borderTop (px 1, borderStyle.solid, Dock.Css.Palette.border)
     ]
 ]
 
@@ -64,7 +67,7 @@ let initPanes() =
     dc.AddPane( "Components",    BottomRight, dummy "Components" dummyColor )
     dc.AddPane( "Knowledgebase", BottomRight, dummy "Knowledgebase" dummyColor )
 
-    dc.AddPane( "Editor",        CentreCentre, dummy "Editor" "white" )
+    //dc.AddPane( "Editor",        CentreCentre, dummy "Editor" "white" )
     ()
 
 let view () =

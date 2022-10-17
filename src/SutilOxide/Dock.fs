@@ -10,7 +10,7 @@ open type Feliz.length
 open Fable.Core
 open Fable.Core.JsInterop
 open Browser.Types
-open Css
+open Dock.Css
 
 type UI =
     static member divc (cls:string) (items : seq<SutilElement>) =
@@ -304,6 +304,17 @@ module DockHelpers =
         |> Map.ofList
         |> (fun map -> { m with SelectedPanes = map } )
 
+    let ensureCentreSelected (m : Model) =
+        match m.SelectedPanes[CentreCentre] with
+        | None ->
+            { m with
+                SelectedPanes =
+                    m.SelectedPanes.Add(
+                        CentreCentre,
+                        m.Docks.GetPanes CentreCentre |> List.tryHead |> Option.map (fun p -> p.Name))
+            }
+        | _ -> m
+
 type Message =
     | AddTab of (string*string*DockLocation)
     | SetDragging of string
@@ -325,6 +336,7 @@ let init docks =
 
 let update msg model =
     console.log($"{msg}")
+
     match msg with
     | AddTab (name,icon,location) ->
         let station = model.Docks.Stations[location]
@@ -344,15 +356,18 @@ let update msg model =
             | Some name when name = pane -> None
             | _ -> Some pane
 
-        console.log(sprintf "Select: %A %A" loc selected)
-        { model with SelectedPanes = model.SelectedPanes.Add(loc,selected) }, Cmd.none
+        //console.log(sprintf "Select: %A %A" loc selected)
+        { model with SelectedPanes = model.SelectedPanes.Add(loc,selected) } |> DockHelpers.ensureCentreSelected, Cmd.none
 
     | MinimizePane pane ->
-        DockHelpers.findPaneLocation model.Docks pane
-        |> Option.map (fun loc ->
-            { model with SelectedPanes = model.SelectedPanes.Add(loc,None) }, Cmd.none
-        )
-        |> Option.defaultValue (model, Cmd.none)
+        let m =
+            DockHelpers.findPaneLocation model.Docks pane
+            |> Option.map (fun loc ->
+                { model with SelectedPanes = model.SelectedPanes.Add(loc,None) }
+            )
+            |> Option.defaultValue model
+            |> DockHelpers.ensureCentreSelected
+        m, Cmd.none
 
     | SetDragging d ->
         { model with DraggingTab = Some { BeingDragged = d; Preview = None} }, Cmd.none
@@ -366,7 +381,7 @@ let update msg model =
         { m with
             DraggingTab = None
             SelectedPanes = m.SelectedPanes.Add(loc, Some pane)
-        }, Cmd.none
+        } |> DockHelpers.ensureCentreSelected, Cmd.none
 
     | CommitDrag ->
         let m =
@@ -385,7 +400,7 @@ let update msg model =
                             SelectedPanes = m.SelectedPanes.Add(loc, Some dt.BeingDragged)
                         }
                 ))
-        m |> Option.defaultValue model, Cmd.none
+        m |> Option.defaultValue model |> DockHelpers.ensureCentreSelected, Cmd.none
 
     | CancelDrag ->
         { model with DraggingTab = None }, Cmd.none
@@ -513,7 +528,11 @@ module EventHandlers =
         el.classList.remove("dragging")
 
     let tabClick dockLocation (tabLabel : DockPane) dispatch (e : MouseEvent) =
-        (dockLocation,(tabLabel.Name)) |> TogglePane |>  dispatch
+        match dockLocation with
+        | CentreCentre ->
+            (dockLocation,Some (tabLabel.Name)) |> SelectPane |>  dispatch
+        | _ ->
+            (dockLocation,(tabLabel.Name)) |> TogglePane |>  dispatch
 
 let viewTabLabel (model : System.IObservable<Model>) dispatch dockLocation (tabLabel : DockPane) =
     //console.log($"{tabLabel.Name} @ {dockLocation}")
@@ -732,6 +751,19 @@ type DockContainer() =
                     ]
 
                     UI.divc "dock-main" [
+
+                        Bind.el(
+                            model
+                                |> Store.map (fun m -> m.Docks.GetPanes(CentreCentre))
+                                |> Observable.distinctUntilChanged,
+                            fun tabs ->
+                                UI.divc "dock-tabs tabs-top border border-bottom" [
+                                    match tabs with
+                                    | [] | [ _ ] -> yield! []
+                                    | _ -> yield! tabs |> List.map (viewTabLabel model dispatch CentreCentre)
+                                ]
+                        )
+
                         dockContainer model CentreCentre
                     ]
 
@@ -812,41 +844,17 @@ with
 
         let lname = name.ToLower()
 
-        let debugWrapper =
-            UI.divc "dock-pane-wrapper" [
-                Attr.id ("pane-" + lname)
-                Html.div [
-                    Attr.style [
-                        Css.width (percent 100)
-                        Css.height (percent 100)
-                        Css.overflowAuto
-                    ]
-                    content
-                ]
-                Bind.toggleClass(
-                    model |> Store.map (fun m -> (DockHelpers.findPaneLocation m.Docks name |> Option.bind (fun l -> m.SelectedPanes[l]) |> Option.defaultValue "") = name),
-                    "selected")
-            ]|> withStyle [
-                rule ".dock-pane-wrapper" [
-                    Css.displayNone
-                    Css.width (percent 100)
-                    Css.height (percent 100)
-                ]
-
-                rule ".dock-pane-wrapper.selected" [
-                    Css.displayBlock
-                ]
-            ]
-
         let loc = model |> Store.map (fun m -> (DockHelpers.findPaneLocation m.Docks name)) |> Observable.distinctUntilChanged
 
         let wrapper =
             UI.divc "dock-pane-wrapper" [
+
                 Attr.id ("pane-" + lname)
 
-
                 Bind.toggleClass(
-                    model |> Store.map (fun m -> (DockHelpers.findPaneLocation m.Docks name |> Option.bind (fun l -> m.SelectedPanes[l]) |> Option.defaultValue "") = name),
+                    model
+                    |> Store.map (fun m -> (DockHelpers.findPaneLocation m.Docks name
+                    |> Option.bind (fun l -> m.SelectedPanes[l]) |> Option.defaultValue "") = name),
                     "selected")
 
                 Html.div [
@@ -857,38 +865,40 @@ with
                         //Css.height (rem 1.5)
                         Css.backgroundColor (Palette.controlBackground)
                         Css.fontSize (percent 75)
+                        Css.displayFlex
+                        Css.flexDirectionColumn
+                        Css.justifyContentCenter
+                        Css.height (rem 2)
                     ]
                     Html.div [
                         Attr.style [
                             Css.displayFlex
                             Css.flexDirectionRow
                             Css.justifyContentSpaceBetween
+                            Css.alignItemsCenter
                         ]
-                        text name
 
-                        Bind.el( loc, fun optLoc ->
-                            if optLoc.IsSome && optLoc <> Some CentreCentre then
-                                buttonGroup [
-                                    buttonItem [ Icon "fa-window-minimize"; Label ""; OnClick (fun _ -> MinimizePane name |> dispatch) ]
-                                    dropDownItem [ Icon "fa-cog"; Label ""] [
-                                        menuItem [
-                                            Label "Move To"
-                                        ] [
-                                            buttonItem [ Icon "fa-caret-square-left"; Label "Left Top"; OnClick (fun _ -> MoveTo (name,LeftTop) |> dispatch) ]
-                                            buttonItem [ Icon "fa-caret-square-left"; Label "Left Bottom"; OnClick (fun _ -> MoveTo (name,LeftBottom) |> dispatch) ]
-                                            buttonItem [ Icon "fa-caret-square-right"; Label "Right Top"; OnClick (fun _ -> MoveTo (name,RightTop) |> dispatch) ]
-                                            buttonItem [ Icon "fa-caret-square-right"; Label "Right Bottom"; OnClick (fun _ -> MoveTo (name,RightBottom) |> dispatch) ]
-                                            buttonItem [ Icon "fa-caret-square-down"; Label "Bottom Left"; OnClick (fun _ -> MoveTo (name,BottomLeft) |> dispatch) ]
-                                            buttonItem [ Icon "fa-caret-square-down"; Label "Bottom Right"; OnClick (fun _ -> MoveTo (name,BottomRight) |> dispatch) ]
-                                            buttonItem [ Icon "fa-caret-square-up"; Label "Top Left"; OnClick (fun _ -> MoveTo (name,TopLeft) |> dispatch) ]
-                                            buttonItem [ Icon "fa-caret-square-up"; Label "Top Right"; OnClick (fun _ -> MoveTo (name,TopRight) |> dispatch) ]
-                                            //buttonItem [ Icon "fa-square"; Label "Centre"; OnClick (fun _ -> MoveTo (name,CentreCentre) |> dispatch) ]
-                                        ]
+                        text name
+                        Bind.visibility
+                            (loc |> Store.map (fun optLoc -> optLoc.IsSome && optLoc <> Some CentreCentre))
+                            (buttonGroup [
+                                buttonItem [ Icon "fa-window-minimize"; Label ""; OnClick (fun _ -> MinimizePane name |> dispatch) ]
+                                dropDownItem [ Icon "fa-cog"; Label ""] [
+                                    menuItem [
+                                        Label "Move To"
+                                    ] [
+                                        buttonItem [ Icon "fa-caret-square-left"; Label "Left Top"; OnClick (fun _ -> MoveTo (name,LeftTop) |> dispatch) ]
+                                        buttonItem [ Icon "fa-caret-square-left"; Label "Left Bottom"; OnClick (fun _ -> MoveTo (name,LeftBottom) |> dispatch) ]
+                                        buttonItem [ Icon "fa-caret-square-right"; Label "Right Top"; OnClick (fun _ -> MoveTo (name,RightTop) |> dispatch) ]
+                                        buttonItem [ Icon "fa-caret-square-right"; Label "Right Bottom"; OnClick (fun _ -> MoveTo (name,RightBottom) |> dispatch) ]
+                                        buttonItem [ Icon "fa-caret-square-down"; Label "Bottom Left"; OnClick (fun _ -> MoveTo (name,BottomLeft) |> dispatch) ]
+                                        buttonItem [ Icon "fa-caret-square-down"; Label "Bottom Right"; OnClick (fun _ -> MoveTo (name,BottomRight) |> dispatch) ]
+                                        buttonItem [ Icon "fa-caret-square-up"; Label "Top Left"; OnClick (fun _ -> MoveTo (name,TopLeft) |> dispatch) ]
+                                        buttonItem [ Icon "fa-caret-square-up"; Label "Top Right"; OnClick (fun _ -> MoveTo (name,TopRight) |> dispatch) ]
+                                        buttonItem [ Icon "fa-square"; Label "Centre"; OnClick (fun _ -> MoveTo (name,CentreCentre) |> dispatch) ]
                                     ]
                                 ]
-                            else
-                                nothing
-                        )
+                            ])
                     ]
                 ]
 

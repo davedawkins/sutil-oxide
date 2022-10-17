@@ -1,11 +1,16 @@
 {
+  "repository": {
+    "url": "https://github.com/davedawkins/sutil-oxide.git"
+  },
   "private": true,
   "scripts": {
     "postinstall": "dotnet tool restore",
-    "start": "dotnet fable watch src --run webpack-dev-server",
-    "build": "dotnet fable src && webpack"
+    "start": "dotnet fable watch src/App --run webpack-dev-server",
+    "build": "dotnet fable src/App && webpack",
+    "publish": "node publish.js"
   },
   "devDependencies": {
+    "gh-pages": "^4.0.0",
     "webpack": "^4.46.0",
     "webpack-cli": "^3.3.0",
     "webpack-dev-server": "^3.11.2"

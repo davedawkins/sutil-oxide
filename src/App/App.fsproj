@@ -3,12 +3,12 @@
     <TargetFramework>netstandard2.0</TargetFramework>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="Css.fs" />
-    <Compile Include="Dock.fs" />
     <Compile Include="App.fs" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\SutilOxide\SutilOxide.fsproj" />
     <PackageReference Include="Fable.Browser.Dom" Version="2.*" />
     <PackageReference Include="Fable.Core" Version="3.*" />
-    <ProjectReference Include="..\..\Sutil\src\Sutil\Sutil.fsproj" />  </ItemGroup>
+    <ProjectReference Include="..\..\..\Sutil\src\Sutil\Sutil.fsproj" />
+</ItemGroup>
 </Project>

@@ -1,4 +1,4 @@
-module Css
+module Dock.Css
 
 open Sutil
 open Sutil.Styling
@@ -30,6 +30,12 @@ let containerIds = [
 ]
 
 let css = [
+
+    rule ".content-vcentre" [
+        Css.displayFlex
+        Css.flexDirectionColumn
+        Css.justifyContentCenter
+    ]
 
     rule ".dock-container" [
         Css.width (percent 100)
@@ -134,6 +140,7 @@ let css = [
 
     // ------------------------------------------------------------------------
     // Tabs
+
 
     rule ".dock-tabs" [
         Css.positionRelative
@@ -545,6 +552,10 @@ let css = [
         Css.custom("top", "unset")
     ]
 
+    rule ".dock-bottom-right-container .item-menu>.menu-stack" [
+        Css.bottom (0)
+        Css.custom("top", "unset")
+    ]
 
     rule "*:focus-within>.menu-stack" [
         Css.displayFlex
