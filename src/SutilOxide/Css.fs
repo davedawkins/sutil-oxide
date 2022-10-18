@@ -1,20 +1,55 @@
-module Dock.Css
+module SutilOxide.Css
 
 open Sutil
 open Sutil.Styling
 open type Feliz.length
 
-module Palette =
+type Theme = {
+    TextColor : string
+    Border : string
+    ControlBackground  : string;
+    ContentBackground  : string;
+    BackgroundHover    : string;
+    BackgroundSelected : string;
+    Handle    :string;
+    Icon      :string;
+    Highlight :string;
+    Overlay   :string;
+}
+
+let LightTheme =
     let border = "#DBDBDB"
-    let controlBackground = "#EBEBEB"
-    let contentBackground = "#F4F4F4"
-    let backgroundHover = "#DDDDDD"
-    let backgroundSelected = "#CCCCCC"
-    let handle = border
-    let icon = "#AAAAAA"
-    //let preview = "#b9d3de"
     let highlight = "#B7DAFA"
-    let overlay = highlight; // "#c7c5f9db"
+    {
+        TextColor = "black"
+        Border = border
+        ControlBackground = "#EBEBEB"
+        ContentBackground = "#F4F4F4"
+        BackgroundHover = "#DDDDDD"
+        BackgroundSelected = "#CCCCCC"
+        Handle = border
+        Icon = "#AAAAAA"
+        Highlight = highlight
+        Overlay = highlight
+    }
+
+let DarkTheme =
+    let border = "rgb(40,40,40)"
+    let highlight = "#495764" //"#6D8296"
+    {
+        TextColor = "rgb(207,207,207)"
+        Border = border
+        ControlBackground = "rgb(45,45,45)"
+        ContentBackground = "rgb(35,35,35)"
+        BackgroundHover = "#222222"
+        BackgroundSelected = "#333333"
+        Handle = border
+        Icon = "#666666"
+        Highlight = highlight
+        Overlay = highlight
+    }
+
+
 
 let primaryIds = [ "left"; "right"; "top"; "bottom" ]
 let containerIds = [
@@ -29,7 +64,17 @@ let containerIds = [
     "centre-centre"
 ]
 
-let css = [
+let private baseStyling (theme : Theme) = [
+
+    rule "*" [
+        Css.color theme.TextColor
+    ]
+
+    rule "a" [
+        Css.custom("color", "inherit")
+        Css.textDecorationNone
+        Css.whiteSpaceNowrap
+    ]
 
     rule ".content-vcentre" [
         Css.displayFlex
@@ -37,10 +82,14 @@ let css = [
         Css.justifyContentCenter
     ]
 
+]
+
+let private dockStyling (theme : Theme) = [
+
     rule ".dock-container" [
         Css.width (percent 100)
         Css.height (percent 100)
-        Css.backgroundColor Palette.controlBackground
+        Css.backgroundColor theme.ControlBackground
         Css.displayGrid
         Css.custom("grid-template-columns", "max-content 1fr 1fr max-content")
         Css.custom("grid-template-rows", "max-content 1fr 1fr max-content")
@@ -61,7 +110,11 @@ let css = [
         Css.displayGrid
         Css.gridRow ("2","2")
         //Css.gridColumn ("2", "4")
-        Css.custom("grid-template-columns", "max-content auto max-content")
+        // left container
+        // centre tabs
+        // centre-container
+        // right-container
+        Css.custom("grid-template-columns", "max-content max-content auto max-content")
     ]
 
     rule ".dock-left-container" [
@@ -81,7 +134,7 @@ let css = [
         Css.width (percent 100)
         Css.minHeight (rem 2)
         Css.gridRow ("1","1")
-        Css.gridColumn ("2", "2")
+        Css.gridColumn ("3", "3")
         Css.displayFlex
         Css.flexDirectionColumn
     ]
@@ -92,7 +145,7 @@ let css = [
         Css.height (percent 100)
         Css.minWidth (rem 2)
         Css.gridRow ("1","1")
-        Css.gridColumn ("3", "3")
+        Css.gridColumn ("4", "4")
         Css.displayFlex
         Css.flexDirectionColumn
     ]
@@ -148,6 +201,11 @@ let css = [
         Css.custom("grid-template-columns", "repeat(10,max-content)")
         Css.userSelectNone
         //Css.gap (rem 1)
+    ]
+
+    rule ".tabs-centre" [
+        Css.custom ("writing-mode", "sideways-lr")
+        Css.custom ("justify-content", "end")
     ]
 
     rule ".tabs-left-top" [
@@ -242,19 +300,19 @@ let css = [
     ]
 
     rule ".tab-label i" [
-        Css.color Palette.icon
+        Css.color theme.Icon
     ]
 
     rule ".dragging.tab-label i" [
-        Css.color Palette.overlay
+        Css.color theme.Overlay
     ]
 
     rule ".tab-label:hover" [
-        Css.backgroundColor Palette.backgroundHover
+        Css.backgroundColor theme.BackgroundHover
     ]
 
     rule ".tab-label.selected" [
-        Css.backgroundColor Palette.backgroundSelected
+        Css.backgroundColor theme.BackgroundSelected
     ]
 
     rule ".tabs-top .tab-label" [
@@ -278,6 +336,14 @@ let css = [
         Css.paddingLeft (px 2)
     ]
 
+    rule ".tabs-centre .tab-label" [
+        Css.paddingBottom (rem 0.5)
+        Css.paddingRight (rem 0)
+        Css.paddingTop (rem 0.5)
+        Css.paddingLeft (px 2)
+    ]
+
+
     rule ".tabs-right .tab-label" [
         Css.paddingBottom (rem 0.5)
         Css.paddingRight (rem 0)
@@ -296,7 +362,7 @@ let css = [
 
     rule ".dock-resize-handle" [
         Css.positionAbsolute
-        Css.backgroundColor Palette.handle
+        Css.backgroundColor theme.Handle
         Css.custom( "--resize-handle-thickness", "1px" )
         Css.zIndex (99)
     ]
@@ -360,7 +426,7 @@ let css = [
 
     rule ".border" [
         Css.borderStyleSolid
-        Css.borderColor Palette.border
+        Css.borderColor theme.Border
         Css.borderWidth (px 0)
     ]
 
@@ -393,11 +459,11 @@ let css = [
     ]
 
     rule ".dock-tabs .preview" [
-        Css.backgroundColor Palette.overlay
+        Css.backgroundColor theme.Overlay
     ]
 
     rule ".preview" [
-        Css.backgroundColor Palette.overlay
+        Css.backgroundColor theme.Overlay
     ]
 
 
@@ -433,7 +499,7 @@ let css = [
     rule ".drag-overlay" [
         Css.displayNone
         Css.positionRelative
-        Css.backgroundColor (Palette.overlay)
+        Css.backgroundColor (theme.Overlay)
         Css.zIndex 999
         Css.width (percent 100)
         Css.height (percent 100)
@@ -485,8 +551,8 @@ let css = [
 
     rule ".tab-label.dragging" [
         //Css.displayNone
-        Css.backgroundColor Palette.overlay
-        Css.color Palette.overlay
+        Css.backgroundColor theme.Overlay
+        Css.color theme.Overlay
     ]
 
 
@@ -496,14 +562,41 @@ let css = [
         Css.top (px -200)
     ]
 
-    rule ".hidden" [
-        Css.displayNone
+    rule ".pane-header" [
+        Css.padding (px 2)
+        Css.paddingLeft (rem 0.5)
+        Css.paddingRight (rem 0.5)
+        //Css.height (rem 1.5)
+        Css.backgroundColor (theme.ControlBackground)
+        Css.fontSize (percent 75)
+        Css.displayFlex
+        Css.flexDirectionColumn
+        Css.justifyContentCenter
+        Css.height (rem 1.5)
     ]
 
-    rule "a" [
-        Css.custom("color", "inherit")
-        Css.textDecorationNone
-        Css.whiteSpaceNowrap
+    rule ".pane-header>div" [
+        Css.displayFlex
+        Css.flexDirectionRow
+        Css.justifyContentSpaceBetween
+        Css.alignItemsCenter
+    ]
+
+    rule ".pane-content" [
+        Css.width (percent 100)
+        Css.height (percent 100)
+        Css.overflowAuto
+        Css.backgroundColor theme.ContentBackground
+    ]
+
+]
+
+let private toolbarStyling (theme : Theme) = [
+
+    rule ".xd-toolbar" [
+        Css.fontSize (percent 75)
+        Css.displayFlex
+        Css.flexDirectionRow
     ]
 
     rule ".button-group" [
@@ -517,10 +610,15 @@ let css = [
         Css.displayNone
         Css.flexDirectionColumn
         Css.gap (px 4)
-        Css.backgroundColor (Palette.controlBackground)
+        Css.backgroundColor (theme.ControlBackground)
         Css.boxShadow "0 2px 5px 0 rgba(0,0,0,.5)"
         Css.zIndex 999
 //        Css.custom("top", "calc(100% + 0px)")
+    ]
+
+    rule ".xd-toolbar .menu-stack" [
+        Css.left 0
+        Css.top (percent 100)
     ]
 
     // Menus on left hand
@@ -577,28 +675,51 @@ let css = [
         Css.custom("grid-template-columns", "1.2rem auto 1rem")
     ]
 
+    rule ".xd-toolbar>.item-button" [
+        Css.displayFlex
+        Css.flexDirectionRow
+
+        Css.custom("grid-template-columns", "unset")
+    ]
+
+    rule ".menu-stack>.item-button.checkbox" [
+        Css.custom("grid-template-columns", "1.2rem auto 1rem")
+    ]
+
     rule ".menu-stack>.item-button>span" [
         Css.paddingRight (rem 0.5)
     ]
 
     rule ".item-button>i" [
-        Css.color Palette.icon
+        Css.color theme.Icon
         Css.textAlignCenter
     ]
 
     rule ".item-button:hover" [
-        Css.backgroundColor Palette.backgroundHover
+        Css.backgroundColor theme.BackgroundHover
     ]
 
     rule ".menu-stack>.item-button:hover" [
-        Css.backgroundColor Palette.highlight
+        Css.backgroundColor theme.Highlight
     ]
 
     rule ".item-button:active" [
-        Css.backgroundColor Palette.backgroundSelected
+        Css.backgroundColor theme.BackgroundSelected
         Css.color ("inherit")
     ]
 
+    rule ".fa-check" [
+        Css.opacity 0
+    ]
+    rule ".fa-check.checked" [
+        Css.opacity 1
+    ]
+]
+
+let overrides (theme : Theme) = [
+    rule ".hidden" [
+        Css.displayNone
+    ]
     rule ".dock-pane-wrapper" [
         Css.displayNone
         Css.width (percent 100)
@@ -609,5 +730,15 @@ let css = [
         Css.displayFlex
         Css.flexDirectionColumn
     ]
-
 ]
+
+let Styling (t : Theme) = baseStyling t @ dockStyling t @ toolbarStyling t @ overrides t
+
+open Browser.DomExtensions
+open Browser.CssExtensions
+open Browser.Dom
+
+//let oxide (e : Sutil.DOM.SutilElement) = e |> withStyle Styling
+
+let installStyling (t : Theme) =
+    addStyleSheet Browser.Dom.document "" (Styling t)

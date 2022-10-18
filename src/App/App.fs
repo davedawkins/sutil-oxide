@@ -5,6 +5,10 @@ open Sutil.DOM
 open Sutil.Styling
 open type Feliz.length
 open Feliz
+open SutilOxide
+open SutilOxide.Dock
+open SutilOxide.Types
+
 
 let appCss = [
     rule ".main-container" [
@@ -17,17 +21,16 @@ let appCss = [
         Css.backgroundColor "#EEEEEE"
         Css.width (percent 100)
         Css.height (rem 1.5)
-        Css.borderBottom (px 1, borderStyle.solid, Dock.Css.Palette.border)
+        Css.borderBottom (px 1, borderStyle.solid, SutilOxide.Css.LightTheme.Border)
     ]
     rule ".status-footer" [
         Css.backgroundColor "#EEEEEE"
         Css.width (percent 100)
         Css.height (rem 1.5)
-        Css.borderTop (px 1, borderStyle.solid, Dock.Css.Palette.border)
+        Css.borderTop (px 1, borderStyle.solid, SutilOxide.Css.LightTheme.Border)
     ]
 ]
 
-open Dock
 open Fable.Core.JS
 
 let dummy name colour =
@@ -40,7 +43,9 @@ let dummy name colour =
         text name
     ]
 
+
 let dc = DockContainer()
+
 
 let dummyColor = "transparent"
 
@@ -67,18 +72,61 @@ let initPanes() =
     dc.AddPane( "Components",    BottomRight, dummy "Components" dummyColor )
     dc.AddPane( "Knowledgebase", BottomRight, dummy "Knowledgebase" dummyColor )
 
-    //dc.AddPane( "Editor",        CentreCentre, dummy "Editor" "white" )
+    dc.AddPane( "Editor",        CentreCentre, dummy "Editor" "white" )
+    dc.AddPane( "Charts",        CentreCentre, dummy "Charts" "white" )
     ()
 
+type Theme =
+    | Light
+    | Dark
+
+type Model = {
+    Theme : Theme
+}
+
+type Msg =
+    | SetTheme of Theme
+
+let init () = { Theme = Light }, Cmd.none
+
+let update msg model =
+    match msg with
+    | SetTheme t -> { model with Theme = t }, Cmd.none
+
 let view () =
+    let model, dispatch = () |> Store.makeElmish init update ignore
+    let mutable styleCleanup = ignore
+
+    model |> Store.map (fun t -> t.Theme) |> Observable.distinctUntilChanged |> Store.subscribe (fun t ->
+        styleCleanup()
+        let theme =
+            match t with
+            | Light -> SutilOxide.Css.LightTheme
+            | Dark -> SutilOxide.Css.DarkTheme
+        styleCleanup <- SutilOxide.Css.installStyling theme
+    ) |> ignore
+
     Html.div [
         Sutil.Attr.onMount (fun e ->
             initPanes()
             ) [ Sutil.Attr.EventModifier.Once ]
         Attr.className "main-container"
-        Html.div [ Attr.className "toolbar"]
+        Toolbar.toolbar [] [
+            Toolbar.buttonItem [ Toolbar.Label "File"]
+
+            Toolbar.dropDownItem [ Toolbar.Label "View" ] [
+                Bind.el( model |> Store.map (fun m -> m.Theme), fun t ->
+                Toolbar.menuItem [ Toolbar.Label "Theme"] [
+                    Toolbar.checkItem [ Toolbar.Label "Light"; Toolbar.IsChecked (t = Light); Toolbar.OnCheckChanged (fun b -> if b then dispatch (SetTheme Light)) ]
+                    Toolbar.checkItem [ Toolbar.Label "Dark"; Toolbar.IsChecked (t = Dark); Toolbar.OnCheckChanged (fun b -> if b then dispatch (SetTheme Dark))]
+                ])
+            ]
+
+            Toolbar.buttonItem [ Toolbar.Label "Help"]
+        ]
         dc.View
         Html.div [ Attr.className "status-footer"]
     ] |> withStyle appCss
+
 
 view() |> Program.mountElement "sutil-app"
