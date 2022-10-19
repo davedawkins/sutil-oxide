@@ -121,7 +121,7 @@ let init docks =
     } |> DockHelpers.ensurePaneSelected, Cmd.none
 
 let update msg model =
-    console.log($"{msg}")
+    //console.log($"{msg}")
 
     match msg with
     | AddTab (name,icon,location) ->
@@ -518,7 +518,7 @@ type DockContainer() =
     do
         ()
 with
-    member __.View  = view
+    member __.View  =  view
 
     member __.AddPane (name : string, initLoc : DockLocation, content : SutilElement ) =
 

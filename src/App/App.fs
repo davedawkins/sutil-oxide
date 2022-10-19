@@ -9,7 +9,6 @@ open SutilOxide
 open SutilOxide.Dock
 open SutilOxide.Types
 
-
 let appCss = [
     rule ".main-container" [
         Css.displayFlex
@@ -17,17 +16,17 @@ let appCss = [
         Css.height (vh 100)
         Css.width (vw 100)
     ]
-    rule ".toolbar" [
-        Css.backgroundColor "#EEEEEE"
-        Css.width (percent 100)
-        Css.height (rem 1.5)
-        Css.borderBottom (px 1, borderStyle.solid, SutilOxide.Css.LightTheme.Border)
-    ]
+    // rule ".toolbar" [
+    //     Css.width (percent 100)
+    //     Css.height (rem 1.5)
+    //     Css.borderBottom (px 1, borderStyle.solid, SutilOxide.Css.LightTheme.Border)
+    // ]
     rule ".status-footer" [
-        Css.backgroundColor "#EEEEEE"
         Css.width (percent 100)
         Css.height (rem 1.5)
-        Css.borderTop (px 1, borderStyle.solid, SutilOxide.Css.LightTheme.Border)
+        Css.borderWidth 0
+        Css.borderTopWidth (px 1)
+        Css.borderTopStyle borderStyle.solid
     ]
 ]
 
@@ -107,12 +106,15 @@ let view () =
     ) |> ignore
 
     Html.div [
+        Attr.className "main-container"
+
         Sutil.Attr.onMount (fun e ->
             initPanes()
             ) [ Sutil.Attr.EventModifier.Once ]
-        Attr.className "main-container"
+
+
         Toolbar.toolbar [] [
-            Toolbar.buttonItem [ Toolbar.Label "File"]
+            Toolbar.buttonItem [ Toolbar.Label "File" ]
 
             Toolbar.dropDownItem [ Toolbar.Label "View" ] [
                 Bind.el( model |> Store.map (fun m -> m.Theme), fun t ->
@@ -122,10 +124,15 @@ let view () =
                 ])
             ]
 
-            Toolbar.buttonItem [ Toolbar.Label "Help"]
+            Toolbar.buttonItem [ Toolbar.Label "Help"; Toolbar.Icon "fa-life-ring"]
         ]
+
         dc.View
-        Html.div [ Attr.className "status-footer"]
+
+        Html.div [
+            Attr.className "status-footer theme-control-bg theme-border"
+        ]
+
     ] |> withStyle appCss
 
 

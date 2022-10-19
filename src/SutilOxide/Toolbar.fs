@@ -21,7 +21,12 @@ type ButtonMode =
     | Checkbox
     | Button
 
+type DisplayMode =
+    | LabelOnly
+    | IconOnly
+    | LabelIcon
 type ButtonProperty =
+    | Display of DisplayMode
     | Mode of ButtonMode
     | Label of string
     | Icon of string
@@ -30,6 +35,7 @@ type ButtonProperty =
     | IsChecked of bool
 
 type Button = {
+    Display : DisplayMode
     Mode : ButtonMode
     Label : string option
     Icon : string option
@@ -38,9 +44,10 @@ type Button = {
     IsChecked : bool
 }
 with
-    static member Empty = { Label = None; Icon = None; OnClick = None; OnCheckChanged = None; Mode = Button; IsChecked = false }
+    static member Empty = { Label = None; Icon = None; OnClick = None; OnCheckChanged = None; Mode = Button; IsChecked = false; Display = LabelIcon }
     member __.With (p : ButtonProperty) =
         match p with
+        | Display s -> { __ with Display = s }
         | Mode s -> { __ with Mode = s }
         | Label s -> { __ with Label = Some s }
         | Icon s -> { __ with Icon = Some s }
@@ -60,16 +67,24 @@ let mkButton b =
     Html.a [
         Attr.className ("item-button" + (if b.Mode = Checkbox then " checkbox" else ""))
 
-        if (b.Mode = Checkbox) then
-            Html.i [ Attr.className ("fa fa-check " + (if b.IsChecked then "checked" else "")) ]
-        else
-            b.Icon
-                |> Option.map (fun icon ->  Html.i [ Attr.className ("fa " + icon) ])
-                |> Option.defaultValue (Html.i [])
+        match b.Mode, b.Icon, b.Display with
 
-        b.Label
-            |> Option.map (fun label ->  Html.span label)
-            |> Option.defaultValue (Html.span "")
+        | Checkbox, _, _ ->
+            Html.i [ Attr.className ("fa fa-check " + (if b.IsChecked then "checked" else "")) ]
+
+        | _, Some icon, LabelIcon | _, Some icon, IconOnly ->
+            Html.i [ Attr.className ("fa " + icon) ]
+
+        | _ ->
+            Html.i [ Attr.style [ Css.displayNone ] ]
+
+        match b.Label, b.Display with
+
+        | Some label, LabelOnly | Some label, LabelIcon ->
+            Html.span label
+
+        | _ ->
+            Html.span [ Attr.style [ Css.displayNone ] ]
 
         b.OnClick
             |> Option.map (fun cb ->  Ev.onClick (fun e -> e.preventDefault(); cb e))

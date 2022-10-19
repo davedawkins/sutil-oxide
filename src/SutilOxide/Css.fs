@@ -28,7 +28,7 @@ let LightTheme =
         BackgroundHover = "#DDDDDD"
         BackgroundSelected = "#CCCCCC"
         Handle = border
-        Icon = "#AAAAAA"
+        Icon = "#50719B"
         Highlight = highlight
         Overlay = highlight
     }
@@ -44,7 +44,7 @@ let DarkTheme =
         BackgroundHover = "#222222"
         BackgroundSelected = "#333333"
         Handle = border
-        Icon = "#666666"
+        Icon = "#506baa"
         Highlight = highlight
         Overlay = highlight
     }
@@ -82,6 +82,17 @@ let private baseStyling (theme : Theme) = [
         Css.justifyContentCenter
     ]
 
+    rule ".theme-control-bg" [
+        Css.backgroundColor theme.ControlBackground
+    ]
+
+    rule ".theme-content-bg" [
+        Css.backgroundColor theme.ContentBackground
+    ]
+
+    rule ".theme-border" [
+        Css.borderColor theme.Border
+    ]
 ]
 
 let private dockStyling (theme : Theme) = [
@@ -597,6 +608,7 @@ let private toolbarStyling (theme : Theme) = [
         Css.fontSize (percent 75)
         Css.displayFlex
         Css.flexDirectionRow
+        Css.backgroundColor theme.ControlBackground
     ]
 
     rule ".button-group" [
@@ -665,7 +677,7 @@ let private toolbarStyling (theme : Theme) = [
 
     rule ".item-button" [
         Css.positionRelative
-        Css.padding (px 3)
+        Css.padding (px 4)
         Css.displayGrid
         Css.custom("grid-template-columns", "1.2rem auto")
         Css.alignItemsCenter
@@ -678,8 +690,10 @@ let private toolbarStyling (theme : Theme) = [
     rule ".xd-toolbar>.item-button" [
         Css.displayFlex
         Css.flexDirectionRow
-
+        Css.gap (rem 0.25)
         Css.custom("grid-template-columns", "unset")
+        Css.paddingLeft (rem 0.5)
+        Css.paddingRight (rem 0.5)
     ]
 
     rule ".menu-stack>.item-button.checkbox" [
@@ -714,6 +728,15 @@ let private toolbarStyling (theme : Theme) = [
     rule ".fa-check.checked" [
         Css.opacity 1
     ]
+
+    rule ".xd-toolbar .separator" [
+        Css.borderStyleSolid
+        Css.borderWidth (px 0)
+        Css.borderLeftWidth (px 1)
+        Css.borderColor theme.Border
+    ]
+
+
 ]
 
 let overrides (theme : Theme) = [
