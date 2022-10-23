@@ -6,6 +6,7 @@
     <Compile Include="Types.fs" />
     <Compile Include="DomHelpers.fs" />
     <Compile Include="Css.fs" />
+    <Compile Include="CellEditor.fs" />
     <Compile Include="Toolbar.fs" />
     <Compile Include="Dock.fs" />
   </ItemGroup>

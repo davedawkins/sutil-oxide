@@ -64,7 +64,7 @@ let menuStack items =
     UI.divc "menu-stack" items
 
 let mkButton b =
-    Html.a [
+    Html.button [
         Attr.className ("item-button" + (if b.Mode = Checkbox then " checkbox" else ""))
 
         match b.Mode, b.Icon, b.Display with
@@ -94,7 +94,6 @@ let mkButton b =
             |> Option.map (fun cb ->  Ev.onClick (fun e -> e.preventDefault(); cb (not (b.IsChecked))))
             |> Option.defaultValue nothing
 
-        Attr.href "#"
     ]
 
 let buttonItem props =
@@ -109,7 +108,7 @@ let checkItem props =
 let menuItem props items =
     let b = Button.From props
 
-    Html.a [
+    Html.button [
         Attr.className "item-button item-menu"
 
         b.Icon
@@ -125,8 +124,6 @@ let menuItem props items =
             |> Option.defaultValue nothing
 
         Html.i [ Attr.className "fa fa-angle-right"]
-
-        Attr.href "#"
 
         menuStack items
     ]
