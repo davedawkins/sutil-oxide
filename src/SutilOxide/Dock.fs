@@ -110,6 +110,7 @@ type Message =
     | SelectPane of DockLocation*string option
     | TogglePane of DockLocation*string
     | MinimizePane of string
+    | ShowPane of string
     | MoveTo of string*DockLocation
 
 
@@ -144,6 +145,15 @@ let update msg model =
 
         //console.log(sprintf "Select: %A %A" loc selected)
         { model with SelectedPanes = model.SelectedPanes.Add(loc,selected) } |> DockHelpers.ensureCentreSelected, Cmd.none
+
+    | ShowPane pane ->
+        let m =
+            DockHelpers.findPaneLocation model.Docks pane
+            |> Option.map (fun loc ->
+                { model with SelectedPanes = model.SelectedPanes.Add(loc,Some pane) }
+            )
+            |> Option.defaultValue model
+        m, Cmd.none
 
     | MinimizePane pane ->
         let m =
@@ -519,6 +529,9 @@ type DockContainer() =
         ()
 with
     member __.View  =  view
+
+    member __.ShowPane (name : string) =
+        dispatch (ShowPane name)
 
     member __.AddPane (name : string, initLoc : DockLocation, content : SutilElement ) =
 

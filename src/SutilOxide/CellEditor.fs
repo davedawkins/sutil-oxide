@@ -81,6 +81,22 @@ type IntCell() =
             parser = Int32.Parse
         )
 
+type FloatCell() =
+    static member Create( value : Getter<'R,float>, formatString : Printf.StringFormat<float -> string>, ?setter : Setter<'R,float> ) =
+        Config<'R,float>.Create(value,
+            editable = (setter |> Option.isSome),
+            setter = (setter |> Option.defaultValue ignore2),
+            formatter =  sprintf formatString,
+            parser = Double.Parse
+        )
+    static member Create( value : Getter<'R,float>, ?setter : Setter<'R,float> ) =
+        Config<'R,float>.Create(value,
+            editable = (setter |> Option.isSome),
+            setter = (setter |> Option.defaultValue ignore2),
+            formatter =  sprintf "%f",
+            parser = Double.Parse
+        )
+
 type StrCell() =
     static member Create<'R>( value : Getter<'R,string>, formatString : Printf.StringFormat<string -> string>, ?setter : Setter<'R,string> ) =
         Config<'R,string>.Create(value,

@@ -110,6 +110,11 @@ module DomHelpers =
     let toListFromNodeList (l : NodeListOf<'a>) =
         [0..l.length-1] |> List.map (fun i -> l.item(i),i)
 
+
+    let attributesAsList (e : HTMLElement) =
+        let l = e.attributes
+        [0..l.length-1] |> List.map (fun i -> l.item(i),i)
+
     let containsByWidth clientX (el : HTMLElement) =
         let r = el.getBoundingClientRect()
         clientX >= r.left && clientX <= r.right
