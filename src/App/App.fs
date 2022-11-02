@@ -108,7 +108,10 @@ let mdCss = [
                 Css.backgroundColor "hsl(43, 100%, 95%)"
                 Css.padding (rem 0.5)
                 Css.width (percent 100)
-                Css.height (percent 100)
+                Css.custom("height", "auto")
+            ]
+            rule ".md a" [
+                Css.textDecorationLineUnderline
             ]
     ]
 

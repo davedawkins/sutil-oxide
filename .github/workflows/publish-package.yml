@@ -1,0 +1,25 @@
+name: SutilOxide Publish Nuget
+on: [workflow_dispatch]
+jobs:
+  Sutil-Publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v3
+      - name: Clean
+        run: |
+          cd ${{ github.workspace }}
+          dotnet clean src/SutilOxide && dotnet nuget locals all --clear
+          dotnet clean src/App && dotnet nuget locals all --clear
+      - name: Publish
+        env:
+          NUGET_KEY: ${{ secrets.NUGET_KEY_SECRET }}
+        run: |
+          cd ${{ github.workspace }}
+          npm install
+          dotnet build src/SutilOxide -c Release
+          npm run publish:package
+      - uses: stefanzweifel/git-auto-commit-action@v4
+        with:
+          file_pattern: src/SutilOxide/SutilOxide.fsproj
+          commit_message: Release to nuget

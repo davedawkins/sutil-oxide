@@ -594,6 +594,8 @@ let private dockStyling (theme : Theme) = [
     ]
 
     rule ".pane-content" [
+        Css.displayFlex
+        Css.flexDirectionColumn
         Css.width (percent 100)
         Css.height (percent 100)
         Css.overflowAuto
