@@ -13,7 +13,8 @@
   <ItemGroup>
     <PackageReference Include="Fable.Browser.Dom" Version="2.*" />
     <PackageReference Include="Fable.Core" Version="3.*" />
-    <ProjectReference Include="..\..\..\Sutil\src\Sutil\Sutil.fsproj" />
+    <!-- <ProjectReference Include="..\..\..\Sutil\src\Sutil\Sutil.fsproj" /> -->
+    <PackageReference Include="Sutil" Version="1.0.0-beta-020" />
   </ItemGroup>
   <!-- Add source files to "fable" folder in Nuget package -->
   <ItemGroup>
