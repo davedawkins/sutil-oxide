@@ -64,9 +64,9 @@ let menuStack items =
     UI.divc "menu-stack" items
 
 let mkButton b =
-    Html.button [
+    Html.a [
         Attr.className ("item-button" + (if b.Mode = Checkbox then " checkbox" else ""))
-
+        Attr.href "-"
         match b.Mode, b.Icon, b.Display with
 
         | Checkbox, _, _ ->
@@ -81,17 +81,20 @@ let mkButton b =
         match b.Label, b.Display with
 
         | Some label, LabelOnly | Some label, LabelIcon ->
-            Html.span label
+            Html.span [
+                Ev.onClick (fun e -> console.log("click span"))
+                text label
+            ]
 
         | _ ->
             Html.span [ Attr.style [ Css.displayNone ] ]
 
         b.OnClick
-            |> Option.map (fun cb ->  Ev.onClick (fun e -> e.preventDefault(); cb e))
+            |> Option.map (fun cb ->  Ev.onClick (fun e -> console.log("click"); e.preventDefault(); cb e))
             |> Option.defaultValue nothing
 
         b.OnCheckChanged
-            |> Option.map (fun cb ->  Ev.onClick (fun e -> e.preventDefault(); cb (not (b.IsChecked))))
+            |> Option.map (fun cb ->  Ev.onClick (fun e -> console.log("click2"); e.preventDefault(); cb (not (b.IsChecked))))
             |> Option.defaultValue nothing
 
     ]
@@ -108,7 +111,7 @@ let checkItem props =
 let menuItem props items =
     let b = Button.From props
 
-    Html.button [
+    Html.a [
         Attr.className "item-button item-menu"
 
         b.Icon
@@ -120,17 +123,19 @@ let menuItem props items =
             |> Option.defaultValue (Html.span "")
 
         b.OnClick
-            |> Option.map (fun cb ->  Ev.onClick (fun e -> e.preventDefault(); cb e))
+            |> Option.map (fun cb ->  Ev.onClick (fun e -> console.log("click"); e.preventDefault(); cb e))
             |> Option.defaultValue nothing
 
         Html.i [ Attr.className "fa fa-angle-right"]
 
+        Attr.href "-"
         menuStack items
     ]
 
 let dropDownItem props items =
     Html.a [
         Attr.className "item-button"
+        Attr.href "-"
 
         yield! props |> Seq.map (fun p ->
 
@@ -147,16 +152,19 @@ let dropDownItem props items =
 
         )
 
-        Attr.href "#"
-
         Ev.onClick (fun e ->
             props |> Seq.iter (fun p -> match p with OnClick cb -> cb e | _ -> ())
             if not e.defaultPrevented then
                 e.preventDefault()
-                let el = (DomHelpers.DomHelpers.currentEl e)
-                console.log(el)
+                //let el = (DomHelpers.DomHelpers.currentEl e)
+                //console.log(el)
                 //el.classList.toggle("active") |> ignore
         )
         menuStack items
+    ]
 
+let right items =
+    Html.div [
+        Attr.className "item-group-right"
+        yield! items
     ]

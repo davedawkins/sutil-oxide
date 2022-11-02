@@ -6,6 +6,8 @@
     <Compile Include="App.fs" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="Fable.Formatting.Markdown" Version="1.0.1" />
+    <PackageReference Include="Fable.Fetch" Version="2.2.0" />
     <ProjectReference Include="..\SutilOxide\SutilOxide.fsproj" />
     <PackageReference Include="Fable.Browser.Dom" Version="2.*" />
     <PackageReference Include="Fable.Core" Version="3.*" />

@@ -676,11 +676,21 @@ let private toolbarStyling (theme : Theme) = [
     ]
 
     rule ".item-button" [
+        Css.cursorPointer
         Css.positionRelative
         Css.padding (px 4)
         Css.displayGrid
         Css.custom("grid-template-columns", "1.2rem auto")
         Css.alignItemsCenter
+        Css.borderStyleNone
+    ]
+
+    rule ".item-group-right" [
+        Css.displayFlex
+        Css.flexDirectionRow
+        Css.justifyContentFlexEnd
+        Css.flexGrow 1
+        Css.marginRight (rem 1)
     ]
 
     rule ".menu-stack>.item-button" [
@@ -736,6 +746,12 @@ let private toolbarStyling (theme : Theme) = [
         Css.borderColor theme.Border
     ]
 
+    rule ".item-text" [
+        Css.alignSelfCenter
+        Css.displayInlineElement
+        Css.paddingLeft (rem 0.5)
+        Css.paddingRight (rem 0.5)
+    ]
 
 ]
 

@@ -534,6 +534,9 @@ with
         dispatch (ShowPane name)
 
     member __.AddPane (name : string, initLoc : DockLocation, content : SutilElement ) =
+        __.AddPane( name, initLoc, text name, content )
+
+    member __.AddPane (name : string, initLoc : DockLocation, header : SutilElement, content : SutilElement ) =
 
         let lname = name.ToLower()
 
@@ -572,7 +575,7 @@ with
 
                 UI.divc "pane-header" [
                     Html.div [
-                        text name
+                        header
                         Bind.visibility
                             (loc |> Store.map (fun optLoc -> initLoc <> CentreCentre || optLoc <> Some CentreCentre))
                             toolbar
