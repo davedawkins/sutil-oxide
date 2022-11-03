@@ -6,3 +6,5 @@
 - Placement of submenus brittle (attempts to use only CSS)
 - Pane content can cause overflow in main container when resized (which makes everything look broken)
 - Pane states are not persisted
+- Totally non-responsive
+- No accessibility support

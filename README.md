@@ -2,7 +2,7 @@
 
 Coming soon..
 
-A toolkit to help build web apps that need a docking pane layout
+A toolkit to help build web apps that need a docking pane layout. Aimed at desktop for now!
 
 Features:
 
