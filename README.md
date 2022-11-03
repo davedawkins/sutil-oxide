@@ -13,5 +13,5 @@ Features:
 - Minimize pane with "-" button or click on tab
 - No drag *to* centre pane. Use "cog" menu to send panes to centre
 - Theming support
-- Functionally reactive thanks to Sutil
+- Functionally reactive thanks to [Sutil](https://sutil.dev)
 
