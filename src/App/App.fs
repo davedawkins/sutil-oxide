@@ -67,8 +67,6 @@ let dummy name colour =
     ]
 
 
-let dc = DockContainer()
-
 let fetchSource url  =
     promise {
         //let url = sprintf "%s%s" urlBase tab
@@ -78,7 +76,7 @@ let fetchSource url  =
 
 
 let bindUrl url (view : string  -> SutilElement) =
-    Bind.promise (fetchSource url) view
+    Bind.promise (fetchSource url, view)
 
 
 let editor url model dispatch =
@@ -144,7 +142,7 @@ let preview model =
 
 let dummyColor = "transparent"
 
-let initPanes (model : IStore<Model>) dispatch =
+let initPanes (model : IStore<Model>) dispatch (dc : DockContainer) =
     dc.AddPane( "Explorer",      LeftTop,     dummy "Explorer" "hsl(120, 100%, 95%)" )
     dc.AddPane( "Database",      LeftTop,     dummy "Database" "hsl(43, 100%, 95%)" )
     dc.AddPane( "Solution",      LeftTop,     dummy "Solution" "hsl(43, 100%, 95%)" )
@@ -176,6 +174,8 @@ let initPanes (model : IStore<Model>) dispatch =
 open Toolbar
 
 let view () =
+    let dc = DockContainer()
+
     let model, dispatch = () |> Store.makeElmish init update ignore
     let mutable styleCleanup = ignore
 
@@ -190,11 +190,6 @@ let view () =
 
     Html.div [
         Attr.className "main-container"
-
-        Sutil.Attr.onMount (fun e ->
-            initPanes model dispatch
-            ) [ Sutil.Attr.EventModifier.Once ]
-
 
         toolbar [] [
             dropDownItem [ Label "File"] [
@@ -214,7 +209,7 @@ let view () =
             buttonItem [ Label "Help"; Icon "fa-life-ring"]
         ]
 
-        dc.View
+        DockContainer.Create (initPanes model dispatch)
 
         Html.div [
             Attr.className "status-footer theme-control-bg theme-border"

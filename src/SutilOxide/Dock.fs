@@ -383,9 +383,10 @@ let dockContainer model (loc : DockLocation) =
 type DockContainer() =
     let model, dispatch = DockCollection.Empty |> Store.makeElmish init update ignore
 
-    let view =
 
+    let dockContainer() =
         UI.divc "dock-container" [
+
             Ev.onDragOver (EventHandlers.dragOver dispatch)
             Ev.onDrop (EventHandlers.drop dispatch)
 
@@ -522,13 +523,26 @@ type DockContainer() =
 
             // Bottom right corner, so we can place a border on top
             UI.divc "dock-tabs box-right border border-top" []
+        ]
 
-        ]// |> withStyle SutilOxide.Css.Styling
+    let view (init : DockContainer -> unit) (self : DockContainer)=
+        fragment [
+
+            Sutil.Attr.onMount (fun e ->
+                init self
+            ) [ Sutil.Attr.EventModifier.Once ]
+
+            dockContainer()
+        ]
 
     do
         ()
 with
-    member __.View  =  view
+    static member Create (init : DockContainer -> unit) =
+        let dc = DockContainer()
+        dc.View init
+
+    member __.View (init: DockContainer -> unit)  =  view init __
 
     member __.ShowPane (name : string) =
         dispatch (ShowPane name)
@@ -591,6 +605,6 @@ with
 
         dispatch <| Message.AddTab (name,"",initLoc)
 
-let container (tabLabels : DockCollection) =
-    let c = DockContainer()
-    c.View
+// let container (tabLabels : DockCollection) =
+//     let c = DockContainer()
+//     c.View

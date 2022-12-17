@@ -39,12 +39,12 @@ let DarkTheme =
     {
         TextColor = "rgb(207,207,207)"
         Border = border
-        ControlBackground = "rgb(45,45,45)"
-        ContentBackground = "rgb(35,35,35)"
-        BackgroundHover = "#222222"
-        BackgroundSelected = "#333333"
+        ControlBackground = "rgb(85,85,85)"
+        ContentBackground = "rgb(105,105,105)"
+        BackgroundHover = "rgb(60,60,60)"
+        BackgroundSelected = "rgb(50,50,50)"
         Handle = border
-        Icon = "#506baa"
+        Icon = "#769fff"
         Highlight = highlight
         Overlay = highlight
     }
@@ -206,6 +206,18 @@ let private dockStyling (theme : Theme) = [
     // Tabs
 
 
+    let sidewaysLr = [
+        //Css.custom ("writing-mode", "sideways-lr")
+        Css.custom ("writing-mode", "vertical-lr")
+        Css.custom ("transform", "rotate(180deg)")
+    ]
+
+    let sidewaysRl = [
+//        Css.custom ("writing-mode", "sideways-rl")
+        Css.custom ("writing-mode", "vertical-lr")
+//        Css.custom ("transform", "rotate(180deg)")
+    ]
+
     rule ".dock-tabs" [
         Css.positionRelative
         Css.displayGrid
@@ -215,7 +227,7 @@ let private dockStyling (theme : Theme) = [
     ]
 
     rule ".tabs-centre" [
-        Css.custom ("writing-mode", "sideways-lr")
+        yield! sidewaysLr
         Css.custom ("justify-content", "end")
     ]
 
@@ -225,7 +237,7 @@ let private dockStyling (theme : Theme) = [
         Css.gridColumn ("1", "1")
         //Css.minWidth (rem 1)
 
-        Css.custom ("writing-mode", "sideways-lr")
+        yield! sidewaysLr
         Css.custom ("justify-content", "end")
     ]
 
@@ -235,7 +247,7 @@ let private dockStyling (theme : Theme) = [
         Css.gridColumn ("", "1")
         //Css.minWidth (rem 1)
 
-        Css.custom ("writing-mode", "sideways-lr")
+        yield! sidewaysLr
         Css.custom ("justify-content", "start")
     ]
 
@@ -244,7 +256,7 @@ let private dockStyling (theme : Theme) = [
         Css.gridColumn ("4", "4")
         //Css.minWidth (rem 1)
 
-        Css.custom ("writing-mode", "sideways-rl")
+        yield! sidewaysRl
         Css.custom ("justify-content", "start")
     ]
 
@@ -253,7 +265,7 @@ let private dockStyling (theme : Theme) = [
         Css.gridColumn ("4", "4")
         //Css.minWidth (rem 1)
 
-        Css.custom ("writing-mode", "sideways-rl")
+        yield! sidewaysRl
         Css.custom ("justify-content", "end")
     ]
 
@@ -363,12 +375,19 @@ let private dockStyling (theme : Theme) = [
     ]
 
     rule ".tabs-left .tab-label>i" [
-        Css.custom("writing-mode","tb")
+       //Css.custom("writing-mode","tb")
+        Css.transformRotate(180)
     ]
 
-    rule ".tabs-right .tab-label>i" [
-        Css.custom("writing-mode","tb")
+    rule ".tabs-centre .tab-label>i" [
+       //Css.custom("writing-mode","tb")
+        Css.transformRotate(180)
     ]
+
+//    rule ".tabs-right .tab-label>i" [
+//        Css.custom("writing-mode","tb")
+//        Css.transformRotate(-90)
+//    ]
 
 
     rule ".dock-resize-handle" [
@@ -466,7 +485,7 @@ let private dockStyling (theme : Theme) = [
     ]
 
     rule ".sideways-lr" [
-        Css.custom("writing-mode","sideways-lr")
+        yield! sidewaysLr
     ]
 
     rule ".dock-tabs .preview" [
@@ -771,6 +790,33 @@ let overrides (theme : Theme) = [
         Css.displayFlex
         Css.flexDirectionColumn
     ]
+
+    Media.MaxWidth( px 1200, [
+        rule ".tabs-left" [
+            Css.displayNone
+        ]
+        rule ".tabs-right" [
+            Css.displayNone
+        ]
+        rule ".dock-left-container" [
+            Css.displayNone
+        ]
+        rule ".dock-right-container" [
+            Css.displayNone
+        ]
+    ])
+
+    Media.MaxWidth( px 768, [
+        rule ".dock-tabs" [
+            Css.displayNone
+        ]
+        rule ".dock-top-container" [
+            Css.displayNone
+        ]
+        rule ".dock-bottom-container" [
+            Css.displayNone
+        ]
+    ])
 ]
 
 let Styling (t : Theme) = baseStyling t @ dockStyling t @ toolbarStyling t @ overrides t
