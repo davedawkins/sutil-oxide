@@ -4,7 +4,9 @@ A toolkit for building IDE-style web applications, using [Sutil](https://sutil.d
 
 ## Demo
 
-Click on the `Help` button for details on how this [demo](https://davedawkins.github.io/sutil-oxide/) works. Repository located at [https://github.com/davedawkins/sutil-oxide](https://github.com/davedawkins/sutil-oxide).
+The demo is best viewed on desktop, though it does try and be basically responsive.
+
+Click on the `Help` button for details on how the [demo](https://davedawkins.github.io/sutil-oxide/) works. Repository located at [https://github.com/davedawkins/sutil-oxide](https://github.com/davedawkins/sutil-oxide).
 
 ## Motivation
 
@@ -19,7 +21,7 @@ You will find many niggles and annoyances, but nonetheless I've found it valuabl
 
 ## Scope
 
-Any reusable UI component that might be generally useful for other Sutil projects. If I feel really clever, I will try to wrap as web components so that non-Sutil projects can make use.
+Any reusable UI component that might be generally useful for other Sutil projects. It may be possible to wrap as `web components`, such that non-Sutil projects can use this toolkit.
 
 ## Features
 
@@ -200,8 +202,4 @@ type DockLocation =
     | TopRight
 ```
 
-## Creating a Toolbar
-
-...
-
-## Creating a Statusbar
+...more to come
