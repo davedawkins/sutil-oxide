@@ -3,6 +3,7 @@
     <TargetFramework>netstandard2.0</TargetFramework>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="TextEditor.fs" />
     <Compile Include="App.fs" />
   </ItemGroup>
   <ItemGroup>
@@ -11,7 +12,8 @@
     <ProjectReference Include="..\SutilOxide\SutilOxide.fsproj" />
     <PackageReference Include="Fable.Browser.Dom" Version="2.*" />
     <PackageReference Include="Fable.Core" Version="3.*" />
-    <PackageReference Include="Sutil" Version="1.0.0-beta-021" />
+    <PackageReference Include="Sutil" Version="1.0.0-*" />
+    <PackageReference Include="Sutil.Toastr" Version="1.*"/>
     <!-- <ProjectReference Include="..\..\..\Sutil\src\Sutil\Sutil.fsproj" /> -->
 </ItemGroup>
 </Project>

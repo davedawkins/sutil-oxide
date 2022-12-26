@@ -3,6 +3,7 @@
 // https://github.com/fable-compiler/webpack-config-template
 
 var path = require("path");
+const CopyPlugin = require('copy-webpack-plugin');
 
 module.exports = {
     mode: "development",
@@ -17,5 +18,21 @@ module.exports = {
         port: 8080,
     },
     module: {
-    }
+        rules: [
+            {
+                test: /\.(sa|c)ss$/,
+                use: ["style-loader", "css-loader"]
+              }
+             ]
+    },
+    plugins: [
+        new CopyPlugin({
+            patterns: [
+                {
+                    from: "README.md",
+                    to: "README.md"
+                },
+            ],
+        }),
+    ],
 }

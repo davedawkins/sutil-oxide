@@ -1,5 +1,9 @@
 module SutilOxide.DomHelpers
 
+//
+// Copyright (c) 2022 David Dawkins
+//
+
 open Browser.Dom
 open Browser.CssExtensions
 

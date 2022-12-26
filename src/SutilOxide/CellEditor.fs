@@ -1,5 +1,9 @@
 module SutilOxide.CellEditor
 
+//
+// Copyright (c) 2022 David Dawkins
+//
+
 open System
 open Sutil
 open type Feliz.length

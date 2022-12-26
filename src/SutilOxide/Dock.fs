@@ -1,5 +1,9 @@
 module SutilOxide.Dock
 
+//
+// Copyright (c) 2022 David Dawkins
+//
+
 open Browser.Dom
 open Browser.CssExtensions
 
@@ -21,6 +25,7 @@ type DraggingTab = {
 }
 
 type Model = {
+    RefreshId : int
     Docks : DockCollection
     DraggingTab : DraggingTab option
     SelectedPanes : Map<DockLocation,string option>
@@ -40,9 +45,18 @@ module DockHelpers =
             panes |> List.insertAt i pane
 
     let findPaneLocationIndex (docks : DockCollection) name =
-        docks.Stations |> Map.tryPick (fun loc station -> station.Panes |> List.tryFindIndex (fun t -> t.Name = name) |> Option.map (fun i -> loc,i))
+        docks.Stations
+            |> Map.tryPick (fun loc station ->
+                //SutilOxide.Logging.log(sprintf "Finding %A %A " loc station)
+                station.Panes
+                |> List.tryFindIndex (fun t ->
+                    //SutilOxide.Logging.log("Finding " + t.Name + " ? " + name)
+                    t.Name = name)
+                |> Option.map (fun i -> loc,i)
+            )
 
-    let findPaneLocation(docks : DockCollection) name = findPaneLocationIndex docks name |> Option.map fst
+    let findPaneLocation(docks : DockCollection) name =
+        findPaneLocationIndex docks name |> Option.map fst
 
     let getPanes (docks : DockCollection) loc =
         docks.Stations[loc].Panes
@@ -101,8 +115,20 @@ module DockHelpers =
             }
         | _ -> m
 
-type Message =
-    | AddTab of (string*string*DockLocation)
+    let minimizePane model pane =
+        findPaneLocation model.Docks pane
+        |> Option.map (fun loc ->
+            { model with SelectedPanes = model.SelectedPanes.Add(loc,None) } )
+        |> Option.defaultValue model
+
+
+type DockProperty =
+    | Visible of bool
+    | Location of DockLocation
+
+type private Message =
+    | RemoveTab of string
+    | AddTab of (string*string*DockLocation*bool)
     | SetDragging of string
     | CancelDrag
     | PreviewDockLocation of (DockLocation * int) option
@@ -112,27 +138,43 @@ type Message =
     | MinimizePane of string
     | ShowPane of string
     | MoveTo of string*DockLocation
-
+    | DockProp of (string *DockProperty)
 
 let init docks =
     {
+        RefreshId = 0
         Docks = docks
         DraggingTab = None
         SelectedPanes = DockLocation.All |> List.fold (fun s loc -> s.Add(loc, None)) Map.empty
     } |> DockHelpers.ensurePaneSelected, Cmd.none
 
-let update msg model =
-    //console.log($"{msg}")
+let private update msg model =
+    //SutilOxide.Logging.log($"{msg}")
 
     match msg with
-    | AddTab (name,icon,location) ->
+
+    | DockProp (name,p) ->
+        match p with
+        | Visible z ->
+            model, Cmd.ofMsg (if z then ShowPane name else MinimizePane name)
+        | Location l ->
+            model, Cmd.ofMsg (MoveTo (name,l))
+
+    | RemoveTab name ->
+        let docks = DockHelpers.removeFromPanes (DockHelpers.minimizePane model name).Docks name
+        {
+            model with
+                Docks = docks
+        }, Cmd.none
+
+    | AddTab (name,icon,location,show) ->
         let station = model.Docks.Stations[location]
         let panes = station.Panes @ [ { Name = name }]
         let station' = { station with Panes = panes }
         {
             model with
                 Docks = { Stations = model.Docks.Stations.Add( location, station' ) }
-        } |> DockHelpers.ensurePaneSelected, Cmd.none
+        } , if show then Cmd.ofMsg (ShowPane name) else Cmd.none
 
     | SelectPane (loc,pane) ->
         { model with SelectedPanes = model.SelectedPanes.Add(loc,pane) }, Cmd.none
@@ -153,17 +195,10 @@ let update msg model =
                 { model with SelectedPanes = model.SelectedPanes.Add(loc,Some pane) }
             )
             |> Option.defaultValue model
-        m, Cmd.none
+        m,  Cmd.none
 
     | MinimizePane pane ->
-        let m =
-            DockHelpers.findPaneLocation model.Docks pane
-            |> Option.map (fun loc ->
-                { model with SelectedPanes = model.SelectedPanes.Add(loc,None) }
-            )
-            |> Option.defaultValue model
-            |> DockHelpers.ensureCentreSelected
-        m, Cmd.none
+        DockHelpers.minimizePane model pane, Cmd.none
 
     | SetDragging d ->
         { model with DraggingTab = Some { BeingDragged = d; Preview = None} }, Cmd.none
@@ -228,7 +263,7 @@ module ModelHelpers =
                     | Some (loc,_) -> loc = target
                     | _ -> false)
 
-module EventHandlers =
+module private EventHandlers =
 
     let previewOver dragEl query clientXY contains whichHalf =
         let tabs = document.querySelectorAll( query ) |> toListFromNodeList
@@ -330,7 +365,7 @@ module EventHandlers =
         | _ ->
             (dockLocation,(tabLabel.Name)) |> TogglePane |>  dispatch
 
-let viewTabLabel (model : System.IObservable<Model>) dispatch dockLocation (tabLabel : DockPane) =
+let private viewTabLabel (model : System.IObservable<Model>) dispatch dockLocation (tabLabel : DockPane) =
     //console.log($"{tabLabel.Name} @ {dockLocation}")
     UI.divc "tab-label" [
         Bind.toggleClass(
@@ -528,6 +563,10 @@ type DockContainer() =
     let view (init : DockContainer -> unit) (self : DockContainer)=
         fragment [
 
+            Attr.style [
+                Css.overflowHidden // Stop scrollbars appearing (during layout?), it seems they can then "stick" and stay latched on
+            ]
+
             Sutil.Attr.onMount (fun e ->
                 init self
             ) [ Sutil.Attr.EventModifier.Once ]
@@ -544,13 +583,25 @@ with
 
     member __.View (init: DockContainer -> unit)  =  view init __
 
-    member __.ShowPane (name : string) =
-        dispatch (ShowPane name)
+    member __.SetProperty (name:string, p : DockProperty) =
+        dispatch (DockProp (name,p))
+
+    member __.SetProperties (name:string, props : seq<DockProperty>) =
+        props |> Seq.iter (fun p -> __.SetProperty( name, p))
+
+    // member __.ShowPane (name : string) =
+    //     dispatch (ShowPane name)
+
+    member __.RemovePane(name : string) =
+        dispatch (RemoveTab name)
 
     member __.AddPane (name : string, initLoc : DockLocation, content : SutilElement ) =
-        __.AddPane( name, initLoc, text name, content )
+        __.AddPane( name, initLoc, content, true )
 
-    member __.AddPane (name : string, initLoc : DockLocation, header : SutilElement, content : SutilElement ) =
+    member __.AddPane (name : string, initLoc : DockLocation, content : SutilElement, show : bool ) =
+        __.AddPane( name, initLoc, text name, content, show )
+
+    member __.AddPane (name : string, initLoc : DockLocation, header : SutilElement, content : SutilElement, show : bool ) =
 
         let lname = name.ToLower()
 
@@ -603,7 +654,7 @@ with
 
         DomHelpers.getContentParentNode initLoc |> DOM.mountOn wrapper |> ignore
 
-        dispatch <| Message.AddTab (name,"",initLoc)
+        dispatch <| Message.AddTab (name,"",initLoc,show)
 
 // let container (tabLabels : DockCollection) =
 //     let c = DockContainer()

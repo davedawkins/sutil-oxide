@@ -1,5 +1,9 @@
 module SutilOxide.Css
 
+//
+// Copyright (c) 2022 David Dawkins
+//
+
 open Sutil
 open Sutil.Styling
 open type Feliz.length
@@ -774,6 +778,32 @@ let private toolbarStyling (theme : Theme) = [
         Css.paddingRight (rem 0.5)
     ]
 
+    rule ".xd-statusbar" [
+        Css.width (percent 100)
+        Css.height (rem 1.5)
+        Css.borderWidth 0
+        Css.borderTopWidth (px 1)
+        Css.borderTopStyle Feliz.borderStyle.solid
+        Css.paddingLeft (rem 0.5)
+    ]
+
+    rule ".xd-gap" [
+        Css.paddingRight (rem 0.25)
+    ]
+
+    rule ".xd-vseparator" [
+        Css.paddingRight (rem 0.25)
+        Css.paddingLeft (rem 0.25)
+        Css.color ("#AAAAAA")
+    ]
+
+    rule ".xd-hseparator" [
+        Css.width (percent 100)
+        Css.border(px 0, Feliz.borderStyle.none, "")
+        Css.height 0
+        Css.custom("border-top", "1px solid rgba(0, 0, 0, 0.1)")
+        Css.custom("border-bottom", "1px solid rgba(255, 255, 255, 0.3)")
+    ]
 ]
 
 let overrides (theme : Theme) = [

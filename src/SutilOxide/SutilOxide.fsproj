@@ -3,18 +3,24 @@
     <TargetFramework>netstandard2.0</TargetFramework>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="Ace.fs" />
     <Compile Include="Types.fs" />
+    <Compile Include="Logging.fs" />
+    <Compile Include="Modal.fs" />
+    <Compile Include="FileSystem.fs" />
     <Compile Include="DomHelpers.fs" />
     <Compile Include="Css.fs" />
     <Compile Include="CellEditor.fs" />
     <Compile Include="Toolbar.fs" />
     <Compile Include="Dock.fs" />
+    <Compile Include="FileExplorer.fs" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Fable.Browser.Dom" Version="2.*" />
     <PackageReference Include="Fable.Core" Version="3.*" />
     <!-- <ProjectReference Include="..\..\..\Sutil\src\Sutil\Sutil.fsproj" /> -->
-    <PackageReference Include="Sutil" Version="1.0.0-beta-021" />
+    <PackageReference Include="Sutil" Version="1.0.0-*" />
+    <PackageReference Include="Fable.SimpleJson" Version="3.24.0" />
   </ItemGroup>
   <!-- Add source files to "fable" folder in Nuget package -->
   <ItemGroup>

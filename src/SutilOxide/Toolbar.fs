@@ -1,5 +1,9 @@
 module SutilOxide.Toolbar
 
+//
+// Copyright (c) 2022 David Dawkins
+//
+
 open Browser.Dom
 open Browser.CssExtensions
 
@@ -99,11 +103,32 @@ let mkButton b =
 
     ]
 
+let vseparator =
+    Html.span [ Attr.className "xd-vseparator"; text "|"]
+
+let hseparator =
+    Html.hr [ Attr.className "xd-hseparator" ]
+
+let gap = Html.span [ Attr.className "xd-gap" ]
+
 let buttonItem props =
     { (Button.From props) with Mode = Button } |> mkButton
 
+let button name icon cb =
+    buttonItem [
+        if icon <> "" then
+            Icon ("fa-" + icon)
+        Label name
+        OnClick cb
+        if icon <> "" then
+            Display IconOnly
+    ]
+
 let toolbar props items =
     UI.divc "xd-toolbar" items
+
+let statusbar props items =
+    UI.divc "xd-toolbar xd-statusbar theme-control-bg theme-border" items
 
 let checkItem props =
     { (Button.From props) with Mode = Checkbox; Icon = None; OnClick = None } |> mkButton

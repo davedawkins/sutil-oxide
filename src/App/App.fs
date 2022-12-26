@@ -1,6 +1,8 @@
 module App
 
+open System
 open Sutil
+open Sutil.Toastr
 open Sutil.DOM
 open Sutil.Styling
 open type Feliz.length
@@ -10,31 +12,116 @@ open SutilOxide.Dock
 open SutilOxide.Types
 open Fable.Formatting.Markdown
 open Fetch
+open SutilOxide.FileSystem
+open Fable.SimpleJson
+open Browser.Types
 
 type Theme =
     | Light
     | Dark
 
+type AppContext = {
+    Fs : SutilOxide.FileSystem.IFileSystem
+}
+
 type Model = {
-    SourceText : string
+    PreviewText : string
     Theme : Theme
+    Editing : string option
+    NeedsSave : bool
+    Log : string
 }
 
 let lorem = "Nunc dapibus tempus sapien, vitae efficitur nunc posuere non. Suspendisse in placerat turpis, at sodales nisl. Etiam in tempus nulla. Praesent sed interdum ligula. Sed non nisl est. Praesent vel metus magna. Morbi eget mi est. Nam volutpat purus ligula, ut convallis libero rhoncus ac. "
 
 type Message =
+    | AppendToLog of string
     | Nop
     | SetTheme of Theme
-    | SetSourceText of string
+    | SetPreviewText of string
+    | SimpleProgressBar
+    | Edit of string
+    | SaveEdits
+    | SetEdited of bool
+    | DeleteFile of bool * (unit->unit)
 
-let init () = { Theme = Light; SourceText = "Sutil Oxide" }, Cmd.none
 
-let update msg model =
+let log = SutilOxide.Logging.log
+
+let fetchSource url  =
+    promise {
+        //let url = sprintf "%s%s" urlBase tab
+        let! res = fetch url []
+        return! res.text()
+    }
+
+let uploadFile (url : string) (targetFileName : string) (fs : IFileSystem)  =
+    promise {
+        let! content = fetchSource url
+        fs.SetFileContent( targetFileName, content )
+    }
+
+let init (app : AppContext) =
+    {
+        Theme = Light
+        PreviewText = "(no markdown to preview)"
+        Editing = None
+        NeedsSave = false
+        Log = "" },
+    //Cmd.none
+    Cmd.OfPromise.perform (uploadFile "README.md" "README.md") app.Fs (fun _ -> Edit "README.md")
+
+let update (app : AppContext) (textEditor : TextEditor.Editor) msg model =
     match msg with
+    | AppendToLog m ->
+        { model with Log = model.Log + m + "\n" }, Cmd.none
+    | DeleteFile (confirmed,delete) ->
+        let confirm dispatch =
+            { Modal.ModalOptions.Create() with
+                Content = fun close ->
+                    Html.div "Confirm delete?"
+                Buttons = [
+                    ("Cancel", fun close -> close())
+                    ("Delete", fun close ->  close(); dispatch (DeleteFile (true,delete)) )
+
+                ]
+            } |> Modal.modal
+
+        match confirmed with
+        | true ->
+            delete()
+            model, Cmd.none
+        | false ->
+            model, [ confirm ]
+    | SaveEdits ->
+        model, Cmd.none
+    | SetEdited z ->
+        let cmd =
+            if z then
+                Cmd.ofMsg (SetPreviewText (textEditor.Text))
+            else
+                Cmd.none
+
+        { model with NeedsSave = z}, cmd
     | Nop -> model, Cmd.none
     | SetTheme t -> { model with Theme = t }, Cmd.none
-    | SetSourceText s ->
-        { model with SourceText = s}, Cmd.none
+    | SetPreviewText s ->
+        { model with PreviewText = s}, Cmd.none
+    | SimpleProgressBar ->
+        let cmd =
+            Toastr.message "Countdown has started"
+            |> Toastr.title "Be aware"
+            |> Toastr.withProgressBar
+            |> Toastr.warning
+        model, cmd
+    | Edit name ->
+        //startEdit (app.Fs) name
+        // if model.NeedsSave then
+        //     safeSave()
+        // dc.SetProperty( "Editor", Dock.Visible true)
+        textEditor.Open name
+        { model with Editing = Some name; NeedsSave = false }, Cmd.ofMsg (SetPreviewText (app.Fs.GetFileContent name))
+
 
 let appCss = [
 
@@ -54,7 +141,6 @@ let appCss = [
     ]
 ]
 
-open Fable.Core.JS
 
 let dummy name colour =
     Html.div [
@@ -63,47 +149,14 @@ let dummy name colour =
             Css.width (percent 100)
             Css.height (px 2000)
         ]
-        //text name
+        text "Example pane"
     ]
 
-
-let fetchSource url  =
-    promise {
-        //let url = sprintf "%s%s" urlBase tab
-        let! res = fetch url []
-        return! res.text()
-    }
-
-
-let bindUrl url (view : string  -> SutilElement) =
-    Bind.promise (fetchSource url, view)
-
-
-let editor url model dispatch =
-    bindUrl url (fun text ->
-            dispatch text
-            Html.textarea [
-                Bind.attr("value", model, dispatch )
-            ] |> withStyle [
-                    rule "textarea" [
-                        Css.borderStyleNone
-                        Css.width (percent 100)
-                        Css.height (percent 100)
-                        Css.fontFamily "Courier New"
-                        Css.resizeNone
-                        Css.margin 0
-                        Css.padding (rem 0.2)
-                    ]
-                    rule "textarea:focus" [
-                        Css.outlineStyleNone
-                    ]
-                ]
-            )
 
 let mdCss = [
             rule ".md" [
                 Css.fontFamily "Courier New"
-                Css.backgroundColor "hsl(43, 100%, 95%)"
+                Css.backgroundColor "hsl(53.2, 100%, 91.4%)"
                 Css.padding (rem 0.5)
                 Css.width (percent 100)
                 Css.custom("height", "auto")
@@ -113,72 +166,137 @@ let mdCss = [
             ]
     ]
 
-let parsemd md =
+let markdownToHtml md =
     try
-        let doc  = Markdown.Parse(md)
-        let html = Markdown.ToHtml(doc)
-        html
+        md |> Markdown.Parse |> Markdown.ToHtml
     with
         | x -> $"<pre>{x}</pre>"
+
+
+let bindMd markdown =
+    Html.div [
+        Attr.className "md"
+        Bind.el(markdown |> Store.map markdownToHtml, html)
+    ] |> withStyle mdCss
+
+let bindUrl url (view : string  -> SutilElement) =
+    Bind.promise (fetchSource url, view)
+
 
 let viewMd url =
     bindUrl url  (fun text ->
         Html.div [
             Attr.className "md"
-            Attr.style [
-                Css.backgroundColor "hsl(240, 100%, 95%)"
-                Css.width (percent 100)
-            ]
-            text |> parsemd |> html
+            text |> markdownToHtml |> html
         ] |> withStyle mdCss
     )
 
-let preview model =
-    Html.div [
-        Attr.className "md"
-        Bind.el(model |> Store.map parsemd, html)
-    ] |> withStyle mdCss
-
-
 let dummyColor = "transparent"
 
-let initPanes (model : IStore<Model>) dispatch (dc : DockContainer) =
-    dc.AddPane( "Explorer",      LeftTop,     dummy "Explorer" "hsl(120, 100%, 95%)" )
-    dc.AddPane( "Database",      LeftTop,     dummy "Database" "hsl(43, 100%, 95%)" )
-    dc.AddPane( "Solution",      LeftTop,     dummy "Solution" "hsl(43, 100%, 95%)" )
 
-    dc.AddPane( "Insights",      LeftBottom,  dummy "Insights" "hsl(80, 100%, 95%)" )
-    dc.AddPane( "Translation",   LeftBottom,  dummy "Translation" "hsl(43, 100%, 95%)" )
+let logStyle = [
+    Css.height (percent 100)
+    Css.width (percent 100)
+    Css.fontFamily "'Courier New', Courier, monospace"
+    Css.borderStyleNone
+    Css.margin 0
+    Css.resizeNone
+]
 
-    dc.AddPane( "README",        RightTop, preview (model |> Store.map (fun m -> m.SourceText)) )
-    dc.AddPane( "Events",        RightTop,    dummy "Events" "hsl(43, 100%, 95%)" )
-    dc.AddPane( "Files",         RightTop,    dummy "Files" "hsl(43, 100%, 95%)" )
+let mainLog (model : IObservable<Model>) =
+    let logS = model |> Store.map (fun m -> m.Log) |> Observable.distinctUntilChanged
+
+    Html.textarea [
+
+        Attr.style logStyle
+
+        Attr.id "log"
+        Attr.readOnly true
+        Bind.attr("value", logS)
+
+        DOM.hookParent( fun n ->
+            let e = n :?> HTMLTextAreaElement
+            let stop = logS.Subscribe( fun _ ->
+                DOM.rafu( fun _ -> e.setSelectionRange(99999,99999))
+            )
+            DOM.SutilNode.RegisterDisposable( n, stop )
+            ()
+        )
+    ]
+
+let initPanes  (fileExplorer : FileExplorer.FileExplorer) (textEditor : TextEditor.Editor) (model : IStore<Model>) dispatch (dc : DockContainer)  =
+
+    let editorTitle model =
+        model
+        |> Store.map (fun m ->
+            match m.Editing with
+            | None -> "Editor"
+            | Some fileName ->
+                    IFileSystem.GetFileName(fileName) + (if m.NeedsSave then " (edited)" else "")
+            )
+        |> Html.span
+
+    dc.AddPane( "Explorer",      LeftTop,     fileExplorer.View)
+    dc.AddPane( "Database",      LeftTop,     dummy "Database" "hsl(43, 100%, 95%)", false )
+    dc.AddPane( "Solution",      LeftTop,     dummy "Solution" "hsl(43, 100%, 95%)", false )
+
+    dc.AddPane( "Insights",      LeftBottom,  dummy "Insights" "hsl(80, 100%, 95%)", false )
+    dc.AddPane( "Translation",   LeftBottom,  dummy "Translation" "hsl(43, 100%, 95%)", false )
+
+    // dc.AddPane( "Events",        RightTop,    dummy "Events" "hsl(43, 100%, 95%)" )
+    // dc.AddPane( "Files",         RightTop,    dummy "Files" "hsl(43, 100%, 95%)" )
     dc.AddPane( "Instructions",  RightTop,    dummy "Instructions" "hsl(43, 100%, 95%)" )
 
-    dc.AddPane( "ISSUES",         RightBottom, viewMd "ISSUES.md" )
-    dc.AddPane( "Links",         RightBottom, dummy "Links" "hsl(240, 100%, 95%)" )
-    dc.AddPane( "Objects",       RightBottom, dummy "Objects" "hsl(43, 100%, 95%)" )
+    dc.AddPane( "Links",         RightBottom, dummy "Links" "hsl(240, 100%, 95%)", false )
+    dc.AddPane( "Objects",       RightBottom, dummy "Objects" "hsl(43, 100%, 95%)", false )
 
-    dc.AddPane( "Console",       BottomLeft,  dummy "Console" "hsl(160, 100%, 95%)" )
-    dc.AddPane( "Messages",      BottomLeft,  dummy "Messages" "hsl(43, 100%, 95%)" )
-    dc.AddPane( "Help",          BottomLeft,  dummy "Help" "hsl(43, 100%, 95%)" )
+    dc.AddPane( "Console",       BottomLeft,  dummy "Console" "hsl(160, 100%, 95%)", false )
+    dc.AddPane( "Messages",      BottomLeft,  mainLog model, true )
 
-    dc.AddPane( "Catalogs",      BottomRight, dummy "Catalogs" "hsl(200, 100%, 95%)" )
-    dc.AddPane( "Components",    BottomRight, dummy "Components" "hsl(43, 100%, 95%)" )
-    dc.AddPane( "Knowledgebase", BottomRight, dummy "Knowledgebase" "hsl(43, 100%, 95%)" )
+    // dc.AddPane( "Catalogs",      BottomRight, dummy "Catalogs" "hsl(200, 100%, 95%)", false )
+    // dc.AddPane( "Components",    BottomRight, dummy "Components" "hsl(43, 100%, 95%)", false )
+    dc.AddPane( "Knowledgebase", BottomRight, dummy "Knowledgebase" "hsl(43, 100%, 95%)", false )
+    dc.AddPane( "Help",          BottomRight,  viewMd "HELP.md", false )
 
-    dc.AddPane( "Editor",        CentreCentre, editor "README.md" (model |> Store.map (fun m -> m.SourceText)) (dispatch << SetSourceText) )
-    dc.AddPane( "Charts",        CentreCentre, dummy "Charts" "hsl(43, 100%, 95%)"  )
+    dc.AddPane( "Preview",       RightTop, bindMd (model |> Store.map (fun m -> m.PreviewText)), true )
+
+    dc.AddPane(
+        "Ace",
+        CentreCentre,
+        editorTitle model,
+        textEditor.View,
+        true )
+
     ()
 
 open Toolbar
 
 let view () =
     let dc = DockContainer()
+    let app = { Fs = LocalStorageFileSystem("oxide-demo") }
 
-    let model, dispatch = () |> Store.makeElmish init update ignore
+    // Text editor control
+    let textEditor = TextEditor.Editor( app.Fs )
+    let fileExplorer = FileExplorer.FileExplorer(app.Fs)
+
+    //let (modelFx,dispatchFx) = SutilOxide.FileExplorer.create (dispatch << Edit) app.Fs
+
+    // Main model and dispatch
+    let model, dispatch = app |> Store.makeElmish (init) (update app textEditor) ignore
+
+    textEditor.OnEditedChange( dispatch << SetEdited )
+    SutilOxide.Logging.appendHandler( dispatch << AppendToLog )
+
+    // Time widget in status bae
+    let timeS = Store.make ""
+    let stopClock = DOM.interval (fun _ -> Store.set timeS (System.DateTime.Now.ToLongTimeString())) 1000
+
+    // File Explorer control
+
+    //let fileExplorer = SutilOxide.FileExplorer.view (modelFx, dispatchFx)
+
+    // Handle theme changes
     let mutable styleCleanup = ignore
-
     model |> Store.map (fun t -> t.Theme) |> Observable.distinctUntilChanged |> Store.subscribe (fun t ->
         styleCleanup()
         let theme =
@@ -188,14 +306,29 @@ let view () =
         styleCleanup <- SutilOxide.Css.installStyling theme
     ) |> ignore
 
+    log "SutilOxide Demo started"
+
+    // Main view
     Html.div [
         Attr.className "main-container"
 
         toolbar [] [
+
             dropDownItem [ Label "File"] [
-                buttonItem [ Label "Open"; Icon "fa-folder-open"; OnClick (fun e -> dispatch Nop) ]
-                buttonItem [ Label "Close"; Icon "fa-folder-close"; OnClick (fun e -> dispatch Nop) ]
-                buttonItem [ Label "Save"; Icon "fa-save"; OnClick (fun e -> dispatch Nop) ]
+                //buttonItem [ Label "Open"; Icon "fa-folder-open"; OnClick (fun e -> dispatch SimpleProgressBar) ]
+                //buttonItem [ Label "Close"; Icon "fa-folder-close"; OnClick (fun e -> dispatch Nop) ]
+                buttonItem [ Label "New File"; Icon "fa-file-o"; OnClick (fun e -> fileExplorer.Dispatch FileExplorer.NewFile) ]
+                buttonItem [ Label "Save"; Icon "fa-save"; OnClick (fun e -> textEditor.Save() ) ]
+                buttonItem [ Label "Rename"; Icon "fa-i-cursor"; OnClick (fun e -> fileExplorer.Dispatch (FileExplorer.SetRenaming true)) ]
+                hseparator
+                buttonItem [
+                    Label "Delete"
+                    Icon "fa-trash-o"
+                    OnClick (fun e ->
+                        let deleteSelected() = fileExplorer.Dispatch FileExplorer.DeleteSelected
+                        dispatch (DeleteFile (false,deleteSelected))
+                    )
+                ]
             ]
 
             dropDownItem [ Label "View" ] [
@@ -206,13 +339,17 @@ let view () =
                 ])
             ]
 
-            buttonItem [ Label "Help"; Icon "fa-life-ring"]
+            buttonItem [ Label "Help"; Icon "fa-life-ring"; OnClick (fun _ -> dc.SetProperty( "Help", Visible true))]
         ]
 
-        DockContainer.Create (initPanes model dispatch)
+        dc.View (initPanes fileExplorer textEditor model dispatch)
 
-        Html.div [
-            Attr.className "status-footer theme-control-bg theme-border"
+        statusbar [] [
+            text "Time:"
+            gap
+            Bind.el(timeS, Html.span)
+            //vseparator
+            //text "test"
         ]
 
     ] |> withStyle appCss

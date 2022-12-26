@@ -1,5 +1,9 @@
 module SutilOxide.Types
 
+//
+// Copyright (c) 2022 David Dawkins
+//
+
 type TabHalf =
     | FirstHalf | SecondHalf
 
@@ -25,7 +29,6 @@ with
         |Right -> Left
         |Top -> Bottom
         |Bottom -> Top
-
 
 type DockLocation =
     | LeftTop
@@ -78,7 +81,7 @@ type DockStation = {
 with
     static member Empty = { Panes = [] }
 
-type DockCollection = {
+type  DockCollection = {
     Stations : Map<DockLocation,DockStation>
 }
 with

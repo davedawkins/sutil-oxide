@@ -153,10 +153,20 @@ Method `AddPane` takes the following arguments:
 - Initial location of pane, as a `DockLocation` (see below)
 - Pane content, as a `SutilElement`
 
+
 Another overload of `AddPane` will allow the header to be given as a `SutilElement`:
 
 ```fs
-    member __.AddPane (name : string, initLoc : DockLocation, header : SutilElement, content : SutilElement ) =
+    member __.AddPane (name : string, initLoc : DockLocation, header : SutilElement, content : SutilElement, show : bool ) =
+```
+
+Parameters are as before, but with the addition of `show : bool`:
+- Initial visibility of pane as a boolean
+
+Another overload of `AddPane` will allow the header to be given as a `SutilElement`:
+
+```fs
+    member __.AddPane (name : string, initLoc : DockLocation, header : SutilElement, content : SutilElement, show : bool ) =
 ```
 
 Parameters are as before, but with the addition of `header : SutilElement`:
@@ -164,6 +174,7 @@ Parameters are as before, but with the addition of `header : SutilElement`:
 - Content of header, as a `SutilElement`.
 
 Possible dock locations are defined by `DockLocation`:
+
 ```fs
 type DockLocation =
     | LeftTop
