@@ -1,10 +1,10 @@
 # Sutil Oxide
 
-A toolkit for building IDE-style web applications, using Sutil.
+A toolkit for building IDE-style web applications, using [Sutil](https://sutil.dev).
 
 ## Demo
 
-Click on the `Help` button for details on how this [demo](https://davedawkins.github.io/sutil-oxide/) works.
+Click on the `Help` button for details on how this [demo](https://davedawkins.github.io/sutil-oxide/) works. Repository located at [https://github.com/davedawkins/sutil-oxide](https://github.com/davedawkins/sutil-oxide).
 
 ## Motivation
 
