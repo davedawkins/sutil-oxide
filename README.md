@@ -4,7 +4,7 @@ A toolkit for building IDE-style web applications, using Sutil.
 
 ## Demo
 
-Click on the `Help` button for details on how this demo works.
+Click on the `Help` button for details on how this [demo](https://davedawkins.github.io/sutil-oxide/) works.
 
 ## Motivation
 
