@@ -2,9 +2,20 @@
 
 A toolkit for building IDE-style web applications, using Sutil.
 
+## Demo
+
+Click on the `Help` button for details on how this demo works.
+
 ## Motivation
 
 My own projects frequently need a UI toolkit, and my latest project needed dockable windows. Sutil Oxide is intended to be where I develop any reusable UI code and components.
+
+## Status
+Very much still in development. My focus is on the main project that consumes this toolkit, and so I add functionality, make fixes etc as and when I need to according to the needs of that driving project. In fact, mostly I'm refactoring out of the main project into this toolkit.
+
+The main reason you're seeing it at this early stage is that I wanted to contribute to the F# Advent, and a couple of people I'd already shown it to thought it was cool in its own right.
+
+You will find many niggles and annoyances, but nonetheless I've found it valuable for getting my main project off the ground. I can more easily focus on the business logic and then categorise issues as either being UI/presentation or application based. It's a useful separation.
 
 ## Scope
 
@@ -20,13 +31,14 @@ Any reusable UI component that might be generally useful for other Sutil project
 - Theming support
 - Functionally reactive thanks to [Sutil](https://sutil.dev)
 - Toolbar
-- Status bar (TODO)
--
+- Statusbar
+- File Explorer (and basic IFileSystem interface with LocalStorage implementation)
+
 ## Issues
 - No drag *to* centre pane. Use "cog" menu to send panes to centre
 - Submenu placement janky, would prefer a CSS-only solution but may have to resort to code
 - No persistence of layout
-
+- Very basic mobile support, currently best experience desktop
 
 ## Docking Layout
 
