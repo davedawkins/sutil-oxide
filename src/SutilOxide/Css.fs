@@ -129,7 +129,7 @@ let private dockStyling (theme : Theme) = [
         // centre tabs
         // centre-container
         // right-container
-        Css.custom("grid-template-columns", "max-content max-content auto max-content")
+        Css.custom("grid-template-columns", "max-content max-content minmax(0,auto) max-content")
     ]
 
     rule ".dock-left-container" [
