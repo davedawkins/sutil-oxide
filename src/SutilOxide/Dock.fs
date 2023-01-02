@@ -148,6 +148,9 @@ let init docks =
         SelectedPanes = DockLocation.All |> List.fold (fun s loc -> s.Add(loc, None)) Map.empty
     } |> DockHelpers.ensurePaneSelected, Cmd.none
 
+let private cmdMonitorAll : Cmd<Message> =
+    [ fun d -> Toolbar.MenuMonitor.monitorAll() ]
+
 let private update msg model =
     //SutilOxide.Logging.log($"{msg}")
 
@@ -165,7 +168,7 @@ let private update msg model =
         {
             model with
                 Docks = docks
-        }, Cmd.none
+        }, cmdMonitorAll
 
     | AddTab (name,icon,location,show) ->
         let station = model.Docks.Stations[location]
@@ -174,7 +177,7 @@ let private update msg model =
         {
             model with
                 Docks = { Stations = model.Docks.Stations.Add( location, station' ) }
-        } , if show then Cmd.ofMsg (ShowPane name) else Cmd.none
+        } , Cmd.batch [ if show then Cmd.ofMsg (ShowPane name) else Cmd.none; cmdMonitorAll ]
 
     | SelectPane (loc,pane) ->
         { model with SelectedPanes = model.SelectedPanes.Add(loc,pane) }, Cmd.none
@@ -186,7 +189,7 @@ let private update msg model =
             | _ -> Some pane
 
         //console.log(sprintf "Select: %A %A" loc selected)
-        { model with SelectedPanes = model.SelectedPanes.Add(loc,selected) } |> DockHelpers.ensureCentreSelected, Cmd.none
+        { model with SelectedPanes = model.SelectedPanes.Add(loc,selected) } |> DockHelpers.ensureCentreSelected, cmdMonitorAll
 
     | ShowPane pane ->
         let m =
@@ -195,10 +198,10 @@ let private update msg model =
                 { model with SelectedPanes = model.SelectedPanes.Add(loc,Some pane) }
             )
             |> Option.defaultValue model
-        m,  Cmd.none
+        m,  cmdMonitorAll
 
     | MinimizePane pane ->
-        DockHelpers.minimizePane model pane, Cmd.none
+        DockHelpers.minimizePane model pane, cmdMonitorAll
 
     | SetDragging d ->
         { model with DraggingTab = Some { BeingDragged = d; Preview = None} }, Cmd.none
@@ -212,7 +215,7 @@ let private update msg model =
         { m with
             DraggingTab = None
             SelectedPanes = m.SelectedPanes.Add(loc, Some pane)
-        } |> DockHelpers.ensureCentreSelected, Cmd.none
+        } |> DockHelpers.ensureCentreSelected, cmdMonitorAll
 
     | CommitDrag ->
         let m =
@@ -231,7 +234,7 @@ let private update msg model =
                             SelectedPanes = m.SelectedPanes.Add(loc, Some dt.BeingDragged)
                         }
                 ))
-        m |> Option.defaultValue model |> DockHelpers.ensureCentreSelected, Cmd.none
+        m |> Option.defaultValue model |> DockHelpers.ensureCentreSelected, cmdMonitorAll
 
     | CancelDrag ->
         { model with DraggingTab = None }, Cmd.none

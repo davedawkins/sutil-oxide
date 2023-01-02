@@ -643,8 +643,11 @@ let private toolbarStyling (theme : Theme) = [
     ]
 
     rule ".menu-stack" [
+        //Css.transitionDuration (System.TimeSpan.FromSeconds(1.0))
         Css.positionAbsolute
-        Css.displayNone
+        Css.displayFlex
+        Css.opacity 0
+        Css.custom ("pointer-events", "none")
         Css.flexDirectionColumn
         Css.gap (px 4)
         Css.backgroundColor (theme.ControlBackground)
@@ -658,42 +661,15 @@ let private toolbarStyling (theme : Theme) = [
         Css.top (percent 100)
     ]
 
-    // Menus on left hand
-    rule ".dock-left-hand .menu-stack" [
-        Css.left 0
-        Css.top (percent 100)
-    ]
-
-    rule ".dock-left-hand .item-menu>.menu-stack" [
-        Css.left (percent 50)
-        Css.top (percent 100)
-    ]
-
-    // Menus on right side
-    rule ".dock-right-hand .menu-stack" [
-        Css.right 0
-        Css.top (percent 100)
-    ]
-
-    rule ".dock-bottom-left-container .menu-stack" [
-        Css.left 0
-        Css.bottom (0)
-        Css.custom("top", "unset")
-    ]
-
-    rule ".dock-bottom-left-container .item-menu>.menu-stack" [
-        Css.left (percent 50)
-        Css.bottom (0)
-        Css.custom("top", "unset")
-    ]
-
-    rule ".dock-bottom-right-container .item-menu>.menu-stack" [
-        Css.bottom (0)
-        Css.custom("top", "unset")
+    rule ".item-menu>.menu-stack" [
+        Css.left (percent 100)
+        Css.top (0)
     ]
 
     rule "*:focus-within>.menu-stack" [
-        Css.displayFlex
+        Css.transitionDuration (System.TimeSpan.FromSeconds(0.3))
+        Css.opacity 1
+        Css.custom ("pointer-events", "auto")
     ]
 
     rule ".item-dropdown" [

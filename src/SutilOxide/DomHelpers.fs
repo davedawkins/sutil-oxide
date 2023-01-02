@@ -81,6 +81,7 @@ module DomHelpers =
             (setSize : HTMLElement -> int -> unit)
             (commit : HTMLElement -> int -> unit)
             (direction : int) =
+
         Sutil.Html.Ev.onMouseDown (fun e ->
             e.preventDefault()
             let pane = ((targetEl e).parentElement) :?> HTMLDivElement
@@ -93,6 +94,7 @@ module DomHelpers =
                 if not primaryButtonPressed then
                     commit pane (int ((posOffset - pos e) * (float direction) + startSize))
                     document.body.removeEventListener("pointermove", !!mouseDragHandler)
+                    Toolbar.MenuMonitor.monitorAll()
                 else
                     setSize pane (int ((posOffset - pos e) * (float direction) + startSize))
 

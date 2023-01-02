@@ -14,7 +14,7 @@ open Fable.Formatting.Markdown
 open Fetch
 open SutilOxide.FileSystem
 open Fable.SimpleJson
-open Browser.Types
+
 
 type Theme =
     | Light
@@ -215,7 +215,7 @@ let mainLog (model : IObservable<Model>) =
         Bind.attr("value", logS)
 
         DOM.hookParent( fun n ->
-            let e = n :?> HTMLTextAreaElement
+            let e = n :?> Browser.Types.HTMLTextAreaElement
             let stop = logS.Subscribe( fun _ ->
                 DOM.rafu( fun _ -> e.setSelectionRange(99999,99999))
             )

@@ -3,15 +3,16 @@
     <TargetFramework>netstandard2.0</TargetFramework>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="IntersectionObserver.fs" />
     <Compile Include="Ace.fs" />
     <Compile Include="Types.fs" />
     <Compile Include="Logging.fs" />
     <Compile Include="Modal.fs" />
     <Compile Include="FileSystem.fs" />
-    <Compile Include="DomHelpers.fs" />
     <Compile Include="Css.fs" />
     <Compile Include="CellEditor.fs" />
     <Compile Include="Toolbar.fs" />
+    <Compile Include="DomHelpers.fs" />
     <Compile Include="Dock.fs" />
     <Compile Include="FileExplorer.fs" />
   </ItemGroup>

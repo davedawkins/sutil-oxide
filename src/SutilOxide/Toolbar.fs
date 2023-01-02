@@ -61,11 +61,92 @@ with
     static member From (p : ButtonProperty seq) =
         p |> Seq.fold (fun (b:Button) x -> b.With(x)) Button.Empty
 
+
+module internal MenuMonitor =
+    open Browser
+
+    let seqOfNodeList<'T> (nodes: Browser.Types.NodeListOf<'T>) =
+        seq {
+            for i in [0..nodes.length-1] do
+                yield nodes.[i]
+        }
+
+    let logEntry (e : Types.IntersectionObserverEntry) =
+        console.log("boundingClientRect=", e.boundingClientRect)
+        console.log("intersectionRatio=", e.intersectionRatio)
+        console.log("intersectionRect=", e.intersectionRect)
+        console.log("isIntersecting=", e.isIntersecting)
+        console.log("rootBounds=", e.rootBounds)
+        console.log("target=", e.target)
+        console.log("time=", e.time)
+
+    let removeStyle( e : HTMLElement ) name=
+        e.style.removeProperty(name) |> ignore
+
+    let resetMenu( e : HTMLElement ) =
+        [   "top"
+            "left"
+            "bottom"
+            "right" ] |> List.iter (removeStyle e)
+
+    let moveMenu (e : Types.HTMLElement) (bcr : Types.ClientRect) (ir : Types.ClientRect) =
+        //SutilOxide.Logging.log(sprintf "Move menu %s" e.tagName)
+        if (bcr.right > ir.right) then
+            //resetMenu e
+            e.style.left <- "unset"
+            e.style.right <- "0px"
+        if (bcr.bottom > ir.bottom) then
+            //resetMenu e
+            let pr = e.parentElement.getBoundingClientRect()
+            e.style.top <- sprintf "%fpx" ((ir.bottom - bcr.height) - pr.top - 12.0)
+            e.style.bottom <- "unset"
+        else if (bcr.top < ir.top) then
+            //resetMenu e
+            e.style.top <- "0px"
+            e.style.bottom <- "unset"
+
+    let callback (entries : Types.IntersectionObserverEntry[]) _ =
+        entries |> Array.iter (fun e ->
+            if (e.isIntersecting && e.intersectionRatio < 1.0) then
+                moveMenu (e.target :?> Types.HTMLElement) (e.boundingClientRect) (e.intersectionRect)
+        )
+
+    let mutable _observer : IntersectionObserverType option = None
+
+    let makeObserver() =
+        let options =
+            {| root = document :> Browser.Types.Node; rootMargin = ""; threshold = 0.0 |}
+        IntersectionObserver.Create(callback, !! options)
+
+    let getObserver() : IntersectionObserverType =
+        match _observer with
+        | None ->
+            let _io = makeObserver()
+            _observer <- _io |> Some
+            _io
+        | Some x -> x
+
+
+    let monitorMenu( e : HTMLElement ) =
+        resetMenu e
+        getObserver().observe(e)
+
+    let monitorAll() =
+        getObserver().disconnect()
+        document.querySelectorAll(".menu-stack")
+        |> seqOfNodeList
+        |> Seq.iter (fun n -> monitorMenu (n :?> Types.HTMLElement) )
+
 let buttonGroup items =
     UI.divc "button-group" items
 
 let menuStack items =
-    UI.divc "menu-stack" items
+    UI.divc "menu-stack" [
+
+        host MenuMonitor.monitorMenu
+
+        yield! items
+    ]
 
 let mkButton b =
     Html.a [
