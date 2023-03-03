@@ -7,7 +7,9 @@ module SutilOxide.Dock
 open Browser.Dom
 open Browser.CssExtensions
 
-open Sutil.DOM
+open Sutil.Core
+open Sutil.CoreElements
+open Sutil.DomHelpers
 open Sutil
 open Sutil.Styling
 open type Feliz.length
@@ -570,9 +572,9 @@ type DockContainer() =
                 Css.overflowHidden // Stop scrollbars appearing (during layout?), it seems they can then "stick" and stay latched on
             ]
 
-            Sutil.Attr.onMount (fun e ->
+            onMount (fun e ->
                 init self
-            ) [ Sutil.Attr.EventModifier.Once ]
+            ) [ Once ]
 
             dockContainer()
         ]
@@ -655,7 +657,7 @@ with
                 ]
             ]
 
-        DomHelpers.getContentParentNode initLoc |> DOM.mountOn wrapper |> ignore
+        (DomHelpers.getContentParentNode initLoc, wrapper) |> Program.mount |> ignore
 
         dispatch <| Message.AddTab (name,"",initLoc,show)
 

@@ -12,6 +12,7 @@ open Fable.Core
 open Fable.Core.JsInterop
 open Browser.Types
 open SutilOxide.Types
+open Sutil
 
 [<AutoOpen>]
 module DomHelpers =
@@ -82,7 +83,7 @@ module DomHelpers =
             (commit : HTMLElement -> int -> unit)
             (direction : int) =
 
-        Sutil.Html.Ev.onMouseDown (fun e ->
+        Ev.onMouseDown (fun e ->
             e.preventDefault()
             let pane = ((targetEl e).parentElement) :?> HTMLDivElement
             let posOffset: float = pos e

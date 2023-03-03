@@ -7,6 +7,8 @@
     "postinstall": "dotnet tool restore",
     "start": "dotnet fable watch src/App --run webpack-dev-server",
     "build": "dotnet fable src/App && webpack",
+    "clean": "dotnet fsi build.fsx --target clean",
+    "pack": "dotnet fsi build.fsx --target pack",
     "publish": "node publish.js"
   },
   "devDependencies": {
@@ -17,6 +19,7 @@
     "toastr": "^2.1.4",
     "webpack": "^4.46.0",
     "webpack-cli": "^3.3.0",
+    "fable-publish-utils": "^2.2.0",
     "webpack-dev-server": "^3.11.2"
   },
   "version": "1.0.0"

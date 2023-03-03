@@ -3,7 +3,8 @@ module TextEditor
 open Fable.Core.JsInterop
 open SutilOxide.AceEditor
 open Sutil
-open Sutil.DOM
+open Sutil.Core
+open Sutil.CoreElements
 open SutilOxide.FileSystem
 open type Feliz.length
 
@@ -42,7 +43,7 @@ type Editor(fs : IFileSystem ) =
                     e.preventDefault())
 
             do
-                rafu( fun _ ->
+                DomHelpers.rafu( fun _ ->
                     editor <- initAce "editor" (fun _ -> onEditedChange true)
                 )
         ]

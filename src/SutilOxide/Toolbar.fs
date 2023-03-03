@@ -7,7 +7,8 @@ module SutilOxide.Toolbar
 open Browser.Dom
 open Browser.CssExtensions
 
-open Sutil.DOM
+open Sutil.Core
+open Sutil.CoreElements
 open Sutil
 open Sutil.Styling
 open type Feliz.length

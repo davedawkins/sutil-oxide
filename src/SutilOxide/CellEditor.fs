@@ -6,13 +6,14 @@ module SutilOxide.CellEditor
 
 open System
 open Sutil
+open Sutil.Core
 open type Feliz.length
 //open Fable.Core.JS
 open Sutil.Styling
 open Fable.Core.Util
 //open UI
-open Sutil.DOM
-open Sutil.Attr
+open Sutil.CoreElements
+open Sutil.DomHelpers
 
 type Getter<'R,'T> = 'R -> 'T
 type Setter<'R,'T> = 'R -> 'T -> unit
@@ -292,7 +293,7 @@ module private Autocomplete =
                     ]
             )
 
-            Sutil.Attr.on "focusout" (fun e -> show false) []
+            on "focusout" (fun e -> show false) []
 
             Ev.onKeyDown (fun e ->
                 match (e.key) with
@@ -374,19 +375,17 @@ let findBest (allowed : string array) (value : string) =
     )
 
 let bindFocus (isFocused : IObservable<bool>) : SutilElement =
-    nodeFactory <| fun ctx ->
+    SutilElement.Define("bindFocus",fun ctx ->
         let inputEl = ctx.Parent.AsDomNode :?> Browser.Types.HTMLInputElement
 
         let un = isFocused.Subscribe( fun f ->
             if f then
-                DOM.rafu (fun _ ->
+                DomHelpers.rafu (fun _ ->
                     inputEl.focus()
                     inputEl.setSelectionRange(99999,99999)
                     )
         )
-
-        SutilNode.RegisterDisposable(ctx.Parent,un)
-        unitResult(ctx, "autofocus")
+        SutilEffect.RegisterDisposable(ctx.Parent,un) )
 
 open Fable.Core.JsInterop
 
@@ -463,10 +462,10 @@ let relatedTargetOf( e : Browser.Types.Event ) : Browser.Types.Node option = jsN
 
 
 let onFocusEnter f =
-    Sutil.Attr.on "focusin" (fun e -> f()) []
+    on "focusin" (fun e -> f()) []
 
 let onFocusLeave f =
-    Sutil.Attr.on "focusout" (fun e ->
+    on "focusout" (fun e ->
         let currentTarget = e.currentTarget :?> Browser.Types.Node
 
         // if relatedtarget is a child then we are stepping between fields
@@ -496,7 +495,7 @@ type EditController<'R,'K>( record : 'R, key : 'R -> 'K, cells : Cell<'R> seq ) 
 
         Html.div [
             Attr.className "edit-row"
-            DOM.disposeOnUnmount [ model ]
+            disposeOnUnmount [ model ]
 
             onFocusEnter (fun _ -> dispatch (Elmish.StartEdit record))
             onFocusLeave (fun _ -> dispatch (Elmish.FinishEdit record))

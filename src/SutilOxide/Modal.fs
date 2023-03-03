@@ -5,9 +5,11 @@ module SutilOxide.Modal
 //
 
 open Sutil
-open Sutil.DOM
+open Sutil.Core
+open Sutil.DomHelpers
 open type Feliz.length
 open Fable.Core.JsInterop
+open Browser.Types
 
 type Close = unit -> unit
 
@@ -26,7 +28,7 @@ type ModalOptions = {
 let modal (options : ModalOptions) =
     let doc = Browser.Dom.document
     let lastBodyElement : Browser.Types.HTMLElement = doc.body?lastElementChild
-    let close() = DOM.unmount (doc.querySelector("#ui-modal"))
+    let close() = Program.unmount (doc.querySelector("#ui-modal") :?> HTMLElement)
     let modalBg =
         Html.div [
             Attr.id "ui-modal"
@@ -86,4 +88,5 @@ let modal (options : ModalOptions) =
                     ]
             ]
         ]
-    Sutil.DOM.mountAfter modalBg lastBodyElement |> ignore
+    (lastBodyElement,modalBg) |> Sutil.Program.mountAfter |> ignore
+    ()

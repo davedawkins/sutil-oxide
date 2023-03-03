@@ -2,8 +2,9 @@ module App
 
 open System
 open Sutil
-open Sutil.Toastr
-open Sutil.DOM
+//open Sutil.Toastr
+open Sutil.Core
+open Sutil.CoreElements
 open Sutil.Styling
 open type Feliz.length
 open Feliz
@@ -108,11 +109,11 @@ let update (app : AppContext) (textEditor : TextEditor.Editor) msg model =
     | SetPreviewText s ->
         { model with PreviewText = s}, Cmd.none
     | SimpleProgressBar ->
-        let cmd =
-            Toastr.message "Countdown has started"
-            |> Toastr.title "Be aware"
-            |> Toastr.withProgressBar
-            |> Toastr.warning
+        let cmd = Cmd.none
+            // Toastr.message "Countdown has started"
+            // |> Toastr.title "Be aware"
+            // |> Toastr.withProgressBar
+            // |> Toastr.warning
         model, cmd
     | Edit name ->
         //startEdit (app.Fs) name
@@ -214,15 +215,33 @@ let mainLog (model : IObservable<Model>) =
         Attr.readOnly true
         Bind.attr("value", logS)
 
-        DOM.hookParent( fun n ->
+        hookParent( fun n ->
             let e = n :?> Browser.Types.HTMLTextAreaElement
             let stop = logS.Subscribe( fun _ ->
-                DOM.rafu( fun _ -> e.setSelectionRange(99999,99999))
+                DomHelpers.rafu( fun _ -> e.setSelectionRange(99999,99999))
             )
-            DOM.SutilNode.RegisterDisposable( n, stop )
+            SutilEffect.RegisterDisposable( n, stop )
             ()
         )
     ]
+
+open Flow
+
+let exampleGraph : Graph<string,string> = {
+    Nodes = Map [
+        "n1", Node.Create("n1", 50.0, 50.0, "Hello")
+        "n2", Node.Create("n2", 50.0, 150.0, "World")
+        "n3", { Node.Create("n3", 150.0, 50.0, "No Select") with CanSelect = false }
+        "n4", { Node.Create("n4", 150.0, 150.0, "No Move") with CanMove = false; Type = "" }
+    ]
+    Edges = Map [
+        "e1", Edge.Create( "e1", "n1", "out", "n2", "in", "Messages" )
+    ]
+}
+
+let flowGraph() =
+    let fc = Flow.FlowChart()
+    fc.Render(exampleGraph)
 
 let initPanes  (fileExplorer : FileExplorer.FileExplorer) (textEditor : TextEditor.Editor) (model : IStore<Model>) dispatch (dc : DockContainer)  =
 
@@ -259,13 +278,14 @@ let initPanes  (fileExplorer : FileExplorer.FileExplorer) (textEditor : TextEdit
     dc.AddPane( "Help",          BottomRight,  viewMd "HELP.md", false )
 
     dc.AddPane( "Preview",       RightTop, bindMd (model |> Store.map (fun m -> m.PreviewText)), true )
-
     dc.AddPane(
         "Ace",
         CentreCentre,
         editorTitle model,
         textEditor.View,
         true )
+
+    dc.AddPane( "Graph",       CentreCentre, flowGraph(), true )
 
     ()
 
@@ -289,7 +309,7 @@ let view () =
 
     // Time widget in status bae
     let timeS = Store.make ""
-    let stopClock = DOM.interval (fun _ -> Store.set timeS (System.DateTime.Now.ToLongTimeString())) 1000
+    let stopClock = DomHelpers.interval (fun _ -> Store.set timeS (System.DateTime.Now.ToLongTimeString())) 1000
 
     // File Explorer control
 
@@ -355,4 +375,4 @@ let view () =
     ] |> withStyle appCss
 
 
-view() |> Program.mountElement "sutil-app"
+view() |> Program.mount

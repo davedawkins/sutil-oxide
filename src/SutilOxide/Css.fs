@@ -797,7 +797,7 @@ let overrides (theme : Theme) = [
         Css.flexDirectionColumn
     ]
 
-    Media.MaxWidth( px 1200, [
+    CssMedia.maxWidth( px 1200, [
         rule ".tabs-left" [
             Css.displayNone
         ]
@@ -812,7 +812,7 @@ let overrides (theme : Theme) = [
         ]
     ])
 
-    Media.MaxWidth( px 768, [
+    CssMedia.maxWidth( px 768, [
         rule ".dock-tabs" [
             Css.displayNone
         ]
@@ -834,4 +834,4 @@ open Browser.Dom
 //let oxide (e : Sutil.DOM.SutilElement) = e |> withStyle Styling
 
 let installStyling (t : Theme) =
-    addStyleSheet Browser.Dom.document "" (Styling t)
+    addGlobalStyleSheet Browser.Dom.document (Styling t)

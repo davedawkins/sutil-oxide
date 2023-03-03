@@ -12,8 +12,8 @@ open Browser.Types
 open Fable.SimpleJson
 open FileSystem
 open Sutil
-open Sutil.DOM
-open Sutil.Attr
+open Sutil.Core
+open Sutil.CoreElements
 open Sutil.Styling
 
 open type Feliz.length
@@ -243,7 +243,7 @@ let fileExplorer dispatch (m : Model) =
                                 e.preventDefault()
                             )
                             Ev.onMouseUp( fun e ->
-                                DOM.rafu (fun _ -> path |> SetSelected |> dispatch)
+                                DomHelpers.rafu (fun _ -> path |> SetSelected |> dispatch)
                             )
                             Ev.onDblClick (fun e ->
                                 m.Selected |> Edit |> dispatch

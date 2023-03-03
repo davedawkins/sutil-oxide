@@ -11,20 +11,26 @@
     <Compile Include="FileSystem.fs" />
     <Compile Include="Css.fs" />
     <Compile Include="CellEditor.fs" />
+    <Compile Include="Flow.fs" />
     <Compile Include="Toolbar.fs" />
     <Compile Include="DomHelpers.fs" />
-    <Compile Include="Dock.fs" />
     <Compile Include="FileExplorer.fs" />
+    <Compile Include="Dock.fs" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Fable.Browser.Dom" Version="2.*" />
-    <PackageReference Include="Fable.Core" Version="3.*" />
+    <!-- <PackageReference Include="Fable.Browser.Dom" Version="2.*" /> -->
     <!-- <ProjectReference Include="..\..\..\Sutil\src\Sutil\Sutil.fsproj" /> -->
-    <PackageReference Include="Sutil" Version="1.0.0-*" />
+    <PackageReference Include="Sutil" Version="2.0.7" />
     <PackageReference Include="Fable.SimpleJson" Version="3.24.0" />
   </ItemGroup>
   <!-- Add source files to "fable" folder in Nuget package -->
   <ItemGroup>
     <Content Include="*.fsproj; **\*.fs; **\*.fsi;" PackagePath="fable\" />
   </ItemGroup>
+  <Target Name="ReallyClean" AfterTargets="Clean">
+    <!-- Remove obj folder -->
+    <RemoveDir Directories="$(BaseIntermediateOutputPath)" />
+    <!-- Remove bin folder -->
+    <RemoveDir Directories="$(BaseOutputPath)" />
+  </Target>
 </Project>
