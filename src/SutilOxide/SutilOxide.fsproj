@@ -20,7 +20,7 @@
   <ItemGroup>
     <!-- <PackageReference Include="Fable.Browser.Dom" Version="2.*" /> -->
     <!-- <ProjectReference Include="..\..\..\Sutil\src\Sutil\Sutil.fsproj" /> -->
-    <PackageReference Include="Sutil" Version="2.0.7" />
+    <PackageReference Include="Sutil" Version="2.0.9" />
     <PackageReference Include="Fable.SimpleJson" Version="3.24.0" />
   </ItemGroup>
   <!-- Add source files to "fable" folder in Nuget package -->

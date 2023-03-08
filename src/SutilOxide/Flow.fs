@@ -21,6 +21,8 @@ module Types =
         Type : string
         X : float
         Y : float
+        Width : float
+        Height : float
         ZIndex : int
         ClassName : string
         Data : 'NodeData
@@ -34,6 +36,8 @@ module Types =
             Type = "default"
             X = x
             Y = y
+            Width = 100
+            Height = 62
             ZIndex = 0
             ClassName = ""
             Data = data
@@ -66,12 +70,12 @@ module Types =
     }
     with
         static member Create( id : FlowId, node1 : FlowId, port1 : string, node2 : FlowId, port2 : string, data : 'EdgeData ) =
-        {
-            Id = id
-            Source = { NodeId = node1; PortId = port1 }
-            Target = { NodeId = node2; PortId = port2 }
-            Data = data
-        }
+            {
+                Id = id
+                Source = { NodeId = node1; PortId = port1 }
+                Target = { NodeId = node2; PortId = port2 }
+                Data = data
+            }
 
     type Graph<'NodeData,'EdgeData> = {
         Nodes : Map<FlowId,Node<'NodeData> >
@@ -526,7 +530,8 @@ module Views =
             Attr.style [ Css.zIndex (node.ZIndex + 1) ]
             Attr.custom( "x-node-id", node.Id )
             Attr.custom( "x-port-id", port.Id )
-            Attr.className( $"port {port.Mode.ToString().ToLower()} {loc.ToString().ToLower()}" )
+            Attr.custom( "x-port-loc", loc.LowerName )
+            Attr.className( $"port {port.Mode.ToString().ToLower()} {loc.ToString().ToLower()} {loc.LowerName}" )
         ]
 
     let renderPorts (options : ChartOptions<'a>) (node : Node<'a>) =
@@ -546,6 +551,8 @@ module Views =
             Attr.style [
                 Css.left (px (node.X))
                 Css.top (px (node.Y))
+                Css.width (px (node.Width))
+                Css.height (px (node.Height))
             ]
 
             yield! renderPorts options node
@@ -567,18 +574,31 @@ module Views =
     let renderNode (model : Model<'a,'b>) options (node : Node<'a>) =
         renderNodeType options node |> injectNodeDefaults model options node
 
-    let findPortXY (np : NodePort) =
-        let el = Browser.Dom.document.querySelector( sprintf ".port[x-node-id='%s'][x-port-id='%s']" np.NodeId np.PortId )
-        if isNull el then
-            (0.0,0.0)
-        else
-            let portEl = el :?> HTMLElement
-            let containerEl = portEl.parentElement.parentElement
-            centreXY portEl |> toLocalXY containerEl
+    let findPortXY (model : Model<'a,'b>) options (np : NodePort) =
+        let node = model.Graph.Nodes[np.NodeId]
+        let nodeType = options.NodeTypes[ node.Type ]
+        let port = nodeType |> Array.find (fun p -> p.Id = np.PortId)
+
+        let loc = if port.Mode = Input then node.TargetLocation else node.SourceLocation
+
+        match loc with 
+        | Left   -> node.X,                    node.Y + node.Height / 2.0
+        | Right  -> node.X + node.Width,       node.Y + node.Height / 2.0
+        | Top    -> node.X + node.Width / 2.0, node.Y
+        | Bottom -> node.X + node.Width / 2.0, node.Y + node.Height
+        | Centre -> node.X + node.Width / 2.0, node.Y + node.Height / 2.0
+
+        // let el = Browser.Dom.document.querySelector( sprintf ".port[x-node-id='%s'][x-port-id='%s']" np.NodeId np.PortId )
+        // if isNull el then
+        //     (0.0,0.0)
+        // else
+        //     let portEl = el :?> HTMLElement
+        //     let containerEl = portEl.parentElement.parentElement
+        //     centreXY portEl |> toLocalXY containerEl
 
     let renderEdge (model : Model<'a,'b>) options (edge : Edge<'b>) =
-        let x1, y1 = findPortXY( edge.Source )
-        let x2, y2 = findPortXY( edge.Target )
+        let x1, y1 = findPortXY model options edge.Source
+        let x2, y2 = findPortXY model options edge.Target
         Edges.drawEdgeSvg (BasicLocation.Bottom) x1 y1 (BasicLocation.Top) x2 y2 "bezier"
 
     let renderGraph (graph : Graph<'NodeData,'EdgeData> ) (options : ChartOptions<'NodeData>) =

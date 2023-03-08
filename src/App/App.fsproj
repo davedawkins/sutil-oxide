@@ -10,19 +10,8 @@
     <PackageReference Include="Fable.Formatting.Markdown" Version="1.0.1" />
     <PackageReference Include="Fable.Fetch" Version="2.*" />
     <ProjectReference Include="..\SutilOxide\SutilOxide.fsproj" />
-    <!-- <PackageReference Include="Fable.Browser.Dom" Version="*" /> -->
-    <!-- <PackageReference Include="Sutil" Version="2.0.5" /> -->
-    <!-- <ProjectReference Include="..\..\..\Sutil\src\Sutil\Sutil.fsproj" /> -->
     <!-- <PackageReference Include="Sutil.Toastr" Version="1.0.6"/> -->
-    <!-- <ProjectReference Include="..\..\..\sutil-toastr\src\Sutil.Toastr.fsproj" /> -->
 </ItemGroup>
-  <Target Name="ReallyClean" AfterTargets="Clean">
-    <!-- Remove obj folder -->
-    <RemoveDir Directories="$(BaseIntermediateOutputPath)" />
-    <!-- Remove bin folder -->
-    <RemoveDir Directories="$(BaseOutputPath)" />
-  </Target>
-
   <Target Name="ReallyClean" AfterTargets="Clean">
     <!-- Remove obj folder -->
     <RemoveDir Directories="$(BaseIntermediateOutputPath)" />

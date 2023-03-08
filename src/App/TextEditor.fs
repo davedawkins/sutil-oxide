@@ -10,9 +10,9 @@ open type Feliz.length
 
 let AceSdk : SutilOxide.AceEditor.IExports = importAll("../../public/ace-builds/src-min-noconflict/ace.js")
 
-let initAce divId onChange =
+let initAce hostElement onChange =
     SutilOxide.AceEditor.config.set("basePath", Some "/ace-builds/src-min-noconflict" )
-    let editor = AceSdk.edit( Fable.Core.U2.Case2 divId, {| basePath = "/ace-builds/src-min-noconflict" |} )
+    let editor = AceSdk.edit( Fable.Core.U2.Case1 hostElement, {| basePath = "/ace-builds/src-min-noconflict" |} )
     editor.setTheme("ace/theme/textmate")
     editor.session.setMode( Fable.Core.U2.Case1 "ace/mode/text" )
     editor.on_change( fun _ -> onChange() )
@@ -42,10 +42,13 @@ type Editor(fs : IFileSystem ) =
                     save()
                     e.preventDefault())
 
-            do
-                DomHelpers.rafu( fun _ ->
-                    editor <- initAce "editor" (fun _ -> onEditedChange true)
-                )
+            CoreElements.onMount ( fun e ->
+                    editor <- initAce (e.target :?> Browser.Types.HTMLElement) (fun _ -> onEditedChange true)
+                ) []
+            // do
+            //     DomHelpers.rafu( fun _ ->
+            //         editor <- initAce "editor" (fun _ -> onEditedChange true)
+            //     )
         ]
 
     let startEdit (e : SutilOxide.AceEditor.Ace.Editor) (fs : IFileSystem) (path:string) =
@@ -66,9 +69,12 @@ type Editor(fs : IFileSystem ) =
         | _ ->
             e.session.setMode( Fable.Core.U2.Case1 "ace/mode/text" )
 
-    let load (path : string) =
-        editing <- path
-        startEdit editor fs path
+    let rec load (path : string) =
+        if isNull editor then
+            DomHelpers.rafu (fun _ -> load path)
+        else
+            editing <- path
+            startEdit editor fs path
 
     do
         ()

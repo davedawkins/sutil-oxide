@@ -34,13 +34,13 @@ type [<AllowNullLiteral; Global>] IntersectionObserverType =
     abstract rootMargin: string
     /// Array of intersection thresholds that was specified when the observer was instantiated
     abstract thresholds: float[]
-    // Stop watching all target elements
+    /// Stop watching all target elements
     abstract disconnect: unit -> unit
-    // Start watching given target
+    /// Start watching given target
     abstract observe: Node -> unit
     /// Return array of IntersectionObserverEntry records captured since last callback was invoked
     abstract takeRecords: Node -> unit
-    // Stop watching given target
+    /// Stop watching given target
     abstract unobserve: Node -> unit
 
 type IntersectionObserverCallback = IntersectionObserverEntry[] -> IntersectionObserverType -> unit

@@ -229,10 +229,10 @@ open Flow
 
 let exampleGraph : Graph<string,string> = {
     Nodes = Map [
-        "n1", Node.Create("n1", 50.0, 50.0, "Hello")
-        "n2", Node.Create("n2", 50.0, 150.0, "World")
-        "n3", { Node.Create("n3", 150.0, 50.0, "No Select") with CanSelect = false }
-        "n4", { Node.Create("n4", 150.0, 150.0, "No Move") with CanMove = false; Type = "" }
+        "n1", Node.Create("n1", 250.0, 50.0, "Hello")
+        "n2", Node.Create("n2", 250.0, 150.0, "World")
+        "n3", { Node.Create("n3", 50.0, 50.0, "No Select") with CanSelect = false }
+        "n4", { Node.Create("n4", 50.0, 150.0, "No Move") with CanMove = false; Type = "" }
     ]
     Edges = Map [
         "e1", Edge.Create( "e1", "n1", "out", "n2", "in", "Messages" )
