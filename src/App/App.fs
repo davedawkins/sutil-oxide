@@ -239,8 +239,55 @@ let exampleGraph : Graph<string,string> = {
     ]
 }
 
+let catalogStyle = [
+    rule ".flow-catalog" [
+        Css.displayFlex
+        Css.flexDirectionRow
+        Css.flexWrapWrap
+        Css.alignItemsFlexStart
+        Css.alignContentFlexStart
+        //Css.justifyContentSpaceAround
+        Css.gap (rem 1)
+        Css.padding (rem 1)
+        Css.backgroundColor ("white")
+        Css.height (percent 100)
+        Css.width (percent 100)
+    ]
+    rule ".flow-catalog-item" [
+        Css.displayInlineFlex
+        Css.border (px 1, Feliz.borderStyle.solid, "#888888")
+        Css.borderRadius (px 4)
+        Css.backgroundColor "white"
+        Css.color "black"
+        Css.height (auto)
+        Css.padding (rem 0.35)
+        Css.cursorPointer
+    ]
+]
+
+let catalogItem name = 
+    Html.divc "flow-catalog-item" [
+        text name
+    ]
+
+let catalogTypes = [ 
+            "Start"
+            "Pause"
+            "Rewind"
+            "Forward"
+            "Reset"
+            "Stop"
+        ] 
+let flowCatalog() =
+    Html.divc "flow-catalog" [
+        yield! catalogTypes |> List.map (fun t -> Flow.Views.makeCatalogItem(t,catalogItem t ))
+    ] |> withStyle catalogStyle
+
 let flowGraph() =
-    let fc = Flow.FlowChart()
+    let catalog = Map(
+        catalogTypes |> List.map (fun t -> t, Flow.Types.Node.Create( t, 0, 0, t))
+    )
+    let fc = Flow.FlowChart<string>( { ChartOptions<string>.Create() with Catalog = catalog } )
     fc.Render(exampleGraph)
 
 let initPanes  (fileExplorer : FileExplorer.FileExplorer) (textEditor : TextEditor.Editor) (model : IStore<Model>) dispatch (dc : DockContainer)  =
@@ -285,7 +332,8 @@ let initPanes  (fileExplorer : FileExplorer.FileExplorer) (textEditor : TextEdit
         textEditor.View,
         true )
 
-    dc.AddPane( "Graph",       CentreCentre, flowGraph(), true )
+    dc.AddPane( "Catalog",       LeftTop, flowCatalog(), true )
+    dc.AddPane( "Graph",         CentreCentre, flowGraph(), true )
 
     ()
 

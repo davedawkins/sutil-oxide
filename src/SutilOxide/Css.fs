@@ -12,7 +12,9 @@ type Theme = {
     TextColor : string
     Border : string
     ControlBackground  : string;
+    ControlForeground  : string;
     ContentBackground  : string;
+    ContentForeground  : string;
     BackgroundHover    : string;
     BackgroundSelected : string;
     Handle    :string;
@@ -28,7 +30,9 @@ let LightTheme =
         TextColor = "black"
         Border = border
         ControlBackground = "#EBEBEB"
+        ControlForeground = "black"
         ContentBackground = "#F4F4F4"
+        ContentForeground = "black"
         BackgroundHover = "#DDDDDD"
         BackgroundSelected = "#CCCCCC"
         Handle = border
@@ -44,7 +48,9 @@ let DarkTheme =
         TextColor = "rgb(207,207,207)"
         Border = border
         ControlBackground = "rgb(85,85,85)"
+        ControlForeground = "rgb(207,207,207)"
         ContentBackground = "rgb(105,105,105)"
+        ContentForeground = "rgb(207,207,207)"
         BackgroundHover = "rgb(60,60,60)"
         BackgroundSelected = "rgb(50,50,50)"
         Handle = border
@@ -835,3 +841,4 @@ open Browser.Dom
 
 let installStyling (t : Theme) =
     addGlobalStyleSheet Browser.Dom.document (Styling t)
+

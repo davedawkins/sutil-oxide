@@ -88,12 +88,13 @@ module Types =
 
     type NodeRenderer<'a> = Node<'a> -> Core.SutilElement
 
-    type ChartOptions<'a> = {
+    type ChartOptions<'nodeType> = {
         SnapToGrid : bool
         SnapToGridSize : int
-        NodeRenderers : Map<string,NodeRenderer<'a>>
+        NodeRenderers : Map<string,NodeRenderer<'nodeType>>
         Css : StyleSheetDefinitions
         NodeTypes : Map<string,Port array>
+        Catalog : Map<string,Node<'nodeType>>
     }
     with
         static member Create() =
@@ -111,6 +112,7 @@ module Types =
                             { Id = "out"; Type = "default"; Mode = Output }
                         |]
                 ]
+                Catalog = Map.empty
             }
 
 
@@ -177,6 +179,10 @@ module Helpers =
     let containerNodeFromNodeEl (nodeEl : HTMLElement) =
         nodeEl.parentElement
 
+    let toJsonString (value : 'T) = Fable.Core.JS.JSON.stringify(value)
+    let fromJsonString (value : string) : 'T = Fable.Core.JS.JSON.parse(value) :?> 'T
+
+
 module Updates =
 
     type Model<'NodeData,'EdgeData> = {
@@ -189,6 +195,9 @@ module Updates =
         | ClearSelection
         | Select of string
         | SelectOnly of string
+        | SetLocation of (string * float * float)
+        | AddNode of (string * float * float)
+        | AddEdge of (string * string * string * string)
 
     let init g =
         {
@@ -196,14 +205,63 @@ module Updates =
             Selection = Set.empty
         }, Cmd.none
 
-    let update (msg : Message) model =
+
+    let makeName (name : string) (exists : string -> bool) =
+        let mutable i = 0
+        let mutable result = ""
+
+        let nextName() =
+            i <- i + 1
+            result <- sprintf "%s%d" name i
+
+        nextName()
+
+        while exists result do
+            nextName()
+
+        result
+
+    let makeNode options m nodeType x y =
+        let name = makeName nodeType (fun s -> m.Graph.Nodes.ContainsKey(s))
+        let newNode : Node<'nt> = options.Catalog[nodeType]
+        {
+            newNode with
+                Id = name
+                X = x 
+                Y = y 
+        }
+
+    let withNode (n : Node<'a>) (g : Graph<'a,'b>) =
+        { g with Nodes = g.Nodes.Add(n.Id, n)}
+
+    let withEdge (n : Edge<'b>) (g : Graph<'a,'b>) =
+        { g with Edges = g.Edges.Add(n.Id, n)}
+
+    let update options (msg : Message) model =
         match msg with
+
+        | AddEdge (n1,p1,n2,p2) ->
+            let name = sprintf "e-%s-%s-%s-%s" n1 p1 n2 p2
+            let e = Edge<'b>.Create( name, n1, p1, n2,p2, Unchecked.defaultof<'b> )
+            { model with Graph = model.Graph |> withEdge e }, Cmd.none
+
+        | SetLocation (nodeId, x, y) ->
+            let node = { model.Graph.Nodes[nodeId]  with X = x; Y = y}
+            { model with Graph = model.Graph |> withNode node }, Cmd.none
+
+        | AddNode (nodeType, x, y) -> 
+            let node = makeNode options model nodeType x y
+            { model with Graph = model.Graph |> withNode node }, Cmd.none
+    
         | ClearSelection ->
             { model with Selection = Set.empty }, Cmd.none
+
         | Select id ->
             { model with Selection = model.Selection.Add(id) }, Cmd.none
+    
         | SelectOnly id ->
             { model with Selection = Set.empty.Add(id) }, Cmd.none
+
         | MoveNode (id,x,y) ->
             let g = model.Graph
             let n = g.Nodes[id]
@@ -214,7 +272,6 @@ module Updates =
 module Edges =
 
     let drawEdgeSvg (pos1:BasicLocation) (x1:float) (y1:float) (pos2:BasicLocation) (x2:float) (y2:float) (edgeStyle:string) =
-        //let (|LeftRight|TopBottom|) = function |Left|Right-> LeftRight|_ -> TopBottom
         let isLR = function |Left|Right-> true|_->false
         let isTB = not<<isLR
 
@@ -225,14 +282,30 @@ module Edges =
             | "bezier" ->
                 let dx, dy = x2 - x1, y2 - y1
                 let mx, my = x1 + (dx / 2.0), y1 + (dy / 2.0)
-                let px0,py0,px1,py1 =
+                let points = //px0,py0,px1,py1 =
                     match pos1, pos2 with
-                    | Left,Right | Right,Left -> mx,y1,mx,y2
-                    | Top,Bottom | Bottom,Top -> x1,my,x2,my
-                    | src, dst when isLR src && isTB dst -> x2,y1, x2,y2
-                    | src, dst when isTB src && isLR dst -> x1,y2, x2,y2
-                    | _ -> x1,my,x2,my
-                sprintf "M%f,%f C%f,%f %f,%f %f,%f" x1 y1 px0 py0 px1 py1 x2 y2
+                    | Left,Right -> [ mx,y1; mx,y2 ]
+                    | Right,Left -> 
+                        [ mx,y1; mx,y2 ]
+                    | Top,Bottom -> 
+                        [ x1, my; x2,my ]
+                    | Bottom,Top -> 
+                        if y2 > (y1 + 40.0) then
+                             [x1,my; x2,my]
+                        else
+                            [ 
+                                x1, y1 + 20.0
+                                ((x1 + x2) / 2.0), y1 + 20.0
+                                ((x1 + x2) / 2.0), y2 - 20.0
+                                x2, y2 - 20.0
+                            ]
+                    // | src, dst when isLR src && isTB dst -> x2,y1, x2,y2
+                    // | src, dst when isTB src && isLR dst -> x1,y2, x2,y2
+                    | _ -> [ x1,my; x2,my ]
+                //sprintf "M%f,%f C%f,%f %f,%f %f,%f" x1 y1 px0 py0 px1 py1 x2 y2
+
+                let pstr = points |> List.map ( fun (x,y) -> sprintf "%f,%f" x y ) |> String.concat " "
+                sprintf "M%f,%f L%s %f,%f" x1 y1 pstr x2 y2
 
             | _ -> sprintf "M %f,%fL %f,%f" x1 y1 x2 y2
 
@@ -309,34 +382,21 @@ module EventHandlers =
             if (node.CanSelect) then
                 dispatch (Select node.Id)
 
-    let handlePortMouseDown (e : MouseEvent) (portEl : HTMLElement) =
+    let handlePortMouseDown (e : MouseEvent) dispatch (portEl : HTMLElement) =
         let nodeEl = portEl.parentElement
         let containerEl = containerNodeFromNodeEl nodeEl
         let containerR = containerEl.getBoundingClientRect()
 
-//        let sx,sy = clientXY e
-
-//        let portRect = portEl.getBoundingClientRect();
-//        let sx, sy = (portRect.left + portRect.width / 2.0) - containerR.left, (portRect.top + portRect.height / 2.0) - containerR.top
         let sx, sy = centreXY(portEl) |> toLocalXY containerEl
-
-//        Fable.Core.JS.console.log("port down", e, portRect, (sx,sy) )
 
         let mousexy = Store.make (sx,sy)
 
         let dragLine =
             Bind.el( mousexy, fun (x,y) ->
-                Edges.drawEdgeSvg Top sx sy Bottom x y "bezier"
-                // Svg.line [
-                //     Attr.x1 (px sx)
-                //     Attr.y1 (px sy)
-                //     Attr.x2 (px x)
-                //     Attr.y2 (px y)
-                //     Attr.stroke "black"
-                // ]
+                Edges.drawEdgeSvg Bottom sx sy Top x y "bezier"
             )
 
-        let unmount = ("graph-edges-id",dragLine) |> Program.mount
+        let unmount = (Browser.Dom.document.getElementById("graph-edges-id"),dragLine) |> Program.mountAppend
 
         let stop = listen "mousemove" containerEl (fun e ->
             if (targetEl e).classList.contains("port") then
@@ -348,17 +408,48 @@ module EventHandlers =
 
         once "mouseup" containerEl (fun e ->
             SutilOxide.Logging.log("mouseup")
-            if (targetEl e).classList.contains("port") then
-                (targetEl e) |> centreXY |> toLocalXY containerEl |> Store.set mousexy
+            let el = targetEl e
+            if el.classList.contains("port") then
+                let sourceNodeId = portEl.getAttribute("x-node-id")
+                let sourcePortId = portEl.getAttribute("x-port-id")
+                let targetNodeId = el.getAttribute("x-node-id")
+                let targetPortId = el.getAttribute("x-port-id")
+                SutilOxide.Logging.log($"connection: {sourceNodeId}:{sourcePortId} -> {targetNodeId}:{targetPortId}")
+                Fable.Core.JS.console.log(el)
+                el |> centreXY |> toLocalXY containerEl |> Store.set mousexy
+                dispatch (AddEdge (sourceNodeId,sourcePortId,targetNodeId,targetPortId))
+            else
+                SutilOxide.Logging.log("no connection")
             stop()
             unmount.Dispose()
         )
 
+
+    let private handleDrop (options : ChartOptions<'nt>) model dispatch (e : Browser.Types.DragEvent) =
+        let x,y = clientXY e
+
+        let nodeType = e.dataTransfer.getData("x/type")
+        let nodeName = e.dataTransfer.getData("x/name")
+
+        let offsetX, offsetY : float*float = e.dataTransfer.getData("x/offset") |> Helpers.fromJsonString
+        let nodeX = x - offsetX 
+        let nodeY = y - offsetY 
+        
+        if nodeType <> "" then
+            dispatch (AddNode (nodeType, nodeX, nodeY))
+
+        if nodeName <> "" then
+            ( nodeName, nodeX, nodeY ) |> SetLocation |> dispatch
+            dispatch (SelectOnly nodeName)
+
+        e.preventDefault()
+
     let containerEventHandlers options model dispatch = [
+
         Ev.onMouseDown (fun e ->
             match findPortFromEvent e ((model |> Store.get).Graph) with
             | Some (portEl) ->
-                handlePortMouseDown e portEl
+                handlePortMouseDown e dispatch portEl
             | None ->
                 match findNodeFromEvent e ((model |> Store.get).Graph) with
                 | None ->
@@ -366,6 +457,8 @@ module EventHandlers =
                 | Some (nodeEl, node) ->
                     handleNodeMouseDown e options dispatch nodeEl node
         )
+
+        Ev.onDrop (handleDrop options model dispatch)
     ]
 
 module Styles =
@@ -476,6 +569,13 @@ module Styles =
             Css.custom("animation", "dashdraw .5s linear infinite")
         ]
 
+        rule ".graph-edges" [
+            Css.custom("pointer-events","none")
+            Css.positionAbsolute
+            Css.custom("z-index","4")
+            Css.width (percent 100)
+            Css.height (percent 100)
+        ]
 
     ]
 
@@ -603,7 +703,7 @@ module Views =
 
     let renderGraph (graph : Graph<'NodeData,'EdgeData> ) (options : ChartOptions<'NodeData>) =
 
-        let model, dispatch = graph |> Store.makeElmish (Updates.init) (Updates.update) ignore
+        let model, dispatch = graph |> Store.makeElmish (Updates.init) (Updates.update options) ignore
 
         container [
             yield! containerEventHandlers options model dispatch
@@ -615,23 +715,24 @@ module Views =
             Svg.svg [
                 Attr.id "graph-edges-id"
                 Attr.className "graph-edges"
-                Attr.style [
-                    Css.custom("pointer-events","none")
-                    Css.positionAbsolute
-                    Css.custom("z-index","4")
-                    Css.width (percent 100)
-                    Css.height (percent 100)
-                ]
                 Bind.el( model, fun m ->
                     fragment (m.Graph.Edges.Values |> Seq.map (renderEdge m options))
                 )
             ]
         ] |> withStyle options.Css
 
-type FlowChart<'NodeData>() =
-    let mutable options =
-        ChartOptions<'NodeData>.Create()
+    let makeCatalogItem (nodeType : string, el : Sutil.Core.SutilElement) =
+        el |> CoreElements.inject [
+            Attr.custom("x-node-type", nodeType)
+            Attr.draggable true
+            Ev.onDragStart (fun e ->
+                e.dataTransfer.setData("x/offset", toJsonString(clientXY e)) |> ignore
+                e.dataTransfer.setData("x/type", nodeType) |> ignore)
+        ]
 
+type FlowChart<'NodeData>( options : ChartOptions<'NodeData> ) =
+//    let mutable options =
+//        ChartOptions<'NodeData>.Create()
 
     do
         addGlobalStyleSheet Browser.Dom.document Styles.styleDefault |> ignore

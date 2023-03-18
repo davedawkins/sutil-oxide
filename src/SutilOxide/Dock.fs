@@ -142,7 +142,7 @@ type private Message =
     | MoveTo of string*DockLocation
     | DockProp of (string *DockProperty)
 
-let init docks =
+let private init docks =
     {
         RefreshId = 0
         Docks = docks
@@ -657,7 +657,7 @@ with
                 ]
             ]
 
-        (DomHelpers.getContentParentNode initLoc, wrapper) |> Program.mount |> ignore
+        (DomHelpers.getContentParentNode initLoc, wrapper) |> Program.mountAppend |> ignore
 
         dispatch <| Message.AddTab (name,"",initLoc,show)
 
