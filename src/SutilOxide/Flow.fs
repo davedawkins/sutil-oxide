@@ -16,7 +16,7 @@ module Types =
 
     type FlowId = string
 
-    type Node<'NodeData> = {
+    type Node = {
         Id : FlowId
         Type : string
         X : float
@@ -25,22 +25,20 @@ module Types =
         Height : float
         ZIndex : int
         ClassName : string
-        Data : 'NodeData
         SourceLocation : BasicLocation
         TargetLocation : BasicLocation
         CanSelect : bool
         CanMove : bool }
         with
-        static member Create( id : FlowId, x : float, y : float, data : 'NodeData ) = {
+        static member Create( id : FlowId, typ: string, x : float, y : float ) = {
             Id = id
-            Type = "default"
+            Type =typ
             X = x
             Y = y
             Width = 100
             Height = 62
             ZIndex = 0
             ClassName = ""
-            Data = data
             CanSelect = true
             CanMove = true
             SourceLocation = Bottom
@@ -62,63 +60,97 @@ module Types =
         PortId : FlowId
     }
 
-    type Edge<'EdgeData> = {
+    type Edge = {
         Id : FlowId
         Source : NodePort
         Target : NodePort
-        Data : 'EdgeData
     }
     with
-        static member Create( id : FlowId, node1 : FlowId, port1 : string, node2 : FlowId, port2 : string, data : 'EdgeData ) =
+        static member Create( id : FlowId, node1 : FlowId, port1 : string, node2 : FlowId, port2 : string ) =
             {
                 Id = id
                 Source = { NodeId = node1; PortId = port1 }
                 Target = { NodeId = node2; PortId = port2 }
-                Data = data
             }
 
-    type Graph<'NodeData,'EdgeData> = {
-        Nodes : Map<FlowId,Node<'NodeData> >
-        Edges : Map<FlowId,Edge<'EdgeData> >
-    }
+    type Graph = 
+        {
+            Nodes : Map<FlowId,Node >
+            Edges : Map<FlowId,Edge >
+        }
+        static member Empty = { Nodes = Map.empty; Edges = Map.empty}
 
     type Background =
         | Clear
         | Dotted
 
-    type NodeRenderer<'a> = Node<'a> -> Core.SutilElement
+    type NodeRenderer = Node -> Core.SutilElement
 
-    type ChartOptions<'nodeType> = {
+    type GraphOptions = {
+
         SnapToGrid : bool
         SnapToGridSize : int
-        NodeRenderers : Map<string,NodeRenderer<'nodeType>>
+
         Css : StyleSheetDefinitions
-        NodeTypes : Map<string,Port array>
-        Catalog : Map<string,Node<'nodeType>>
+
+        NodePorts : string -> Port array
+        NodeFactory : string*string -> Node
+        EdgeFactory : string*string*string*string*string -> Edge
+
+        ViewNode: Node -> Sutil.Core.SutilElement
+
+        OnChange : Graph -> unit
+        OnSelectionChange: (Node list * Edge list -> unit)
     }
     with
+        static member DefaultInPorts = 
+                        [|
+                            { Id = "In"; Type = "default"; Mode = Input }
+                        |]
+        static member DefaultOutPorts = 
+                        [|
+                            { Id = "Out"; Type = "default"; Mode = Output }
+                        |]
+        static member DefaultPorts = 
+                        [|
+                            { Id = "In"; Type = "default"; Mode = Input }
+                            { Id = "Out"; Type = "default"; Mode = Output }
+                        |]
         static member Create() =
+
+            let renderNodeDefault (node : Node) =
+                Html.div [
+                    Html.span [
+                        Attr.className "data"
+                        text (sprintf "%A" node.Id)
+                    ]
+                ]
+            let defaultPortTypes =
+                Map [
+                    "input",  GraphOptions.DefaultInPorts
+                    "output", GraphOptions.DefaultOutPorts
+                    "default",GraphOptions.DefaultPorts
+                ]
             {
                 SnapToGrid = true
                 SnapToGridSize = 5
-                NodeRenderers = Map.empty
                 Css = []
-                NodeTypes = Map [
-                    "input",  [| { Id = "in"; Type = "default"; Mode = Input } |]
-                    "output", [| { Id = "out"; Type = "default"; Mode = Output } |]
-                    "default",
-                        [|
-                            { Id = "in"; Type = "default"; Mode = Input }
-                            { Id = "out"; Type = "default"; Mode = Output }
-                        |]
-                ]
-                Catalog = Map.empty
+                NodePorts = (fun typ ->
+                    defaultPortTypes 
+                    |> Map.tryFind typ 
+                    |> Option.defaultValue defaultPortTypes["default"]
+                )
+                NodeFactory = (fun (name,typ) -> Node.Create(name, typ, 0, 0))
+                EdgeFactory = (fun (name,n1,p1,n2,p2) -> Edge.Create(name, n1,p1, n2, p2))
+                ViewNode = renderNodeDefault
+                OnChange = ignore
+                OnSelectionChange = ignore
             }
 
 
 [<AutoOpen>]
 module Helpers =
-    let asEl (e : Node) = e :?> HTMLElement
+    let asEl (e : Browser.Types.Node) = e :?> HTMLElement
     let targetEl (e : Event) = e.target :?> HTMLElement
     let currentEl (e : Event) = e.currentTarget :?> HTMLElement
 
@@ -162,13 +194,13 @@ module Helpers =
     let select (el : HTMLElement) =
         el.classList.add("selected")
 
-    let findPortFromEvent (e:MouseEvent) (g:Graph<'a,'b>) =
+    let findPortFromEvent (e:MouseEvent) (g:Graph) =
         e
         |> targetEl
         |> climbToPortNode
         //|> Option.map (fun nodeEl -> nodeEl)
 
-    let findNodeFromEvent (e:MouseEvent) (g:Graph<'a,'b>) =
+    let findNodeFromEvent (e:MouseEvent) (g:Graph) =
         e
         |> targetEl
         |> climbToGraphNode
@@ -185,13 +217,15 @@ module Helpers =
 
 module Updates =
 
-    type Model<'NodeData,'EdgeData> = {
-        Graph : Graph<'NodeData,'EdgeData>
+    type Model = {
+        Graph : Graph
         Selection : Set<string>
     }
 
     type Message =
+        | DeleteNode of string
         | MoveNode of string * float * float
+        | DeleteSelection
         | ClearSelection
         | Select of string
         | SelectOnly of string
@@ -205,6 +239,20 @@ module Updates =
             Selection = Set.empty
         }, Cmd.none
 
+
+    let findNodeEdges (g : Graph) (nodeId) =
+        g.Edges.Values |> Seq.filter (fun e -> e.Source.NodeId = nodeId || e.Target.NodeId = nodeId)
+
+    let deleteNode (g : Graph) (nodeId) =
+        let edges = findNodeEdges g nodeId
+
+        let nodes' = g.Nodes.Remove(nodeId)
+        let edges' : Map<FlowId,Edge> = edges |> Seq.fold (fun edges e -> edges.Remove(e.Id) ) g.Edges
+
+        { g with Nodes = nodes'; Edges = edges' }
+
+    let deleteNodes (g : Graph) (nodes : string seq) =
+        nodes |> Seq.fold (fun g n -> deleteNode g n) g
 
     let makeName (name : string) (exists : string -> bool) =
         let mutable i = 0
@@ -223,7 +271,7 @@ module Updates =
 
     let makeNode options m nodeType x y =
         let name = makeName nodeType (fun s -> m.Graph.Nodes.ContainsKey(s))
-        let newNode : Node<'nt> = options.Catalog[nodeType]
+        let newNode : Node = options.NodeFactory(name,nodeType)
         {
             newNode with
                 Id = name
@@ -231,18 +279,28 @@ module Updates =
                 Y = y 
         }
 
-    let withNode (n : Node<'a>) (g : Graph<'a,'b>) =
+    let withNode (n : Node) (g : Graph) =
         { g with Nodes = g.Nodes.Add(n.Id, n)}
 
-    let withEdge (n : Edge<'b>) (g : Graph<'a,'b>) =
+    let withEdge (n : Edge) (g : Graph) =
         { g with Edges = g.Edges.Add(n.Id, n)}
+
+    let msgSelectionChange (model : Model) options dispatch =
+        let nodes = model.Selection |> Seq.map (fun s -> model.Graph.Nodes[s]) |> Seq.toList
+        options.OnSelectionChange( nodes, [ ])
 
     let update options (msg : Message) model =
         match msg with
 
+        | DeleteSelection ->
+            { model with Graph = deleteNodes (model.Graph) (model.Selection) }, Cmd.ofMsg ClearSelection
+
+        | DeleteNode n ->
+            { model with Graph = deleteNode (model.Graph) n }, Cmd.ofMsg ClearSelection
+
         | AddEdge (n1,p1,n2,p2) ->
             let name = sprintf "e-%s-%s-%s-%s" n1 p1 n2 p2
-            let e = Edge<'b>.Create( name, n1, p1, n2,p2, Unchecked.defaultof<'b> )
+            let e = options.EdgeFactory( name, n1, p1, n2,p2 )
             { model with Graph = model.Graph |> withEdge e }, Cmd.none
 
         | SetLocation (nodeId, x, y) ->
@@ -251,16 +309,31 @@ module Updates =
 
         | AddNode (nodeType, x, y) -> 
             let node = makeNode options model nodeType x y
-            { model with Graph = model.Graph |> withNode node }, Cmd.none
+
+            let autoConnectCmd = 
+                if (model.Selection.Count = 1) then
+                    let selectedNode = model.Graph.Nodes[ model.Selection |> Seq.head ]
+                    let portFrom = options.NodePorts (selectedNode.Type) |> Array.tryFind (fun p -> p.Mode = Output)
+                    let portTo = options.NodePorts (node.Type) |> Array.tryFind (fun p -> p.Mode = Input)
+                    match (portFrom, portTo) with
+                    | Some a, Some b -> Cmd.ofMsg (AddEdge (selectedNode.Id,a.Id,node.Id,b.Id))
+                    | _ -> Cmd.none
+                else
+                    Cmd.none
+
+            { model with Graph = model.Graph |> withNode node }, Cmd.batch [ autoConnectCmd; Cmd.ofMsg (SelectOnly node.Id) ]
     
         | ClearSelection ->
-            { model with Selection = Set.empty }, Cmd.none
+            let m = { model with Selection = Set.empty }
+            m, [ msgSelectionChange m options ]
 
         | Select id ->
-            { model with Selection = model.Selection.Add(id) }, Cmd.none
-    
+            let m = { model with Selection = model.Selection.Add(id) } 
+            m, [ msgSelectionChange m options ]
+   
         | SelectOnly id ->
-            { model with Selection = Set.empty.Add(id) }, Cmd.none
+            let m = { model with Selection = Set.empty.Add(id) }
+            m, [ msgSelectionChange m options ]
 
         | MoveNode (id,x,y) ->
             let g = model.Graph
@@ -331,7 +404,7 @@ module EventHandlers =
     open Updates
     open DomHelpers
 
-    let selectHandler dispatch (node : Node<'NodeData>) = [
+    let selectHandler dispatch (node : Node) = [
         Ev.onClick (fun e ->
             let el : HTMLElement = e.target |> asElement
             e.stopPropagation()
@@ -340,7 +413,7 @@ module EventHandlers =
         )
     ]
 
-    let handleNodeMouseDown (e : MouseEvent) options dispatch (nodeEl : HTMLElement) (node : Node<'a>) =
+    let handleNodeMouseDown (e : MouseEvent) options dispatch (nodeEl : HTMLElement) (node : Node) =
         let containerEl = containerNodeFromNodeEl nodeEl
 
         if (node.CanSelect) then
@@ -425,7 +498,7 @@ module EventHandlers =
         )
 
 
-    let private handleDrop (options : ChartOptions<'nt>) model dispatch (e : Browser.Types.DragEvent) =
+    let private handleDrop (options : GraphOptions) model dispatch (e : Browser.Types.DragEvent) =
         let x,y = clientXY e
 
         let nodeType = e.dataTransfer.getData("x/type")
@@ -445,6 +518,15 @@ module EventHandlers =
         e.preventDefault()
 
     let containerEventHandlers options model dispatch = [
+
+        Attr.tabIndex 0
+
+        Ev.onKeyDown (fun e ->
+            if e.key = "Backspace" then
+                dispatch DeleteSelection
+                e.preventDefault()
+                e.stopPropagation()
+        )
 
         Ev.onMouseDown (fun e ->
             match findPortFromEvent e ((model |> Store.get).Graph) with
@@ -562,6 +644,7 @@ module Styles =
 
         rule ".edge:hover .edge-stroke" [
             Css.custom("stroke","orange")
+            Css.custom("stroke-width","2")
         ]
 
         rule "path.animated" [
@@ -624,7 +707,7 @@ module Views =
             yield! elements
         ]
 
-    let renderPort(node : Node<'a>)  (port : Port) =
+    let renderPort(node : Node)  (port : Port) =
         let loc = if port.Mode = Input then node.TargetLocation else node.SourceLocation
         Html.div [
             Attr.style [ Css.zIndex (node.ZIndex + 1) ]
@@ -634,12 +717,13 @@ module Views =
             Attr.className( $"port {port.Mode.ToString().ToLower()} {loc.ToString().ToLower()} {loc.LowerName}" )
         ]
 
-    let renderPorts (options : ChartOptions<'a>) (node : Node<'a>) =
-        options.NodeTypes.TryFind(node.Type)
-        |> Option.map (fun ports -> ports |> Array.map (renderPort node))
-        |> Option.defaultValue [| |]
+    let renderPorts (options : GraphOptions) (node : Node) =
+        options.NodePorts(node.Type) |> Array.map (renderPort node)
+        // options.NodeTypes.TryFind(node.Type)
+        // |> Option.map (fun ports -> ports |> Array.map (renderPort node))
+        // |> Option.defaultValue [| |]
 
-    let injectNodeDefaults  (model : Model<'a,'b>) options (node : Node<'a>) (view) =
+    let injectNodeDefaults  (model : Model) options (node : Node) (view) =
         view |> CoreElements.inject [
             Attr.custom("x-node-id", node.Id)
             ([
@@ -658,26 +742,13 @@ module Views =
             yield! renderPorts options node
         ]
 
-    let renderNodeDefault (node : Node<'a>) =
-        Html.div [
-            Html.span [
-                Attr.className "data"
-                text (sprintf "%A" node.Data)
-            ]
-        ]
+    let renderNode (model : Model) options (node : Node) =
+        options.ViewNode(node) |> injectNodeDefaults model options node
 
-    let renderNodeType (options : ChartOptions<'a>) (node : Node<'a>) =
-        options.NodeRenderers.TryFind( node.Type )
-        |> Option.map (fun render -> render node)
-        |> Option.defaultValue (renderNodeDefault node)
-
-    let renderNode (model : Model<'a,'b>) options (node : Node<'a>) =
-        renderNodeType options node |> injectNodeDefaults model options node
-
-    let findPortXY (model : Model<'a,'b>) options (np : NodePort) =
+    let findPortXY (model : Model) options (np : NodePort) =
         let node = model.Graph.Nodes[np.NodeId]
-        let nodeType = options.NodeTypes[ node.Type ]
-        let port = nodeType |> Array.find (fun p -> p.Id = np.PortId)
+        let ports = options.NodePorts( node.Type )
+        let port = ports |> Array.find (fun p -> p.Id = np.PortId)
 
         let loc = if port.Mode = Input then node.TargetLocation else node.SourceLocation
 
@@ -696,27 +767,37 @@ module Views =
         //     let containerEl = portEl.parentElement.parentElement
         //     centreXY portEl |> toLocalXY containerEl
 
-    let renderEdge (model : Model<'a,'b>) options (edge : Edge<'b>) =
+    let renderEdge (model : Model) options (edge : Edge) =
         let x1, y1 = findPortXY model options edge.Source
         let x2, y2 = findPortXY model options edge.Target
         Edges.drawEdgeSvg (BasicLocation.Bottom) x1 y1 (BasicLocation.Top) x2 y2 "bezier"
 
-    let renderGraph (graph : Graph<'NodeData,'EdgeData> ) (options : ChartOptions<'NodeData>) =
+    let renderGraph (graph : Graph ) (options : GraphOptions) =
 
         let model, dispatch = graph |> Store.makeElmish (Updates.init) (Updates.update options) ignore
 
         container [
+
+            // Set up notfication of edits back to user
+            // Will be unsubscribed when component unmounted
+            disposeOnUnmount [
+                ((model .>> (fun m -> m.Graph)).Subscribe(options.OnChange))
+            ]
+
+            // Install the event handlers
             yield! containerEventHandlers options model dispatch
 
+            // Render the nodes
             Bind.el( model, fun m ->
                 fragment (m.Graph.Nodes.Values |> Seq.map (renderNode m options))
             )
 
+            // Render the edges
             Svg.svg [
                 Attr.id "graph-edges-id"
                 Attr.className "graph-edges"
                 Bind.el( model, fun m ->
-                    fragment (m.Graph.Edges.Values |> Seq.map (renderEdge m options))
+                    Svg.g (m.Graph.Edges.Values |> Seq.map (renderEdge m options))
                 )
             ]
         ] |> withStyle options.Css
@@ -730,12 +811,9 @@ module Views =
                 e.dataTransfer.setData("x/type", nodeType) |> ignore)
         ]
 
-type FlowChart<'NodeData>( options : ChartOptions<'NodeData> ) =
-//    let mutable options =
-//        ChartOptions<'NodeData>.Create()
-
+type FlowChart( options : GraphOptions ) =
     do
         addGlobalStyleSheet Browser.Dom.document Styles.styleDefault |> ignore
 
-    member __.Render( graph : Graph<'NodeData,'b> ) =
+    member __.Render( graph : Graph ) =
         Views.renderGraph graph options

@@ -9,34 +9,41 @@ open Sutil.Styling
 open type Feliz.length
 
 type Theme = {
-    TextColor : string
-    Border : string
-    ControlBackground  : string;
-    ControlForeground  : string;
-    ContentBackground  : string;
-    ContentForeground  : string;
-    BackgroundHover    : string;
-    BackgroundSelected : string;
-    Handle    :string;
-    Icon      :string;
-    Highlight :string;
-    Overlay   :string;
+    TextColor : string               // text
+    Border : string                  // muted
+    ControlBackground  : string;     // primary
+    ControlForeground  : string;     // text
+    ContentBackground  : string;     // background
+    ContentForeground  : string;     // text
+    BackgroundHover    : string;     // accent / highlight
+    BackgroundSelected : string;     // highlight
+    Handle    :string;               // muted
+    Icon      :string;               // secondary
+    Highlight :string;               // highlight
+    Overlay   :string;               // muted
 }
 
 let LightTheme =
-    let border = "#DBDBDB"
+    // https://theme-ui.com/theming
+    // https://mycolor.space/?hex=%23F4FFEF&sub=1
+    let text = "black"
+    let background = "white"
+    let primary = ""
+    let secondary = ""
+    let accent = ""
     let highlight = "#B7DAFA"
+    let muted = "#DBDBDB"
     {
         TextColor = "black"
-        Border = border
+        Border = muted
         ControlBackground = "#EBEBEB"
         ControlForeground = "black"
         ContentBackground = "#F4F4F4"
         ContentForeground = "black"
         BackgroundHover = "#DDDDDD"
         BackgroundSelected = "#CCCCCC"
-        Handle = border
-        Icon = "#50719B"
+        Handle = muted
+        Icon = "#50719B"  // hsl(214,31%,46%)
         Highlight = highlight
         Overlay = highlight
     }
