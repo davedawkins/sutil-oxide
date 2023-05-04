@@ -208,14 +208,56 @@ module Helpers =
             nodeEl, g.Nodes[nodeEl.getAttribute("x-node-id")]
         )
 
-    let containerNodeFromNodeEl (nodeEl : HTMLElement) =
+    let containerElFromNodeEl (nodeEl : HTMLElement) =
         nodeEl.parentElement
 
+    let nodeElFromPortEl (portEl : HTMLElement) =
+        portEl.parentElement.parentElement
+
+    
     let toJsonString (value : 'T) = Fable.Core.JS.JSON.stringify(value)
     let fromJsonString (value : string) : 'T = Fable.Core.JS.JSON.parse(value) :?> 'T
 
 
 module Updates =
+    open Browser
+    open Fable.Core.JsInterop
+
+    // This was intended to watch for any movement of the ports, even when dragging. 
+    // It does at least solve the problem upon initial viewing where ports were not yet
+    // placed.
+    type PortXYs() =
+        let makeObserver(callback) =
+            let options =
+                {| root = document :> Browser.Types.Node; rootMargin = ""; threshold = 0.0 |}
+            IntersectionObserver.Create(callback, !! options)
+
+//        MutationObserver.Create(callback)
+        let mutable nodePorts : Map<string,IStore<float*float>> = Map.empty
+
+        let observer = makeObserver( fun (entries) _ -> 
+            entries |> Array.iter (fun entry -> 
+                entry.target?_flowcb()
+        ))
+
+        member __.GetStore(key) =
+            if not (nodePorts.ContainsKey key) then
+                nodePorts <- nodePorts.Add(key, Store.make (0.0,0.0))
+            nodePorts[key]
+
+        member __.Monitor( el : HTMLElement, callback : unit -> unit ) =
+            el?_flowcb <- callback
+            observer.observe(el)
+
+        member __.Update( key, xy : float*float ) =
+            xy |> Store.set (__.GetStore key)
+
+        member __.GetStore( key1, key2 ) =
+            __.GetStore key2 |> Store.zip (__.GetStore key1)
+
+        member __.Clear() = 
+            nodePorts <- Map.empty
+            observer.disconnect()
 
     type Model = {
         Graph : Graph
@@ -414,7 +456,7 @@ module EventHandlers =
     ]
 
     let handleNodeMouseDown (e : MouseEvent) options dispatch (nodeEl : HTMLElement) (node : Node) =
-        let containerEl = containerNodeFromNodeEl nodeEl
+        let containerEl = containerElFromNodeEl nodeEl
 
         if (node.CanSelect) then
             deselectAll (containerEl)
@@ -456,11 +498,12 @@ module EventHandlers =
                 dispatch (Select node.Id)
 
     let handlePortMouseDown (e : MouseEvent) dispatch (portEl : HTMLElement) =
-        let nodeEl = portEl.parentElement
-        let containerEl = containerNodeFromNodeEl nodeEl
-        let containerR = containerEl.getBoundingClientRect()
+        let nodeEl =  nodeElFromPortEl portEl
+        let containerEl = containerElFromNodeEl nodeEl
+//        let containerR = containerEl.getBoundingClientRect()
 
         let sx, sy = centreXY(portEl) |> toLocalXY containerEl
+        SutilOxide.Logging.log("sx, sy: " + string sx + ", " + string sy)
 
         let mousexy = Store.make (sx,sy)
 
@@ -480,15 +523,15 @@ module EventHandlers =
         )
 
         once "mouseup" containerEl (fun e ->
-            SutilOxide.Logging.log("mouseup")
+//            SutilOxide.Logging.log("mouseup")
             let el = targetEl e
             if el.classList.contains("port") then
                 let sourceNodeId = portEl.getAttribute("x-node-id")
                 let sourcePortId = portEl.getAttribute("x-port-id")
                 let targetNodeId = el.getAttribute("x-node-id")
                 let targetPortId = el.getAttribute("x-port-id")
-                SutilOxide.Logging.log($"connection: {sourceNodeId}:{sourcePortId} -> {targetNodeId}:{targetPortId}")
-                Fable.Core.JS.console.log(el)
+//                SutilOxide.Logging.log($"connection: {sourceNodeId}:{sourcePortId} -> {targetNodeId}:{targetPortId}")
+//                Fable.Core.JS.console.log(el)
                 el |> centreXY |> toLocalXY containerEl |> Store.set mousexy
                 dispatch (AddEdge (sourceNodeId,sourcePortId,targetNodeId,targetPortId))
             else
@@ -585,9 +628,38 @@ module Styles =
 
         let portSize = 9.0
 
+        rule ".port-group" [
+            Css.positionAbsolute
+            Css.displayFlex
+            Css.custom("justify-content", "space-evenly")
+        ]
+
+        rule ".port-group.top" [
+            Css.flexDirectionRow
+            Css.top (px -(portSize / 2.0 - 0.5))
+            Css.width (percent 100)
+        ]
+
+        rule ".port-group.bottom" [
+            Css.flexDirectionRow
+            Css.bottom (px -(portSize / 2.0 - 0.5))
+            Css.width (percent 100)
+        ]
+
+        rule ".port-group.left" [
+            Css.flexDirectionColumn
+            Css.left (px -(portSize / 2.0 - 0.5))
+            Css.height (percent 100)
+        ]
+
+        rule ".port-group.right" [
+            Css.flexDirectionColumn
+            Css.right (px -(portSize / 2.0 - 0.5))
+            Css.height (percent 100)
+        ]
+
         rule ".port" [
             Css.cursorCrosshair
-            Css.positionAbsolute
             Css.displayBlock
             Css.width (px (portSize))
             Css.height (px (portSize))
@@ -596,21 +668,21 @@ module Styles =
             Css.backgroundColor "#888888"
         ]
 
-        rule ".port.left" [
-            Css.left (px -(portSize / 2.0 - 0.5))
-        ]
+        // rule ".port.left" [
+        //     Css.left (px -(portSize / 2.0 - 0.5))
+        // ]
 
-        rule ".port.right" [
-            Css.right (px -(portSize / 2.0 - 0.5))
-        ]
+        // rule ".port.right" [
+        //     Css.right (px -(portSize / 2.0 - 0.5))
+        // ]
 
-        rule ".port.top" [
-            Css.top (px -(portSize / 2.0 - 0.5))
-        ]
+        // rule ".port.top" [
+        //     Css.top (px -(portSize / 2.0 - 0.5))
+        // ]
 
-        rule ".port.bottom" [
-            Css.bottom (px -(portSize / 2.0 - 0.5))
-        ]
+        // rule ".port.bottom" [
+        //     Css.bottom (px -(portSize / 2.0 - 0.5))
+        // ]
 
         rule ".port:hover" [
             Css.backgroundColor "black"
@@ -707,23 +779,41 @@ module Views =
             yield! elements
         ]
 
-    let renderPort(node : Node)  (port : Port) =
+    let renderPort (portxys : PortXYs) (node : Node)  (port : Port) =
         let loc = if port.Mode = Input then node.TargetLocation else node.SourceLocation
         Html.div [
             Attr.style [ Css.zIndex (node.ZIndex + 1) ]
             Attr.custom( "x-node-id", node.Id )
             Attr.custom( "x-port-id", port.Id )
             Attr.custom( "x-port-loc", loc.LowerName )
-            Attr.className( $"port {port.Mode.ToString().ToLower()} {loc.ToString().ToLower()} {loc.LowerName}" )
+            Attr.className( $"port {port.Mode.ToString().ToLower()} {loc.LowerName}" )
+            Ev.onMount (fun e ->
+                let portEl = Helpers.targetEl e
+                let nodeEl =  nodeElFromPortEl portEl
+                let containerEl = containerElFromNodeEl nodeEl
+
+    //            Fable.Core.JS.console.log("Container", containerEl.getBoundingClientRect())
+                let key = sprintf "%s-%s" (node.Id) (port.Id)
+
+                portxys.Monitor( portEl, fun _ -> 
+                    let xy = portEl |> centreXY |> toLocalXY containerEl
+                    //Fable.Core.JS.console.log(sprintf "** %s-%s: %A" (node.Id) (port.Id) xy)       
+                    portxys.Update(key, xy)
+                )
+            )
         ]
 
-    let renderPorts (options : GraphOptions) (node : Node) =
-        options.NodePorts(node.Type) |> Array.map (renderPort node)
-        // options.NodeTypes.TryFind(node.Type)
-        // |> Option.map (fun ports -> ports |> Array.map (renderPort node))
-        // |> Option.defaultValue [| |]
+    let renderPorts (options : GraphOptions) portxys (node : Node) =
+        [
+            Html.divc (sprintf "port-group input %s" node.TargetLocation.LowerName) [
+                yield! options.NodePorts(node.Type) |> Array.filter (fun p -> p.Mode = Input) |> Array.map (renderPort portxys node)
+            ]
+            Html.divc (sprintf "port-group output %s" node.SourceLocation.LowerName) [
+                yield! options.NodePorts(node.Type) |> Array.filter (fun p -> p.Mode = Output) |> Array.map (renderPort portxys node)
+            ]
+        ]
 
-    let injectNodeDefaults  (model : Model) options (node : Node) (view) =
+    let injectNodeDefaults  (model : Model) options portxys (node : Node) view =
         view |> CoreElements.inject [
             Attr.custom("x-node-id", node.Id)
             ([
@@ -739,11 +829,11 @@ module Views =
                 Css.height (px (node.Height))
             ]
 
-            yield! renderPorts options node
+            yield! renderPorts options portxys node
         ]
 
-    let renderNode (model : Model) options (node : Node) =
-        options.ViewNode(node) |> injectNodeDefaults model options node
+    let renderNode (model : Model) options portxys (node : Node) =
+        options.ViewNode(node) |> injectNodeDefaults model options portxys node
 
     let findPortXY (model : Model) options (np : NodePort) =
         let node = model.Graph.Nodes[np.NodeId]
@@ -759,22 +849,19 @@ module Views =
         | Bottom -> node.X + node.Width / 2.0, node.Y + node.Height
         | Centre -> node.X + node.Width / 2.0, node.Y + node.Height / 2.0
 
-        // let el = Browser.Dom.document.querySelector( sprintf ".port[x-node-id='%s'][x-port-id='%s']" np.NodeId np.PortId )
-        // if isNull el then
-        //     (0.0,0.0)
-        // else
-        //     let portEl = el :?> HTMLElement
-        //     let containerEl = portEl.parentElement.parentElement
-        //     centreXY portEl |> toLocalXY containerEl
-
-    let renderEdge (model : Model) options (edge : Edge) =
+    let renderEdge (model : Model) options (portxys : PortXYs) (edge : Edge) =
         let x1, y1 = findPortXY model options edge.Source
         let x2, y2 = findPortXY model options edge.Target
-        Edges.drawEdgeSvg (BasicLocation.Bottom) x1 y1 (BasicLocation.Top) x2 y2 "bezier"
+        let key1 = sprintf "%s-%s" (edge.Source.NodeId) (edge.Source.PortId)
+        let key2 = sprintf "%s-%s" (edge.Target.NodeId) (edge.Target.PortId)
+        Bind.el( portxys.GetStore(key1,key2), (fun ((x1,y1), (x2,y2)) ->
+            Edges.drawEdgeSvg (BasicLocation.Bottom) x1 y1 (BasicLocation.Top) x2 y2 "bezier"
+        ))
 
     let renderGraph (graph : Graph ) (options : GraphOptions) =
 
         let model, dispatch = graph |> Store.makeElmish (Updates.init) (Updates.update options) ignore
+        let portXYs = PortXYs()
 
         container [
 
@@ -789,7 +876,8 @@ module Views =
 
             // Render the nodes
             Bind.el( model, fun m ->
-                fragment (m.Graph.Nodes.Values |> Seq.map (renderNode m options))
+                portXYs.Clear()
+                fragment (m.Graph.Nodes.Values |> Seq.map (renderNode m options portXYs))
             )
 
             // Render the edges
@@ -797,7 +885,7 @@ module Views =
                 Attr.id "graph-edges-id"
                 Attr.className "graph-edges"
                 Bind.el( model, fun m ->
-                    Svg.g (m.Graph.Edges.Values |> Seq.map (renderEdge m options))
+                    Svg.g (m.Graph.Edges.Values |> Seq.map (renderEdge m options portXYs))
                 )
             ]
         ] |> withStyle options.Css

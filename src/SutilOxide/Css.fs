@@ -656,8 +656,8 @@ let private toolbarStyling (theme : Theme) = [
     ]
 
     rule ".menu-stack" [
-        //Css.transitionDuration (System.TimeSpan.FromSeconds(1.0))
-        Css.positionAbsolute
+//        Css.positionAbsolute
+        Css.positionFixed
         Css.displayFlex
         Css.opacity 0
         Css.custom ("pointer-events", "none")
@@ -666,18 +666,17 @@ let private toolbarStyling (theme : Theme) = [
         Css.backgroundColor (theme.ControlBackground)
         Css.boxShadow "0 2px 5px 0 rgba(0,0,0,.5)"
         Css.zIndex 999
-//        Css.custom("top", "calc(100% + 0px)")
     ]
 
-    rule ".xd-toolbar .menu-stack" [
-        Css.left 0
-        Css.top (percent 100)
-    ]
+    // rule ".xd-toolbar .menu-stack" [
+    //     Css.left 0
+    //     Css.top (percent 100)
+    // ]
 
-    rule ".item-menu>.menu-stack" [
-        Css.left (percent 100)
-        Css.top (0)
-    ]
+    // rule ".item-menu>.menu-stack" [
+    //     Css.left (percent 100)
+    //     Css.top (0)
+    // ]
 
     rule "*:focus-within>.menu-stack" [
         Css.transitionDuration (System.TimeSpan.FromSeconds(0.3))
@@ -689,7 +688,7 @@ let private toolbarStyling (theme : Theme) = [
         Css.positionRelative
     ]
 
-    rule ".item-button" [
+    rule ".xd-item-button" [
         Css.cursorPointer
         Css.positionRelative
         Css.padding (px 4)
@@ -707,11 +706,11 @@ let private toolbarStyling (theme : Theme) = [
         Css.marginRight (rem 1)
     ]
 
-    rule ".menu-stack>.item-button" [
+    rule ".menu-stack>.xd-item-button" [
         Css.custom("grid-template-columns", "1.2rem auto 1rem")
     ]
 
-    rule ".xd-toolbar>.item-button" [
+    rule ".xd-toolbar>.xd-item-button" [
         Css.displayFlex
         Css.flexDirectionRow
         Css.gap (rem 0.25)
@@ -720,28 +719,28 @@ let private toolbarStyling (theme : Theme) = [
         Css.paddingRight (rem 0.5)
     ]
 
-    rule ".menu-stack>.item-button.checkbox" [
+    rule ".menu-stack>.xd-item-button.checkbox" [
         Css.custom("grid-template-columns", "1.2rem auto 1rem")
     ]
 
-    rule ".menu-stack>.item-button>span" [
+    rule ".menu-stack>.xd-item-button>span" [
         Css.paddingRight (rem 0.5)
     ]
 
-    rule ".item-button>i" [
+    rule ".xd-item-button>i" [
         Css.color theme.Icon
         Css.textAlignCenter
     ]
 
-    rule ".item-button:hover" [
+    rule ".xd-item-button:hover" [
         Css.backgroundColor theme.BackgroundHover
     ]
 
-    rule ".menu-stack>.item-button:hover" [
+    rule ".menu-stack>.xd-item-button:hover" [
         Css.backgroundColor theme.Highlight
     ]
 
-    rule ".item-button:active" [
+    rule ".xd-item-button:active" [
         Css.backgroundColor theme.BackgroundSelected
         Css.color ("inherit")
     ]

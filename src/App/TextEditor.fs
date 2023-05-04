@@ -8,10 +8,13 @@ open Sutil.CoreElements
 open SutilOxide.FileSystem
 open type Feliz.length
 
-let AceSdk : SutilOxide.AceEditor.IExports = importAll("../../public/ace-builds/src-min-noconflict/ace.js")
+//let AceSdk : SutilOxide.AceEditor.IExports = importAll("../../node_modules/ace-builds/src-min-noconflict/ace.js")
+let AceSdk : SutilOxide.AceEditor.IExports = importAll("ace-builds/src-min-noconflict/ace.js")
+
+let config: Ace.Config = AceSdk.config
 
 let initAce hostElement onChange =
-    SutilOxide.AceEditor.config.set("basePath", Some "/ace-builds/src-min-noconflict" )
+    config.set("basePath", Some "/ace-builds/src-min-noconflict" )
     let editor = AceSdk.edit( Fable.Core.U2.Case1 hostElement, {| basePath = "/ace-builds/src-min-noconflict" |} )
     editor.setTheme("ace/theme/textmate")
     editor.session.setMode( Fable.Core.U2.Case1 "ace/mode/text" )

@@ -92,14 +92,15 @@ module internal MenuMonitor =
 
     let moveMenu (e : Types.HTMLElement) (bcr : Types.ClientRect) (ir : Types.ClientRect) =
         //SutilOxide.Logging.log(sprintf "Move menu %s" e.tagName)
+        //e.style.position <- "fixed"
         if (bcr.right > ir.right) then
             //resetMenu e
             e.style.left <- "unset"
             e.style.right <- "0px"
         if (bcr.bottom > ir.bottom) then
             //resetMenu e
-            let pr = e.parentElement.getBoundingClientRect()
-            e.style.top <- sprintf "%fpx" ((ir.bottom - bcr.height) - pr.top - 12.0)
+            //let pr = e.parentElement.getBoundingClientRect()
+            e.style.top <- sprintf "%fpx" ((ir.bottom - bcr.height) (*- pr.top - 12.0 *) )
             e.style.bottom <- "unset"
         else if (bcr.top < ir.top) then
             //resetMenu e
@@ -143,15 +144,13 @@ let buttonGroup items =
 
 let menuStack items =
     UI.divc "menu-stack" [
-
         host MenuMonitor.monitorMenu
-
         yield! items
     ]
 
 let mkButton b =
     Html.a [
-        Attr.className ("item-button" + (if b.Mode = Checkbox then " checkbox" else ""))
+        Attr.className ("xd-item-button" + (if b.Mode = Checkbox then " checkbox" else ""))
         Attr.href "-"
         match b.Mode, b.Icon, b.Display with
 
@@ -219,7 +218,7 @@ let menuItem props items =
     let b = Button.From props
 
     Html.a [
-        Attr.className "item-button item-menu"
+        Attr.className "xd-item-button item-menu"
 
         b.Icon
             |> Option.map (fun icon ->  Html.i [ Attr.className ("fa " + icon) ])
@@ -241,7 +240,7 @@ let menuItem props items =
 
 let dropDownItem props items =
     Html.a [
-        Attr.className "item-button"
+        Attr.className "xd-item-button xd-dropdown"
         Attr.href "-"
 
         yield! props |> Seq.map (fun p ->
@@ -258,6 +257,10 @@ let dropDownItem props items =
                 nothing
 
         )
+
+        //Html.i [
+        //    Attr.className "xd-dropdown-caret fa fa-caret-down"
+        //]
 
         Ev.onClick (fun e ->
             props |> Seq.iter (fun p -> match p with OnClick cb -> cb e | _ -> ())

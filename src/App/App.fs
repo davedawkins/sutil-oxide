@@ -392,7 +392,7 @@ let initPanes  (fileExplorer : FileExplorer.FileExplorer) (textEditor : TextEdit
 open Toolbar
 
 let view () =
-    let dc = DockContainer()
+    let dc = DockContainer( Options.Create() )
     let app = { Fs = LocalStorageFileSystem("oxide-demo") }
     let graph = exampleGraph
 

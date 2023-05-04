@@ -5,11 +5,12 @@
   "private": true,
   "scripts": {
     "postinstall": "dotnet tool restore",
-    "start": "dotnet fable watch src/App --run webpack-dev-server",
+    "start:webpack": "dotnet fable watch src/App --run webpack-dev-server",
     "build": "dotnet fable src/App && webpack",
     "clean": "dotnet fsi build.fsx --target clean",
     "pack": "dotnet fsi build.fsx --target pack",
-    "publish": "node publish.js"
+    "publish": "node publish.js",
+    "start": "dotnet fable watch src/App -o ./src/App/public/build --run vite"
   },
   "devDependencies": {
     "copy-webpack-plugin": "^6.4.1",
@@ -18,9 +19,13 @@
     "gh-pages": "^4.0.0",
     "style-loader": "^0.23.1",
     "toastr": "^2.1.4",
+    "vite": "^4.1.4",
     "webpack": "^4.46.0",
     "webpack-cli": "^3.3.0",
     "webpack-dev-server": "^3.11.2"
   },
-  "version": "1.0.0"
+  "version": "1.0.0",
+  "dependencies": {
+    "ace-builds": "^1.16.0"
+  }
 }

@@ -8,8 +8,8 @@ open Fable.Core
 open Fable.Core.JS
 open Browser.Types
 
-[<Literal>]
-let BasePath = "../../public/ace-builds/src-min-noconflict/ace.js"
+//[<Literal>]
+//let BasePath = "../../public/ace-builds/src-min-noconflict/ace.js"
 
 [<Erase>] type KeyOf<'T> = Key of string
 type Array<'T> = System.Collections.Generic.IList<'T>
@@ -18,7 +18,7 @@ type RegExp = System.Text.RegularExpressions.Regex
 
 let [<Import("Ace","module")>] ace: Ace.IExports = jsNative
 let [<Import("version","module")>] version: string = jsNative
-let [<Import("config","../../public/ace-builds/src-min-noconflict/ace.js")>] config: Ace.Config = jsNative
+//let [<Import("config","../../node_modules/ace-builds/src-min-noconflict/ace.js")>] config: Ace.Config = jsNative
 let [<Import("VirtualRenderer","module")>] VirtualRenderer: {| Create: HTMLElement -> string option -> obj |} = jsNative
 let [<Import("EditSession","module")>] EditSession: {| Create: U2<string, Document> -> Ace.SyntaxMode option -> obj |} = jsNative
 let [<Import("UndoManager","module")>] UndoManager: {| Create: unit -> obj |} = jsNative
@@ -28,7 +28,8 @@ type [<AllowNullLiteral>] IExports =
     abstract require: name: string -> obj option
     abstract edit: el: U2<Element, string> * ?options: obj -> Ace.Editor
     abstract createEditSession: text: U2<Ace.Document, string> * mode: Ace.SyntaxMode -> Ace.EditSession
-
+    abstract config : Ace.Config
+    
 module Ace =
 
     type [<AllowNullLiteral>] IExports =

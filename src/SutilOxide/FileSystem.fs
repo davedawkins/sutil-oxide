@@ -78,6 +78,7 @@ type IFileSystem =
     abstract member SetFileContent : string * string -> unit
     abstract member RemoveFile     : path : string -> unit
     abstract member CreateFile     : string * string  -> unit
+    abstract member CreateFolder   : string -> unit
     abstract member RenameFile     : string * string -> unit
 
 [<AutoOpen>]
@@ -119,10 +120,14 @@ type LocalStorageFileSystem( rootKey : string ) =
     let nameOf (e:FileEntry) = e.Name
 
     let getEntries uid =
-        match getEntry uid with
-        | None -> failwith ("Non-existent UID " + string uid)
-        | Some e when e.Type <> FileEntryType.Folder -> failwith (sprintf "Not a folder: %d" uid)
-        | Some e -> e.Children |> Array.map (snd>>getEntry) |> Array.choose id
+        let result = 
+            match getEntry uid with
+            | None -> failwith ("Non-existent UID " + string uid)
+            | Some e when e.Type <> FileEntryType.Folder -> failwith (sprintf "Not a folder: %d" uid)
+            | Some e -> e.Children |> Array.map (snd>>getEntry) |> Array.choose id
+
+        //Fable.Core.JS.console.log("genEntries", uid, result)
+        result
 
     let entryName uid =
         getEntry uid |> Option.map (fun e -> e.Name)
@@ -158,7 +163,9 @@ type LocalStorageFileSystem( rootKey : string ) =
                     | None -> None
                     | Some (_,uid) -> findUid uid parts (i+1)
 
-        findUid 0 parts 0
+        let result = findUid 0 parts 0
+        //Fable.Core.JS.console.log("Path UID", path, result)
+        result 
 
     let getEntryByPath path = path |> uidOf |> Option.bind getEntry
 
@@ -250,6 +257,41 @@ type LocalStorageFileSystem( rootKey : string ) =
         if notify then
             SutilOxide.Logging.log( "CreateFile " + path + " " + name )
             notifyOnChange fname
+
+    let createFolder folderPath notify=
+        let name = getFileName folderPath
+        let parent = getFolderName folderPath
+
+        validateFileName name
+        let cpath = parent |> canonical
+        let fname = combine cpath name
+
+        if isEntry fname then
+            failwith ("File already exists: " + fname)
+
+        if not (isFolder cpath) then
+            failwith ("Not a folder: " + cpath)
+
+        cpath
+        |> getEntryByPath
+        |> Option.map (fun entry ->
+            let uid = newUid()
+            { entry with Children = entry.Children |> Array.append [| name, uid |] } |> putEntry
+            {
+                Type = Folder
+                Content = ""
+                Children = Array.empty
+                Uid = uid
+                Name = name
+            } |> putEntry
+        )
+        |> Option.defaultWith (fun _ ->
+            failwith "Parent folder does not exist"
+        )
+
+        if notify then
+            SutilOxide.Logging.log( "CreateFolder " + fname + " " + name )
+            notifyOnChange fname            
     do
         initRoot()
 with
@@ -310,6 +352,8 @@ with
             SutilOxide.Logging.log( "RemoveFile " + path )
             notifyOnChange path
 
+        member _.CreateFolder( path : string ) =
+            createFolder path false
 
         member __.CreateFile( path : string, name : string ) =
             createFile path name true

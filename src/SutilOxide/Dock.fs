@@ -33,6 +33,14 @@ type Model = {
     SelectedPanes : Map<DockLocation,string option>
 }
 
+type Options = 
+    {
+        OnTabShow : (string * bool -> unit)
+    }
+    static member Create() = {
+        OnTabShow = ignore
+    }
+
 module DockHelpers =
     let tabsContains name tabLabels=
         tabLabels |> List.exists (fun t -> t.Name = name)
@@ -66,6 +74,10 @@ module DockHelpers =
     let setPanes (docks : DockCollection) loc value =
         let dock = docks.Stations[loc]
         { docks with Stations = docks.Stations.Add(loc, { dock with Panes = value}) }
+
+    let tryGetPane docks name =
+        findPaneLocation docks name
+        |> Option.bind (fun loc -> getPanes docks loc |> List.tryFind (fun t -> t.Name = name))
 
     let getPane docks name =
         match findPaneLocation docks name with
@@ -151,9 +163,11 @@ let private init docks =
     } |> DockHelpers.ensurePaneSelected, Cmd.none
 
 let private cmdMonitorAll : Cmd<Message> =
-    [ fun d -> Toolbar.MenuMonitor.monitorAll() ]
+    [ 
+        fun d -> Toolbar.MenuMonitor.monitorAll() 
+    ]
 
-let private update msg model =
+let private update (options : Options) msg model =
     //SutilOxide.Logging.log($"{msg}")
 
     match msg with
@@ -185,12 +199,12 @@ let private update msg model =
         { model with SelectedPanes = model.SelectedPanes.Add(loc,pane) }, Cmd.none
 
     | TogglePane (loc,pane) ->
-        let selected =
+        let selected, show =
             match model.SelectedPanes[loc] with
-            | Some name when name = pane -> None
-            | _ -> Some pane
+            | Some name when name = pane -> None, false
+            | _ -> Some pane, true
 
-        //console.log(sprintf "Select: %A %A" loc selected)
+        options.OnTabShow( pane, show )
         { model with SelectedPanes = model.SelectedPanes.Add(loc,selected) } |> DockHelpers.ensureCentreSelected, cmdMonitorAll
 
     | ShowPane pane ->
@@ -200,6 +214,7 @@ let private update msg model =
                 { model with SelectedPanes = model.SelectedPanes.Add(loc,Some pane) }
             )
             |> Option.defaultValue model
+        options.OnTabShow( pane, true )
         m,  cmdMonitorAll
 
     | MinimizePane pane ->
@@ -420,8 +435,8 @@ let dockContainer model (loc : DockLocation) =
     ]
 
 
-type DockContainer() =
-    let model, dispatch = DockCollection.Empty |> Store.makeElmish init update ignore
+type DockContainer( options : Options ) =
+    let model, dispatch = DockCollection.Empty |> Store.makeElmish init (update options) ignore
 
 
     let dockContainer() =
@@ -582,8 +597,8 @@ type DockContainer() =
     do
         ()
 with
-    static member Create (init : DockContainer -> unit) =
-        let dc = DockContainer()
+    static member Create (init : DockContainer -> unit, options) =
+        let dc = DockContainer(options)
         dc.View init
 
     member __.View (init: DockContainer -> unit)  =  view init __
@@ -605,6 +620,12 @@ with
 
     member __.AddPane (name : string, initLoc : DockLocation, content : SutilElement, show : bool ) =
         __.AddPane( name, initLoc, text name, content, show )
+
+    member __.ContainsPane( name : string ) = 
+        (DockHelpers.tryGetPane model.Value.Docks name).IsSome
+        
+    member __.ShowPane( name : string ) =
+        dispatch (ShowPane name)
 
     member __.AddPane (name : string, initLoc : DockLocation, header : SutilElement, content : SutilElement, show : bool ) =
 
