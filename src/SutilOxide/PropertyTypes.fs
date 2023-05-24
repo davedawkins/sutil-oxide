@@ -22,6 +22,6 @@ type MutableMap<'K,'T when 'K : comparison> =
         member __.Set( k, v) = __.Map <- __.Map.Add( k , v )
         member __.Get(k) = __.Map[k]
         member __.Nap = __.Map
-        static member Empty = { Map = Map.empty }
+        static member Empty = { Map = (Map.empty : Map<'K,'T>) } : MutableMap<'K,'T>
 
 type PropertyBag = MutableMap<string,obj>

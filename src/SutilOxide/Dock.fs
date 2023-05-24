@@ -168,7 +168,7 @@ let private cmdMonitorAll : Cmd<Message> =
     ]
 
 let private update (options : Options) msg model =
-    //SutilOxide.Logging.log($"{msg}")
+    //SutilOxide.Logging.log($"Dock: {msg}")
 
     match msg with
 

@@ -11,10 +11,83 @@ open Browser.DomExtensions
 open Browser.CssExtensions
 open Types
 
+
+module SutilKeyed =
+    open Sutil.Core
+    open Fable.Core.JsInterop
+
+    let getNodeKey (node : Node) (key : string) (create : unit -> 'T)=
+        let v: obj = node?key
+
+        if isNull v then
+            let result = create()
+            node?key <- result
+            result
+        else
+            v :?> 'T
+    type KeyedInfo<'T> = {
+        Node : SutilEffect
+        Value : IStore<'T>
+    }
+
+    let keyedUnordered (items : System.IObservable<'T seq>) (view: IReadOnlyStore<'T> -> SutilElement) (key : 'T -> 'K) = 
+        SutilElement.Define("keyedUnordered",
+
+        fun ctx ->
+            let mutable keyMap : Map<'K,KeyedInfo<'T>> = Map.empty
+            let group = SutilEffect.MakeGroup("keyed",ctx.Parent,ctx.Previous)
+            let keyedNode = Group group
+            let keyedCtx = ctx |> ContextHelpers.withParent keyedNode
+
+            // Listen for changes to collection
+            let unsub = items.Subscribe( fun newItems ->
+
+                let mutable newKeyMap : Map<'K,KeyedInfo<'T>> = Map.empty
+
+                // Process collection items
+                newItems |> Seq.iter (fun (item : 'T) ->
+                    let k = key item
+
+                    let itemRec =
+                        match keyMap.TryFind k with
+                        | None ->
+                            let store = Store.make item
+                            let sutilNode = keyedCtx |> build (view store)
+                            {
+                                Node = sutilNode
+                                Value =store
+                            }
+                        | Some r ->
+                            item |> Store.set r.Value
+                            r
+
+                    newKeyMap <- newKeyMap.Add(k, itemRec) )
+
+                // Remove missing items from document
+                keyMap |> Seq.iter( fun kv ->if not (newKeyMap.ContainsKey kv.Key) then kv.Value.Node.Dispose())
+
+                // Update current items
+                keyMap <- newKeyMap
+            )
+
+            group.RegisterUnsubscribe ( fun () -> 
+                unsub.Dispose()
+            )
+
+            keyedNode
+        )
+    
 [<AutoOpen>]
 module Types =
 
     type FlowId = string
+
+    type Rect = {
+        X : float
+        Y : float
+        Width : float
+        Height : float
+    }
 
     type Node = {
         Id : FlowId
@@ -28,6 +101,7 @@ module Types =
         SourceLocation : BasicLocation
         TargetLocation : BasicLocation
         CanSelect : bool
+        CanResize : bool
         CanMove : bool }
         with
         static member Create( id : FlowId, typ: string, x : float, y : float ) = {
@@ -41,6 +115,7 @@ module Types =
             ClassName = ""
             CanSelect = true
             CanMove = true
+            CanResize = false
             SourceLocation = Bottom
             TargetLocation = Top
         }
@@ -97,9 +172,13 @@ module Types =
         NodeFactory : string*string -> Node
         EdgeFactory : string*string*string*string*string -> Edge
 
-        ViewNode: Node -> Sutil.Core.SutilElement
+        ViewNode: IReadOnlyStore<Node> -> Sutil.Core.SutilElement
 
         OnChange : Graph -> unit
+        OnAddNode: Node -> unit
+        OnRemoveNode: Node -> unit
+        OnAddEdge: Edge -> unit
+        OnRemoveEdge: Edge -> unit
         OnSelectionChange: (Node list * Edge list -> unit)
     }
     with
@@ -118,11 +197,11 @@ module Types =
                         |]
         static member Create() =
 
-            let renderNodeDefault (node : Node) =
+            let renderNodeDefault (node : IReadOnlyStore<Node>) =
                 Html.div [
                     Html.span [
                         Attr.className "data"
-                        text (sprintf "%A" node.Id)
+                        text (sprintf "%A" node.Value.Id)
                     ]
                 ]
             let defaultPortTypes =
@@ -145,6 +224,10 @@ module Types =
                 ViewNode = renderNodeDefault
                 OnChange = ignore
                 OnSelectionChange = ignore
+                OnAddNode = ignore
+                OnRemoveNode = ignore
+                OnAddEdge = ignore
+                OnRemoveEdge = ignore
             }
 
 
@@ -171,6 +254,11 @@ module Helpers =
         while not (isNull gn) && not (isPortNode gn) do
             gn <- gn.parentElement
         if isNull gn then None else Some gn
+
+    let getElementXY (el : HTMLElement) =
+        let parentB = el.parentElement.getBoundingClientRect()
+        let br = el.getBoundingClientRect()
+        (br.left - parentB.left, br.top - parentB.top)
 
     let clientXY (e : MouseEvent) =
         let br = (e |> currentEl).getBoundingClientRect()
@@ -227,6 +315,7 @@ module Updates =
     // It does at least solve the problem upon initial viewing where ports were not yet
     // placed.
     type PortXYs() =
+        let mutable callbacks : (unit -> unit) list = []
         let makeObserver(callback) =
             let options =
                 {| root = document :> Browser.Types.Node; rootMargin = ""; threshold = 0.0 |}
@@ -247,7 +336,13 @@ module Updates =
 
         member __.Monitor( el : HTMLElement, callback : unit -> unit ) =
             el?_flowcb <- callback
+            callbacks <- callback :: callbacks
+            callback()
             observer.observe(el)
+
+        member __.UpdateAll() =
+            Fable.Core.JS.console.log("Update all port xys")
+            callbacks |> List.iter (fun f -> f())
 
         member __.Update( key, xy : float*float ) =
             xy |> Store.set (__.GetStore key)
@@ -262,11 +357,13 @@ module Updates =
     type Model = {
         Graph : Graph
         Selection : Set<string>
+        MovingNode : bool
     }
 
     type Message =
         | DeleteNode of string
         | MoveNode of string * float * float
+        | MoveResizeNode of string * float * float * float * float
         | DeleteSelection
         | ClearSelection
         | Select of string
@@ -274,27 +371,38 @@ module Updates =
         | SetLocation of (string * float * float)
         | AddNode of (string * float * float)
         | AddEdge of (string * string * string * string)
+        | NotifyChange
+        | SetMovingNode of bool
 
     let init g =
         {
             Graph = g
             Selection = Set.empty
+            MovingNode = false
         }, Cmd.none
-
 
     let findNodeEdges (g : Graph) (nodeId) =
         g.Edges.Values |> Seq.filter (fun e -> e.Source.NodeId = nodeId || e.Target.NodeId = nodeId)
 
-    let deleteNode (g : Graph) (nodeId) =
+    let deleteNode options (g : Graph) (nodeId) =
+        let node = g.Nodes[nodeId]
         let edges = findNodeEdges g nodeId
 
         let nodes' = g.Nodes.Remove(nodeId)
         let edges' : Map<FlowId,Edge> = edges |> Seq.fold (fun edges e -> edges.Remove(e.Id) ) g.Edges
 
-        { g with Nodes = nodes'; Edges = edges' }
+        { g with Nodes = nodes'; Edges = edges' }, 
+            [ 
+                fun _ -> edges |> Seq.iter (options.OnRemoveEdge )
+                fun _ -> options.OnRemoveNode(node) 
+            ]
 
-    let deleteNodes (g : Graph) (nodes : string seq) =
-        nodes |> Seq.fold (fun g n -> deleteNode g n) g
+    let deleteNodes options (g : Graph) (nodes : string seq) =
+        nodes |> Seq.fold (
+            fun (g,cmd) n -> 
+                let g', c' = deleteNode options g n
+                (g', cmd @ c')
+            ) (g, [])
 
     let makeName (name : string) (exists : string -> bool) =
         let mutable i = 0
@@ -327,27 +435,44 @@ module Updates =
     let withEdge (n : Edge) (g : Graph) =
         { g with Edges = g.Edges.Add(n.Id, n)}
 
+    let selectedNodes model = 
+        model.Selection |> Seq.map (fun s -> model.Graph.Nodes[s])
+
+    let isNodeSelected (node : Node) (model : Model) =
+        model.Selection.Contains(node.Id)
+
     let msgSelectionChange (model : Model) options dispatch =
-        let nodes = model.Selection |> Seq.map (fun s -> model.Graph.Nodes[s]) |> Seq.toList
+        let nodes = selectedNodes model |> Seq.toList
         options.OnSelectionChange( nodes, [ ])
 
-    let update options (msg : Message) model =
+    let update options (portxys : PortXYs) (msg : Message) model =
         match msg with
 
+        | SetMovingNode f ->
+            { model with MovingNode = f }, Cmd.none
+
+        | NotifyChange ->
+            model, [ fun _ -> options.OnChange model.Graph ]
+
         | DeleteSelection ->
-            { model with Graph = deleteNodes (model.Graph) (model.Selection) }, Cmd.ofMsg ClearSelection
+            let graph, cmd = deleteNodes options (model.Graph) (model.Selection)
+            { model with Graph = graph  }, Cmd.batch [ Cmd.ofMsg ClearSelection; cmd; Cmd.ofMsg NotifyChange ]
 
         | DeleteNode n ->
-            { model with Graph = deleteNode (model.Graph) n }, Cmd.ofMsg ClearSelection
+            let node = model.Graph.Nodes[ n ]
+            let graph, cmd = deleteNode options (model.Graph) n
+            { model with Graph = graph }, 
+                Cmd.batch [ Cmd.ofMsg ClearSelection; cmd; Cmd.ofMsg NotifyChange ]
 
         | AddEdge (n1,p1,n2,p2) ->
             let name = sprintf "e-%s-%s-%s-%s" n1 p1 n2 p2
             let e = options.EdgeFactory( name, n1, p1, n2,p2 )
-            { model with Graph = model.Graph |> withEdge e }, Cmd.none
+            { model with Graph = model.Graph |> withEdge e }, 
+                Cmd.batch [ [fun _ -> options.OnAddEdge(e)]; Cmd.ofMsg NotifyChange ]
 
         | SetLocation (nodeId, x, y) ->
             let node = { model.Graph.Nodes[nodeId]  with X = x; Y = y}
-            { model with Graph = model.Graph |> withNode node }, Cmd.none
+            { model with Graph = model.Graph |> withNode node }, Cmd.ofMsg NotifyChange
 
         | AddNode (nodeType, x, y) -> 
             let node = makeNode options model nodeType x y
@@ -363,26 +488,55 @@ module Updates =
                 else
                     Cmd.none
 
-            { model with Graph = model.Graph |> withNode node }, Cmd.batch [ autoConnectCmd; Cmd.ofMsg (SelectOnly node.Id) ]
+            { model with Graph = model.Graph |> withNode node }, 
+                Cmd.batch [ 
+                    [ fun _ -> options.OnAddNode(node) ] 
+                    autoConnectCmd; 
+                    Cmd.ofMsg (SelectOnly node.Id) 
+                    Cmd.ofMsg NotifyChange
+                    [ fun _ -> portxys.UpdateAll() ]
+                ]
     
         | ClearSelection ->
             let m = { model with Selection = Set.empty }
             m, [ msgSelectionChange m options ]
 
         | Select id ->
-            let m = { model with Selection = model.Selection.Add(id) } 
+            let m = { model with Selection = model.Selection.Add(id)} 
             m, [ msgSelectionChange m options ]
    
         | SelectOnly id ->
+            let node = model.Graph.Nodes[id]
+            let rect = 
+                {
+                    X = node.X
+                    Y = node.Y
+                    Width = node.Width
+                    Height = node.Height }
+
             let m = { model with Selection = Set.empty.Add(id) }
+
             m, [ msgSelectionChange m options ]
 
         | MoveNode (id,x,y) ->
             let g = model.Graph
             let n = g.Nodes[id]
             let g' = { g with Nodes = g.Nodes.Add( id, { n with X = x; Y = y }) }
-            { model with Graph = g' }, Cmd.none
+            { model with Graph = g' }, 
+                Cmd.batch [
+                    Cmd.ofMsg NotifyChange
+                    [ fun _ -> portxys.UpdateAll() ]
+                ]
 
+        | MoveResizeNode (id,x,y,w,h) ->
+            let g = model.Graph
+            let n = g.Nodes[id]
+            let g' = { g with Nodes = g.Nodes.Add( id, { n with X = x; Y = y; Width = w; Height = h }) }
+            { model with Graph = g' },
+                Cmd.batch [
+                    Cmd.ofMsg NotifyChange
+                    [ fun _ -> portxys.UpdateAll() ]
+                ]
 
 module Edges =
 
@@ -446,6 +600,80 @@ module EventHandlers =
     open Updates
     open DomHelpers
 
+    let resizeHandler dispatch (nodeId : string) (rectS : IStore<Rect>) (x:int,y:int) = 
+
+        Ev.onMouseDown( fun e -> 
+            let handleEl = targetEl e
+            let containerEl = containerElFromNodeEl handleEl
+
+            e.preventDefault()
+            e.stopImmediatePropagation()
+            e.stopPropagation()
+
+            let handleStartX, handleStartY = getElementXY(handleEl)
+            let sx,sy = parentXY e
+            let sxOffset, syOffset = sx - handleStartX, sy - handleStartY
+
+            let snap (dx:float,dy:float) = 
+                (dx * float(System.Math.Abs(x)), dy * float(System.Math.Abs(y)))
+
+            let newXY (nx,ny) =
+                let dx, dy = (nx - sx, ny - sy) |> snap
+                (handleStartX + dx + sxOffset, handleStartY + dy + syOffset)
+
+            let stop = listen "mousemove" containerEl (fun e ->
+                let nx, ny = parentXY (e :?> MouseEvent) |> newXY
+                let rect = rectS.Value
+
+                let newRectX, newRectW = 
+                    match x with 
+                    | -1 -> nx, rect.Width + (rect.X - nx)
+                    | 1 -> rect.X, (nx - rect.X)
+                    | _ -> rect.X, rect.Width
+
+                let newRectY, newRectH = 
+                    match y with 
+                    | -1 -> ny, rect.Height + (rect.Y - ny)
+                    | 1 -> rect.Y, (ny - rect.Y)
+                    | _ -> rect.Y, rect.Height
+
+                let newRect :Rect = 
+                    {
+                        rect with 
+                            X = newRectX; Width = newRectW
+                            Y = newRectY; Height = newRectH
+                    }
+
+                newRect |> Store.set rectS
+
+                // 
+                let nodeRect = 
+                    newRect |> (fun r ->
+                        if r.Width < 0 then 
+                            { r with X = r.X + r.Width; Width = -r.Width }
+                        else    
+                            r )
+                    |> (fun r ->
+                        if r.Height < 0 then 
+                            { r with Y = r.Y + r.Height; Height = -r.Height }
+                        else    
+                            r )
+
+                dispatch (MoveResizeNode (nodeId,nodeRect.X,nodeRect.Y, nodeRect.Width, nodeRect.Height))
+            )
+
+            once "mouseup" containerEl (fun e ->
+                stop()
+                e.stopPropagation()
+
+                // let nx,ny = parentXY (e :?> MouseEvent) |> newXY
+
+                // dispatch (MoveNode (node.Id, nx, ny))
+                // if (node.CanSelect) then
+                //     dispatch (SelectOnly node.Id)
+            )
+        )
+
     let selectHandler dispatch (node : Node) = [
         Ev.onClick (fun e ->
             let el : HTMLElement = e.target |> asElement
@@ -455,7 +683,7 @@ module EventHandlers =
         )
     ]
 
-    let handleNodeMouseDown (e : MouseEvent) options dispatch (nodeEl : HTMLElement) (node : Node) =
+    let handleNodeMouseDown (containerEvent : MouseEvent) options dispatch (nodeEl : HTMLElement) (node : Node) =
         let containerEl = containerElFromNodeEl nodeEl
 
         if (node.CanSelect) then
@@ -463,7 +691,7 @@ module EventHandlers =
             select (nodeEl)
 
         if (node.CanMove) then
-            let sx,sy = parentXY e
+            let sx,sy = parentXY containerEvent
 
             let snap (nx,ny) =
                 if options.SnapToGrid then
@@ -475,6 +703,8 @@ module EventHandlers =
 
             let newXY (cx,cy) =
                 (node.X + cx - sx, node.Y + cy - sy) |> snap
+
+            dispatch (SetMovingNode true)
 
             let stop = listen "mousemove" containerEl (fun e ->
                 let nx, ny = parentXY (e :?> MouseEvent) |> newXY
@@ -491,6 +721,7 @@ module EventHandlers =
                 dispatch (MoveNode (node.Id, nx, ny))
                 if (node.CanSelect) then
                     dispatch (SelectOnly node.Id)
+                dispatch (SetMovingNode false)
             )
         else
             dispatch ClearSelection
@@ -732,6 +963,40 @@ module Styles =
             Css.height (percent 100)
         ]
 
+        rule ".resize-handle" [
+            Css.positionAbsolute
+            Css.backgroundColor "#ffffff"
+            Css.border (px 1, Feliz.borderStyle.solid, "#000000")
+            Css.width (px 8)
+            Css.height (px 8)
+            Css.zIndex 1
+            Css.custom( "transform" , "translate(-50%, -50%)")
+        ]
+
+        rule ".resize-handle.top" [
+            Css.cursorNorthSouthResize
+        ]
+        rule ".resize-handle.bottom" [
+            Css.cursorNorthSouthResize
+        ]
+        rule ".resize-handle.left" [
+            Css.cursorEastWestResize
+        ]
+        rule ".resize-handle.right" [
+            Css.cursorEastWestResize
+        ]
+        rule ".resize-handle.top.left" [
+            Css.cursorNorthWestSouthEastResize
+        ]
+        rule ".resize-handle.top.right" [
+            Css.cursorNorthEastSouthWestResize
+        ]
+        rule ".resize-handle.bottom.left" [
+            Css.cursorNorthEastSouthWestResize
+        ]
+        rule ".resize-handle.bottom.right" [
+            Css.cursorNorthWestSouthEastResize
+        ]
     ]
 
 module Views =
@@ -771,14 +1036,6 @@ module Views =
                 ]
             ]
 
-    let container elements =
-        Html.div [
-            Attr.className "graph-container"
-            background Dotted
-
-            yield! elements
-        ]
-
     let renderPort (portxys : PortXYs) (node : Node)  (port : Port) =
         let loc = if port.Mode = Input then node.TargetLocation else node.SourceLocation
         Html.div [
@@ -797,7 +1054,7 @@ module Views =
 
                 portxys.Monitor( portEl, fun _ -> 
                     let xy = portEl |> centreXY |> toLocalXY containerEl
-                    //Fable.Core.JS.console.log(sprintf "** %s-%s: %A" (node.Id) (port.Id) xy)       
+                    Fable.Core.JS.console.log(sprintf "** %s-%s: %A" (node.Id) (port.Id) xy)       
                     portxys.Update(key, xy)
                 )
             )
@@ -813,27 +1070,66 @@ module Views =
             ]
         ]
 
-    let injectNodeDefaults  (model : Model) options portxys (node : Node) view =
+    let handleXY (x,y) (rect : Rect) =
+        let dx = rect.Width / 2.0
+        let dy = rect.Height / 2.0
+        let cx = rect.X + dx
+        let cy = rect.Y + dy
+
+        let handlex = cx + (float x) * dx
+        let handley = cy + (float y) * dy
+        (handlex,handley)
+
+    let resizeHandle dispatch (nodeId : string) (rect : IStore<Rect>) (x,y) =
+        let lr = match x with -1 -> " left"| 1 -> " right" | _ -> ""
+        let tb = match y with -1 -> " top"| 1 -> " bottom" | _ -> ""
+
+        Html.divc (sprintf "resize-handle%s%s" tb lr )
+            [
+                EventHandlers.resizeHandler  dispatch nodeId rect (x,y)
+                Bind.style( rect |> Store.map (handleXY (x,y)), fun style (hx,hy) -> 
+                    style.left <- (string hx) + "px"
+                    style.top <- (string hy) + "px"
+                )
+            ]
+
+    let renderResizeHandles dispatch (node : Node) =
+        let rectS = Store.make ({ X = node.X; Y = node.Y; Width = node.Width; Height = node.Height }: Rect)
+        [
+            yield! [
+                (-1,-1); (-1,0); (-1,1)
+                ( 0,-1);         ( 0,1)
+                ( 1,-1); ( 1,0); ( 1,1)
+                ] 
+                |> List.map (resizeHandle dispatch (node.Id) rectS)
+        ]
+        
+    let injectNodeDefaults dispatch (isSelected : System.IObservable<bool>) options portxys (nodeS : IReadOnlyStore<Node>) view =
+        //let isSelected = model.Selection.Contains (node.Id)
+        //let numSelected = model.Selection.Count
+        let node = nodeS.Value
         view |> CoreElements.inject [
+            
             Attr.custom("x-node-id", node.Id)
             ([
                 "node"
                 if node.ClassName <> "" then node.ClassName
-                if model.Selection.Contains (node.Id) then "selected"
             ] |> String.concat " " |> Attr.className)
 
-            Attr.style [
-                Css.left (px (node.X))
-                Css.top (px (node.Y))
-                Css.width (px (node.Width))
-                Css.height (px (node.Height))
-            ]
+            Bind.toggleClass( isSelected, "selected")
+            Bind.style( nodeS, fun style node ->
+                style.left <- sprintf "%fpx" node.X
+                style.top <- sprintf "%fpx" node.Y
+                style.width <- sprintf "%fpx" node.Width
+                style.height <- sprintf "%fpx" node.Height
+            )
 
             yield! renderPorts options portxys node
         ]
 
-    let renderNode (model : Model) options portxys (node : Node) =
-        options.ViewNode(node) |> injectNodeDefaults model options portxys node
+    let renderNode dispatch (isSelected : System.IObservable<bool>) options portxys (node : IReadOnlyStore<Node>) =
+        Fable.Core.JS.console.log("renderNode: " + (node.Value.Id))
+        options.ViewNode(node) |> injectNodeDefaults dispatch isSelected options portxys node
 
     let findPortXY (model : Model) options (np : NodePort) =
         let node = model.Graph.Nodes[np.NodeId]
@@ -858,28 +1154,74 @@ module Views =
             Edges.drawEdgeSvg (BasicLocation.Bottom) x1 y1 (BasicLocation.Top) x2 y2 "bezier"
         ))
 
+    let graphBounds (nodes : Node seq) =
+        nodes |> Seq.fold (fun (mx,my) n -> 
+            System.Math.Max(n.X + n.Width,mx),System.Math.Max(n.Y + n.Height,my))
+            (0.0,0.0)
+
+    let setBounds( widthHeightS ) =
+        Bind.style(widthHeightS |> Store.map (fun (x,y) -> (x+50.0, y+50.0)), 
+            fun style (w,h) ->
+            if w <> 0.0 && h <> 0.0 then
+                style.width <- sprintf "max(100%%,%fpx)" w
+                style.height <- sprintf "max(100%%,%fpx)" h
+        )
+
+    let resizeNode (m : Model) =
+        match selectedNodes m |> List.ofSeq with
+        | [ n ] when n.CanResize && not (m.MovingNode) -> Some n
+        | _ -> None
+
     let renderGraph (graph : Graph ) (options : GraphOptions) =
 
-        let model, dispatch = graph |> Store.makeElmish (Updates.init) (Updates.update options) ignore
         let portXYs = PortXYs()
+        let model, dispatch = graph |> Store.makeElmish (Updates.init) (Updates.update options portXYs) ignore
+        let widthHeightS = Store.make (0.0, 0.0)
 
-        container [
+        Html.divc "graph-container" [
+            background Dotted
 
             // Set up notfication of edits back to user
             // Will be unsubscribed when component unmounted
-            disposeOnUnmount [
-                ((model .>> (fun m -> m.Graph)).Subscribe(options.OnChange))
-            ]
+            //disposeOnUnmount [
+            //    ((model .>> (fun m -> m.Graph)).Subscribe(options.OnChange))
+            //]
+
+            setBounds widthHeightS
 
             // Install the event handlers
             yield! containerEventHandlers options model dispatch
 
             // Render the nodes
             Bind.el( model, fun m ->
-                portXYs.Clear()
-                fragment (m.Graph.Nodes.Values |> Seq.map (renderNode m options portXYs))
+//                portXYs.Clear()
+
+                graphBounds (m.Graph.Nodes.Values) |> Store.set widthHeightS
+
+                nothing
+                // fragment [
+                //     yield! (m.Graph.Nodes.Values |> Seq.map (renderNode dispatch m options portXYs))
+                // ]
             )
 
+            SutilKeyed.keyedUnordered
+                (model .> (fun m -> m.Graph.Nodes.Values))
+                (fun n -> renderNode dispatch (model .>> (isNodeSelected n.Value)) options portXYs n)
+                (fun n -> n.Id)
+
+            // Bind.each(
+            //     (model .> (fun m -> m.Graph.Nodes.Values |> Seq.toList)),
+            //     (fun n -> renderNode dispatch (model .>> (isNodeSelected n)) options portXYs n),
+            //     (fun n -> n.Id)
+            // )
+
+            Bind.el( model .>> resizeNode, fun optNode ->
+                match optNode with
+                | None -> 
+                        fragment []
+                | Some (node) -> 
+                        fragment <| renderResizeHandles dispatch node
+            )
             // Render the edges
             Svg.svg [
                 Attr.id "graph-edges-id"

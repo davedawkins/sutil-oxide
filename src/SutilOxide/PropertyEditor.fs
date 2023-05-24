@@ -18,7 +18,7 @@ type GridRow = {
 }
 
 let makeCell (onchanged: (string*obj) -> unit) (name : string) (t : DataType) : SutilOxide.CellEditor.Cell<PropertyBag>=
-    Fable.Core.JS.console.log("makeCell", name, string t)
+    //Fable.Core.JS.console.log("makeCell", name, string t)
     let d v = onchanged (name,v)
     match t with
     | Flt32 ->
@@ -45,10 +45,10 @@ let makeCell (onchanged: (string*obj) -> unit) (name : string) (t : DataType) : 
         )
     | _ -> failwith "Unsupported cell type"
 
-let makeGridRow name bag cell =
+let makeGridRow name category bag cell =
     {
         GridRow.Label = name
-        GridRow.Category = "General"
+        GridRow.Category = category
         GridRow.Editor =  SutilOxide.CellEditor.view bag false cell
 
     }
@@ -56,13 +56,13 @@ let makeGridRow name bag cell =
 let isConfigType (t : System.Type) =
     (t = typeof<int> || t = typeof<float> || t = typeof<bool> || t = typeof<string>)
 
-let makeGridRows bag (fields : (string*DataType)[]) dispatch =
+let makeGridRows bag category (fields : (string*DataType)[]) dispatch =
     //let fields = FSharp.Reflection.FSharpType.GetRecordFields(recordType)
     fields 
         //|> Array.filter (fun f -> isConfigType(f.PropertyType))
         |> Array.map (fun (name,dtype) ->
             let cell = makeCell dispatch name dtype
-            makeGridRow name bag cell
+            makeGridRow name category bag cell
         )
 
 // let makeGridRows bag (recordType : System.Type) dispatch =
@@ -97,6 +97,10 @@ let peCss = [
         // Css.marginLeft (px 2)
         // Css.marginRight (px 2)
     ]
+
+    rule ".group" [
+        Css.fontWeightBold
+    ]
 ]
 
 type Model = {
@@ -129,13 +133,26 @@ let create () =
 
     let model, dispatch = () |> Store.makeElmish init update ignore
 
+    let addItem (g : Map<string,GridRow list>) (item : GridRow) =
+        if not (g.ContainsKey (item.Category)) then
+            g.Add( item.Category, [ item ])
+        else
+            g.Add( item.Category, g[item.Category] @ [ item ])
+
     let view  =
         UI.divc "property-editor" [
-            Bind.el( model |> Store.map (fun m -> m.Items),
+            Bind.el( model |> Store.map (fun m -> m.Items),                
                 fun items ->
-                    UI.divc "items" [
-                        for item in items do
-                            yield! [ Html.span item.Label; item.Editor ]
+                    let grouped = items |> List.fold addItem Map.empty
+                    Html.divc "groups" [
+                        for group in grouped do 
+                            Html.divc "group-container" [
+                                Html.divc "group" [ text group.Key ]
+                                UI.divc "items" [
+                                    for item in group.Value do
+                                        yield! [ Html.span item.Label; item.Editor ]
+                                ]
+                            ]
                     ]
             )
         ] |> withStyle peCss
