@@ -99,10 +99,7 @@ module Types =
         ZIndex : int
         ClassName : string
         SourceLocation : BasicLocation
-        TargetLocation : BasicLocation
-        CanSelect : bool
-        CanResize : bool
-        CanMove : bool }
+        TargetLocation : BasicLocation }
         with
         static member Create( id : FlowId, typ: string, x : float, y : float ) = {
             Id = id
@@ -113,9 +110,6 @@ module Types =
             Height = 62
             ZIndex = 0
             ClassName = ""
-            CanSelect = true
-            CanMove = true
-            CanResize = false
             SourceLocation = Bottom
             TargetLocation = Top
         }
@@ -180,6 +174,9 @@ module Types =
         OnAddEdge: Edge -> unit
         OnRemoveEdge: Edge -> unit
         OnSelectionChange: (Node list * Edge list -> unit)
+        CanSelect: (Node -> bool)
+        CanMove: (Node -> bool)
+        CanResize: (Node -> bool)
     }
     with
         static member DefaultInPorts = 
@@ -228,6 +225,9 @@ module Types =
                 OnRemoveNode = ignore
                 OnAddEdge = ignore
                 OnRemoveEdge = ignore
+                CanSelect = (fun _ -> true)
+                CanMove = (fun _ -> true)
+                CanResize = (fun _ -> true)
             }
 
 
@@ -236,6 +236,10 @@ module Helpers =
     let asEl (e : Browser.Types.Node) = e :?> HTMLElement
     let targetEl (e : Event) = e.target :?> HTMLElement
     let currentEl (e : Event) = e.currentTarget :?> HTMLElement
+
+    let nodeContainsPoint (x,y) (node : Node) =
+        x >= node.X && x <= node.X + node.Width &&
+        y >= node.Y && y <= node.Y + node.Height
 
     let isGraphNode (e : HTMLElement) =
         e.classList.contains("node")
@@ -260,12 +264,26 @@ module Helpers =
         let br = el.getBoundingClientRect()
         (br.left - parentB.left, br.top - parentB.top)
 
+    let xwToLr x w =
+        if (w > 0.0) then x, x+w else x+w,x
+
+    let rectIntersect (ax,ay,aw,ah) (bx,by,bw,bh) =
+        let a_left, a_right = xwToLr ax aw
+        let a_top, a_bottom = xwToLr ay ah
+        let b_left, b_right = xwToLr bx bw
+        let b_top, b_bottom = xwToLr by bh
+
+        a_left <= b_right &&
+        b_left <= a_right &&
+        a_top <= b_bottom &&
+        b_top <= a_bottom
+
     let clientXY (e : MouseEvent) =
-        let br = (e |> currentEl).getBoundingClientRect()
+        let br = (e |> targetEl).getBoundingClientRect()
         (e.x - br.left, e.y - br.top)
 
     let parentXY (e : MouseEvent) =
-        let br = (e |> currentEl).parentElement.getBoundingClientRect()
+        let br = (e |> targetEl).parentElement.getBoundingClientRect()
         (e.clientX - br.left, e.clientY - br.top)
 
     let centreXY (el : HTMLElement) =
@@ -366,8 +384,8 @@ module Updates =
         | MoveResizeNode of string * float * float * float * float
         | DeleteSelection
         | ClearSelection
-        | Select of string
-        | SelectOnly of string
+        | Select of string list
+        | SelectOnly of string list
         | SetLocation of (string * float * float)
         | AddNode of (string * float * float)
         | AddEdge of (string * string * string * string)
@@ -492,7 +510,7 @@ module Updates =
                 Cmd.batch [ 
                     [ fun _ -> options.OnAddNode(node) ] 
                     autoConnectCmd; 
-                    Cmd.ofMsg (SelectOnly node.Id) 
+                    Cmd.ofMsg (SelectOnly [ node.Id ]) 
                     Cmd.ofMsg NotifyChange
                     [ fun _ -> portxys.UpdateAll() ]
                 ]
@@ -501,20 +519,12 @@ module Updates =
             let m = { model with Selection = Set.empty }
             m, [ msgSelectionChange m options ]
 
-        | Select id ->
-            let m = { model with Selection = model.Selection.Add(id)} 
+        | Select ids ->
+            let m = { model with Selection = ids |> List.fold (fun s id -> s.Add(id)) model.Selection }
             m, [ msgSelectionChange m options ]
    
-        | SelectOnly id ->
-            let node = model.Graph.Nodes[id]
-            let rect = 
-                {
-                    X = node.X
-                    Y = node.Y
-                    Width = node.Width
-                    Height = node.Height }
-
-            let m = { model with Selection = Set.empty.Add(id) }
+        | SelectOnly ids ->
+            let m = { model with Selection = Set ids }
 
             m, [ msgSelectionChange m options ]
 
@@ -646,7 +656,6 @@ module EventHandlers =
 
                 newRect |> Store.set rectS
 
-                // 
                 let nodeRect = 
                     newRect |> (fun r ->
                         if r.Width < 0 then 
@@ -665,12 +674,6 @@ module EventHandlers =
             once "mouseup" containerEl (fun e ->
                 stop()
                 e.stopPropagation()
-
-                // let nx,ny = parentXY (e :?> MouseEvent) |> newXY
-
-                // dispatch (MoveNode (node.Id, nx, ny))
-                // if (node.CanSelect) then
-                //     dispatch (SelectOnly node.Id)
             )
         )
 
@@ -683,14 +686,75 @@ module EventHandlers =
         )
     ]
 
+
+    let drawSelectionRect (x1:float) (y1:float) (x2:float) (y2:float) =
+
+        Svg.g [
+            Attr.className "selection-rect"
+            Svg.rect [
+                Attr.x (px x1)
+                Attr.y (px y1)
+                Attr.width (px (x2 - x1))
+                Attr.height (px (y2 - y1))
+            ]
+        ]
+
+    let distSq dx dy = 
+        dx*dx + dy*dy
+    let handleContainerMouseDown (containerEvent : MouseEvent) options (model : IStore<Model>) dispatch =
+        let containerEl = currentEl containerEvent
+        //Fable.Core.JS.console.log( containerEl )
+
+        let sx,sy = parentXY containerEvent
+        let mousexy = Store.make (sx,sy)
+
+        let dragRect =
+            Bind.el( mousexy, fun (x,y) ->
+                drawSelectionRect sx sy x y
+            )
+
+        let mutable unmount : System.IDisposable option = None
+        let stop = listen "mousemove" containerEl (fun e ->
+            let me = (e :?> MouseEvent)
+            //Fable.Core.JS.console.log("move", me.x, me.y)
+            let nx,ny = (me.x,me.y) |> toLocalXY containerEl
+
+            if unmount.IsNone && (distSq (nx-sx) (ny-sy) > 64) then
+                unmount <- (Browser.Dom.document.getElementById("graph-edges-id"),dragRect) |> Program.mountAppend |> Some
+
+            (nx,ny) |> Store.set mousexy
+
+            let nodeIds = 
+                model.Value.Graph.Nodes.Values 
+                |> Seq.filter (fun n ->
+                    rectIntersect (n.X,n.Y,n.Width,n.Height) (sx, sy, nx-sx, ny-sy)
+                ) 
+                |> Seq.map (fun n -> n.Id) |> Seq.toList
+            //Fable.Core.JS.console.log(sprintf "%A" nodeIds)
+            dispatch (SelectOnly nodeIds)
+            ()
+        )
+
+        once "mouseup" containerEl (fun e ->
+            stop()
+
+            match unmount with
+            | Some d ->
+                d.Dispose()
+            | None ->
+                dispatch ClearSelection
+
+            e.stopPropagation()
+        )
+
     let handleNodeMouseDown (containerEvent : MouseEvent) options dispatch (nodeEl : HTMLElement) (node : Node) =
         let containerEl = containerElFromNodeEl nodeEl
 
-        if (node.CanSelect) then
+        if (options.CanSelect node) then
             deselectAll (containerEl)
             select (nodeEl)
 
-        if (node.CanMove) then
+        if (options.CanMove node) then
             let sx,sy = parentXY containerEvent
 
             let snap (nx,ny) =
@@ -719,14 +783,14 @@ module EventHandlers =
                 let nx,ny = parentXY (e :?> MouseEvent) |> newXY
 
                 dispatch (MoveNode (node.Id, nx, ny))
-                if (node.CanSelect) then
-                    dispatch (SelectOnly node.Id)
+                if (options.CanSelect node) then
+                    dispatch (SelectOnly [node.Id])
                 dispatch (SetMovingNode false)
             )
         else
             dispatch ClearSelection
-            if (node.CanSelect) then
-                dispatch (Select node.Id)
+            if (options.CanSelect node) then
+                dispatch (Select [ node.Id ])
 
     let handlePortMouseDown (e : MouseEvent) dispatch (portEl : HTMLElement) =
         let nodeEl =  nodeElFromPortEl portEl
@@ -787,7 +851,7 @@ module EventHandlers =
 
         if nodeName <> "" then
             ( nodeName, nodeX, nodeY ) |> SetLocation |> dispatch
-            dispatch (SelectOnly nodeName)
+            dispatch (SelectOnly [nodeName])
 
         e.preventDefault()
 
@@ -809,7 +873,7 @@ module EventHandlers =
             | None ->
                 match findNodeFromEvent e ((model |> Store.get).Graph) with
                 | None ->
-                    dispatch ClearSelection
+                    handleContainerMouseDown e options model dispatch
                 | Some (nodeEl, node) ->
                     handleNodeMouseDown e options dispatch nodeEl node
         )
@@ -825,7 +889,7 @@ module Styles =
             Css.positionRelative
             Css.width (percent 100)
             Css.height (percent 100)
-            Css.cursorGrab
+            //Css.cursorGrab
         ]
 
         rule ".node" [
@@ -899,22 +963,6 @@ module Styles =
             Css.backgroundColor "#888888"
         ]
 
-        // rule ".port.left" [
-        //     Css.left (px -(portSize / 2.0 - 0.5))
-        // ]
-
-        // rule ".port.right" [
-        //     Css.right (px -(portSize / 2.0 - 0.5))
-        // ]
-
-        // rule ".port.top" [
-        //     Css.top (px -(portSize / 2.0 - 0.5))
-        // ]
-
-        // rule ".port.bottom" [
-        //     Css.bottom (px -(portSize / 2.0 - 0.5))
-        // ]
-
         rule ".port:hover" [
             Css.backgroundColor "black"
         ]
@@ -940,6 +988,12 @@ module Styles =
         ]
 
         rule ".edge-stroke" [
+            Css.custom("stroke","#999")
+            Css.custom("stroke-width","1")
+            Css.custom("fill", "none")
+        ]
+
+        rule ".selection-rect rect" [
             Css.custom("stroke","#999")
             Css.custom("stroke-width","1")
             Css.custom("fill", "none")
@@ -1054,7 +1108,7 @@ module Views =
 
                 portxys.Monitor( portEl, fun _ -> 
                     let xy = portEl |> centreXY |> toLocalXY containerEl
-                    Fable.Core.JS.console.log(sprintf "** %s-%s: %A" (node.Id) (port.Id) xy)       
+                    //Fable.Core.JS.console.log(sprintf "** %s-%s: %A" (node.Id) (port.Id) xy)       
                     portxys.Update(key, xy)
                 )
             )
@@ -1105,11 +1159,10 @@ module Views =
         ]
         
     let injectNodeDefaults dispatch (isSelected : System.IObservable<bool>) options portxys (nodeS : IReadOnlyStore<Node>) view =
-        //let isSelected = model.Selection.Contains (node.Id)
-        //let numSelected = model.Selection.Count
+
         let node = nodeS.Value
         view |> CoreElements.inject [
-            
+
             Attr.custom("x-node-id", node.Id)
             ([
                 "node"
@@ -1128,7 +1181,6 @@ module Views =
         ]
 
     let renderNode dispatch (isSelected : System.IObservable<bool>) options portxys (node : IReadOnlyStore<Node>) =
-        Fable.Core.JS.console.log("renderNode: " + (node.Value.Id))
         options.ViewNode(node) |> injectNodeDefaults dispatch isSelected options portxys node
 
     let findPortXY (model : Model) options (np : NodePort) =
@@ -1167,9 +1219,9 @@ module Views =
                 style.height <- sprintf "max(100%%,%fpx)" h
         )
 
-    let resizeNode (m : Model) =
+    let resizeNode options (m : Model) =
         match selectedNodes m |> List.ofSeq with
-        | [ n ] when n.CanResize && not (m.MovingNode) -> Some n
+        | [ n ] when options.CanResize n && not (m.MovingNode) -> Some n
         | _ -> None
 
     let renderGraph (graph : Graph ) (options : GraphOptions) =
@@ -1179,31 +1231,18 @@ module Views =
         let widthHeightS = Store.make (0.0, 0.0)
 
         Html.divc "graph-container" [
+            disposeOnUnmount [
+                // Recompute bounds upon model change
+                model.Subscribe(fun m -> graphBounds (m.Graph.Nodes.Values) |> Store.set widthHeightS)
+            ] 
+            
             background Dotted
-
-            // Set up notfication of edits back to user
-            // Will be unsubscribed when component unmounted
-            //disposeOnUnmount [
-            //    ((model .>> (fun m -> m.Graph)).Subscribe(options.OnChange))
-            //]
-
-            setBounds widthHeightS
+            setBounds widthHeightS // Bind bounds to container width / height
 
             // Install the event handlers
             yield! containerEventHandlers options model dispatch
 
             // Render the nodes
-            Bind.el( model, fun m ->
-//                portXYs.Clear()
-
-                graphBounds (m.Graph.Nodes.Values) |> Store.set widthHeightS
-
-                nothing
-                // fragment [
-                //     yield! (m.Graph.Nodes.Values |> Seq.map (renderNode dispatch m options portXYs))
-                // ]
-            )
-
             SutilKeyed.keyedUnordered
                 (model .> (fun m -> m.Graph.Nodes.Values))
                 (fun n -> renderNode dispatch (model .>> (isNodeSelected n.Value)) options portXYs n)
@@ -1215,13 +1254,14 @@ module Views =
             //     (fun n -> n.Id)
             // )
 
-            Bind.el( model .>> resizeNode, fun optNode ->
+            Bind.el( model .>> (resizeNode options), fun optNode ->
                 match optNode with
                 | None -> 
                         fragment []
                 | Some (node) -> 
                         fragment <| renderResizeHandles dispatch node
             )
+
             // Render the edges
             Svg.svg [
                 Attr.id "graph-edges-id"
