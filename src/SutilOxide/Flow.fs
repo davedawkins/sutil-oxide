@@ -380,7 +380,7 @@ module Updates =
 
     type Message =
         | DeleteNode of string
-        | MoveNode of string * float * float
+        | MoveNodes of (string * float * float) list
         | MoveResizeNode of string * float * float * float * float
         | DeleteSelection
         | ClearSelection
@@ -528,11 +528,16 @@ module Updates =
 
             m, [ msgSelectionChange m options ]
 
-        | MoveNode (id,x,y) ->
-            let g = model.Graph
-            let n = g.Nodes[id]
-            let g' = { g with Nodes = g.Nodes.Add( id, { n with X = x; Y = y }) }
-            { model with Graph = g' }, 
+        | MoveNodes nodeXys ->
+            let moveNodes : Map<FlowId,Node> =
+                nodeXys 
+                |> List.fold 
+                    (fun nodes (id,x,y) -> 
+                        nodes.Add( id, { nodes[id] with X = x; Y = y }) 
+                    ) 
+                    (model.Graph.Nodes)
+
+            { model with Graph = { model.Graph with Nodes = moveNodes } }, 
                 Cmd.batch [
                     Cmd.ofMsg NotifyChange
                     [ fun _ -> portxys.UpdateAll() ]
@@ -747,15 +752,20 @@ module EventHandlers =
             e.stopPropagation()
         )
 
-    let handleNodeMouseDown (containerEvent : MouseEvent) options dispatch (nodeEl : HTMLElement) (node : Node) =
+    let handleNodeMouseDown (containerEvent : MouseEvent) options (model : IStore<Model>) dispatch (nodeEl : HTMLElement) (node : Node) =
         let containerEl = containerElFromNodeEl nodeEl
 
-        if (options.CanSelect node) then
-            deselectAll (containerEl)
-            select (nodeEl)
+        if (options.CanSelect node && not (model.Value.Selection.Contains node.Id)) then
+            dispatch (SelectOnly [ node.Id ])
+            // deselectAll (containerEl)
+            // select (nodeEl)
 
         if (options.CanMove node) then
             let sx,sy = parentXY containerEvent
+            let selectedNodeIds = 
+                model.Value.Selection
+                |> Seq.map (fun id -> model.Value.Graph.Nodes[id])
+                |> Seq.toList
 
             let snap (nx,ny) =
                 if options.SnapToGrid then
@@ -765,26 +775,34 @@ module EventHandlers =
                 else
                     (nx,ny)
 
-            let newXY (cx,cy) =
-                (node.X + cx - sx, node.Y + cy - sy) |> snap
+            let newXY (cx,cy) (node : Node) =
+                let nx, ny = ((node.X + cx - sx, node.Y + cy - sy) |> snap)
+                node.Id, nx, ny
 
             dispatch (SetMovingNode true)
 
             let stop = listen "mousemove" containerEl (fun e ->
-                let nx, ny = parentXY (e :?> MouseEvent) |> newXY
-                nodeEl.style.left <- $"{nx}px"
-                nodeEl.style.top <- $"{ny}px"
+                let (cx,cy) = parentXY (e :?> MouseEvent)
+
+                let moves =
+                    selectedNodeIds 
+                    |> List.map (newXY (cx,cy))
+
+                //let nx, ny = parentXY (e :?> MouseEvent) |> newXY
+                dispatch (MoveNodes moves)
+                // nodeEl.style.left <- $"{nx}px"
+                // nodeEl.style.top <- $"{ny}px"
             )
 
             once "mouseup" containerEl (fun e ->
                 stop()
                 e.stopPropagation()
 
-                let nx,ny = parentXY (e :?> MouseEvent) |> newXY
+                // let nx,ny = parentXY (e :?> MouseEvent) |> newXY
 
-                dispatch (MoveNode (node.Id, nx, ny))
-                if (options.CanSelect node) then
-                    dispatch (SelectOnly [node.Id])
+                // dispatch (MoveNode (node.Id, nx, ny))
+                // if (options.CanSelect node) then
+                //     dispatch (SelectOnly [node.Id])
                 dispatch (SetMovingNode false)
             )
         else
@@ -875,7 +893,7 @@ module EventHandlers =
                 | None ->
                     handleContainerMouseDown e options model dispatch
                 | Some (nodeEl, node) ->
-                    handleNodeMouseDown e options dispatch nodeEl node
+                    handleNodeMouseDown e options model dispatch nodeEl node
         )
 
         Ev.onDrop (handleDrop options model dispatch)
@@ -1233,7 +1251,10 @@ module Views =
         Html.divc "graph-container" [
             disposeOnUnmount [
                 // Recompute bounds upon model change
-                model.Subscribe(fun m -> graphBounds (m.Graph.Nodes.Values) |> Store.set widthHeightS)
+                model.Subscribe(fun m -> 
+                    if not m.MovingNode then
+                        graphBounds (m.Graph.Nodes.Values) |> Store.set widthHeightS
+                )
             ] 
             
             background Dotted
