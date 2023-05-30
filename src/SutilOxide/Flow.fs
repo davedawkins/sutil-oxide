@@ -364,7 +364,7 @@ module Updates =
         Graph : Graph
         Selection : Set<string>
         MovingNode : bool
-        _ViewTransform : Transform2D
+        ViewTransform : Transform2D
         Origin : float * float
         Scale : float
         Bounds : Rect
@@ -379,10 +379,10 @@ module Updates =
         t.TransformInverse(x,y)
 
     let localToScreen (m : Model) (x,y) = 
-        localToScreenT (m._ViewTransform) (x,y)
+        localToScreenT (m.ViewTransform) (x,y)
 
     let screenToLocal (m : Model) (x,y) =
-        screenToLocalT (m._ViewTransform) (x,y)
+        screenToLocalT (m.ViewTransform) (x,y)
 
     type Message =
         | DeleteNode of string
@@ -406,7 +406,7 @@ module Updates =
             Graph = g
             Selection = Set.empty
             MovingNode = false
-            _ViewTransform = Transform2D.Empty
+            ViewTransform = Transform2D.Empty
             Origin = 0,0
             Scale = 1
             Bounds = Rect.Empty
@@ -500,11 +500,13 @@ module Updates =
                 model, Cmd.none
 
         | SetOrigin (ox,oy) ->
-            { model with Origin = (ox,oy); _ViewTransform = Transform2D.TranslateScale(-ox,-oy,model.Scale)}, Cmd.none
+            { model with Origin = (ox,oy); ViewTransform = Transform2D.TranslateScale(-ox,-oy, model.Scale)}, 
+            [ fun _ -> portxys.UpdateAll() ]
 
         | SetScale s ->
             let ox,oy = model.Origin
-            { model with Scale = s; _ViewTransform = Transform2D.TranslateScale(-ox,-oy,s)}, Cmd.none
+            { model with Scale = s; ViewTransform = Transform2D.TranslateScale(-ox,-oy, s)}, 
+            [ fun _ -> portxys.UpdateAll() ]
 
         | SetMovingNode f ->
             { model with MovingNode = f }, Cmd.none
@@ -690,7 +692,7 @@ module EventHandlers =
 
             let stop = listen "mousemove" containerEl (fun e ->
                 let nx, ny = parentXY (e :?> MouseEvent) |> newXY
-                let rect = rectS.Value.Transform(model.Value._ViewTransform)
+                let rect = rectS.Value.Transform(model.Value.ViewTransform)
 
                 let newRectX, newRectW = 
                     match x with 
@@ -709,7 +711,7 @@ module EventHandlers =
                         rect with 
                             X = newRectX; Width = newRectW
                             Y = newRectY; Height = newRectH
-                    }.TransformInverse(model.Value._ViewTransform)
+                    }.TransformInverse(model.Value.ViewTransform)
 
                 newRect |> Store.set rectS
 
@@ -933,7 +935,7 @@ module EventHandlers =
 
         e.preventDefault()
 
-    let containerEventHandlers options model dispatch = [
+    let containerEventHandlers options (model : IStore<Model>) dispatch = [
 
         Attr.tabIndex 0
 
@@ -942,6 +944,10 @@ module EventHandlers =
                 dispatch DeleteSelection
                 e.preventDefault()
                 e.stopPropagation()
+            elif e.key = "+" then
+                dispatch (SetScale (model.Value.Scale * 1.5))
+            elif e.key = "-" then
+                dispatch (SetScale (model.Value.Scale / 1.5))
         )
 
         Ev.onMouseDown (fun e ->
@@ -1135,9 +1141,9 @@ module Views =
     open EventHandlers
     open Updates
 
-    let setBounds(widthHeightS : System.IObservable<(float*float)*Rect*Transform2D>) =
+    let setBounds(widthHeightS : System.IObservable<float*(float*float)*Rect*Transform2D>) =
         Bind.style(widthHeightS, 
-            fun style ( ((ox,oy),r,t) : (float*float) * Rect * Transform2D) ->
+            fun style ( (s,(ox,oy),r,t) : float * (float*float) * Rect * Transform2D) ->
 
             //Fable.Core.JS.console.log(sprintf "bounds (model space): %f %f %f %f" r.X r.Y r.Width r.Height)
 
@@ -1152,7 +1158,7 @@ module Views =
                 style.width <- sprintf "max(100%%,%fpx)" w
                 style.height <- sprintf "max(100%%,%fpx)" h
             
-            //style.transform <- sprintf "translate(%fpx,%fpx)" -ox -oy
+            //style.transform <- sprintf "scale(%f)" s
         )
 
     let background boundsView (bg: Background)=
@@ -1272,7 +1278,7 @@ module Views =
 
             Bind.toggleClass( isSelected, "selected")
 
-            Bind.style( nodeS |> Store.zip (model .>> (fun m -> m._ViewTransform)), 
+            Bind.style( nodeS |> Store.zip (model .>> (fun m -> m.ViewTransform)), 
                 fun style (vt,node) ->
                 let x1, y1 = localToScreenT vt ( node.Rect.X, node.Rect.Y )
                 let x2, y2 = localToScreenT vt ( node.Rect.X2, node.Rect.Y2 )
@@ -1322,7 +1328,7 @@ module Views =
 
         let portXYs = PortXYs()
         let model, dispatch = graph |> Store.makeElmish (Updates.init) (Updates.update options portXYs) ignore
-        let boundsView = model .>> (fun m -> m.Origin, m.Bounds, m._ViewTransform)
+        let boundsView = model .>> (fun m -> m.Scale, m.Origin, m.Bounds, m.ViewTransform)
 
         Html.divc "graph-container" [
             

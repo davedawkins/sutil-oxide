@@ -14,10 +14,16 @@ type Transform2D =
        Transform2D of BasicTransform2D[]
     with
         static member Empty = Transform2D [||]
+
+        static member Translate( ox, oy ) = Transform2D [|
+            Translate (ox,oy)
+        |]
+
         static member TranslateScale( ox, oy, s ) = Transform2D [|
             Scale s
             Translate (ox,oy)
         |]
+
         static member Transform( t : BasicTransform2D, (x, y) : float*float ) =
             match t with
             | Translate (ox,oy) -> x + ox, y + oy 
