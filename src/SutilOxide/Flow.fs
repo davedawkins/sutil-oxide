@@ -25,6 +25,7 @@ module SutilKeyed =
             result
         else
             v :?> 'T
+
     type KeyedInfo<'T> = {
         Node : SutilEffect
         Value : IStore<'T>
@@ -82,20 +83,10 @@ module Types =
 
     type FlowId = string
 
-    type Rect = {
-        X : float
-        Y : float
-        Width : float
-        Height : float
-    }
-
     type Node = {
         Id : FlowId
         Type : string
-        X : float
-        Y : float
-        Width : float
-        Height : float
+        Rect : Rect
         ZIndex : int
         ClassName : string
         SourceLocation : BasicLocation
@@ -104,15 +95,13 @@ module Types =
         static member Create( id : FlowId, typ: string, x : float, y : float ) = {
             Id = id
             Type =typ
-            X = x
-            Y = y
-            Width = 100
-            Height = 62
+            Rect = Rect.Create(x, y, 100, 62)
             ZIndex = 0
             ClassName = ""
             SourceLocation = Bottom
             TargetLocation = Top
         }
+        member __.SetXY( x, y ) = { __ with Rect = { __.Rect with X = x; Y = y } }
 
     type PortMode =
         | Input
@@ -237,9 +226,9 @@ module Helpers =
     let targetEl (e : Event) = e.target :?> HTMLElement
     let currentEl (e : Event) = e.currentTarget :?> HTMLElement
 
-    let nodeContainsPoint (x,y) (node : Node) =
-        x >= node.X && x <= node.X + node.Width &&
-        y >= node.Y && y <= node.Y + node.Height
+    // let nodeContainsPoint (x,y) (node : Node) =
+    //     x >= node.X && x <= node.X + node.Width &&
+    //     y >= node.Y && y <= node.Y + node.Height
 
     let isGraphNode (e : HTMLElement) =
         e.classList.contains("node")
@@ -264,14 +253,14 @@ module Helpers =
         let br = el.getBoundingClientRect()
         (br.left - parentB.left, br.top - parentB.top)
 
-    let xwToLr x w =
-        if (w > 0.0) then x, x+w else x+w,x
+    let xyToLr x1 x2 =
+        if (x2 > x1) then x1,x2 else x2,x1
 
-    let rectIntersect (ax,ay,aw,ah) (bx,by,bw,bh) =
-        let a_left, a_right = xwToLr ax aw
-        let a_top, a_bottom = xwToLr ay ah
-        let b_left, b_right = xwToLr bx bw
-        let b_top, b_bottom = xwToLr by bh
+    let rectIntersect (ax,ay,ax2,ay2) (bx,by,bx2,by2) =
+        let a_left, a_right = xyToLr ax ax2
+        let a_top, a_bottom = xyToLr ay ay2
+        let b_left, b_right = xyToLr bx bx2
+        let b_top, b_bottom = xyToLr by by2
 
         a_left <= b_right &&
         b_left <= a_right &&
@@ -359,7 +348,6 @@ module Updates =
             observer.observe(el)
 
         member __.UpdateAll() =
-            Fable.Core.JS.console.log("Update all port xys")
             callbacks |> List.iter (fun f -> f())
 
         member __.Update( key, xy : float*float ) =
@@ -376,7 +364,25 @@ module Updates =
         Graph : Graph
         Selection : Set<string>
         MovingNode : bool
+        _ViewTransform : Transform2D
+        Origin : float * float
+        Scale : float
+        Bounds : Rect
     }
+
+    let localToScreenT (t:Transform2D) (x,y) = 
+        (x,y)
+        //t.Transform(x,y)
+
+    let screenToLocalT (t:Transform2D) (x,y) =
+        (x,y)
+        //t.TransformInverse(x,y)
+
+    let localToScreen (m : Model) (x,y) = 
+        localToScreenT (m._ViewTransform) (x,y)
+
+    let screenToLocal (m : Model) (x,y) =
+        screenToLocalT (m._ViewTransform) (x,y)
 
     type Message =
         | DeleteNode of string
@@ -391,13 +397,20 @@ module Updates =
         | AddEdge of (string * string * string * string)
         | NotifyChange
         | SetMovingNode of bool
+        | SetScale of float
+        | SetOrigin of (float * float)
+        | CalculateBounds
 
     let init g =
         {
             Graph = g
             Selection = Set.empty
             MovingNode = false
-        }, Cmd.none
+            _ViewTransform = Transform2D.Empty
+            Origin = 0,0
+            Scale = 1
+            Bounds = Rect.Empty
+        }, Cmd.ofMsg CalculateBounds
 
     let findNodeEdges (g : Graph) (nodeId) =
         g.Edges.Values |> Seq.filter (fun e -> e.Source.NodeId = nodeId || e.Target.NodeId = nodeId)
@@ -443,8 +456,7 @@ module Updates =
         {
             newNode with
                 Id = name
-                X = x 
-                Y = y 
+                Rect = { newNode.Rect with X = x; Y = y }
         }
 
     let withNode (n : Node) (g : Graph) =
@@ -463,8 +475,36 @@ module Updates =
         let nodes = selectedNodes model |> Seq.toList
         options.OnSelectionChange( nodes, [ ])
 
+
+    let calculateBounds (nodes : Node seq)  =
+        nodes 
+        |> Seq.fold (fun ((minx,miny),(maxx,maxy)) n -> 
+            (System.Math.Min(n.Rect.X, minx),System.Math.Min(n.Rect.Y,miny)),
+            (System.Math.Max(n.Rect.X2,maxx),System.Math.Max(n.Rect.Y2,maxy))
+            )
+            ((0.0,0.0),(0.0,0.0))
+        |> Rect.Create
+
     let update options (portxys : PortXYs) (msg : Message) model =
+        Fable.Core.JS.console.log( sprintf "Flow: Update: %A" msg)
         match msg with
+
+        | CalculateBounds ->
+            let bounds = calculateBounds (model.Graph.Nodes.Values)
+            let ox, oy = System.Math.Min(0, bounds.X), System.Math.Min(0, bounds.Y)
+            if bounds <> model.Bounds then
+                { model with 
+                    Bounds = bounds
+                }, Cmd.ofMsg (SetOrigin (ox,oy))
+            else
+                model, Cmd.none
+
+        | SetOrigin (ox,oy) ->
+            { model with Origin = (ox,oy); _ViewTransform = Transform2D.TranslateScale(-ox,-oy,model.Scale)}, Cmd.none
+
+        | SetScale s ->
+            let ox,oy = model.Origin
+            { model with Scale = s; _ViewTransform = Transform2D.TranslateScale(-ox,-oy,s)}, Cmd.none
 
         | SetMovingNode f ->
             { model with MovingNode = f }, Cmd.none
@@ -480,7 +520,12 @@ module Updates =
             let node = model.Graph.Nodes[ n ]
             let graph, cmd = deleteNode options (model.Graph) n
             { model with Graph = graph }, 
-                Cmd.batch [ Cmd.ofMsg ClearSelection; cmd; Cmd.ofMsg NotifyChange ]
+                Cmd.batch [ 
+                    Cmd.ofMsg ClearSelection; 
+                    cmd; 
+                    Cmd.ofMsg CalculateBounds
+                    Cmd.ofMsg NotifyChange 
+                ]
 
         | AddEdge (n1,p1,n2,p2) ->
             let name = sprintf "e-%s-%s-%s-%s" n1 p1 n2 p2
@@ -489,8 +534,12 @@ module Updates =
                 Cmd.batch [ [fun _ -> options.OnAddEdge(e)]; Cmd.ofMsg NotifyChange ]
 
         | SetLocation (nodeId, x, y) ->
-            let node = { model.Graph.Nodes[nodeId]  with X = x; Y = y}
-            { model with Graph = model.Graph |> withNode node }, Cmd.ofMsg NotifyChange
+            let node = model.Graph.Nodes[nodeId].SetXY(x,y)
+            { model with Graph = model.Graph |> withNode node }, 
+            Cmd.batch [
+                Cmd.ofMsg CalculateBounds
+                Cmd.ofMsg NotifyChange
+            ]
 
         | AddNode (nodeType, x, y) -> 
             let node = makeNode options model nodeType x y
@@ -511,6 +560,7 @@ module Updates =
                     [ fun _ -> options.OnAddNode(node) ] 
                     autoConnectCmd; 
                     Cmd.ofMsg (SelectOnly [ node.Id ]) 
+                    Cmd.ofMsg CalculateBounds
                     Cmd.ofMsg NotifyChange
                     [ fun _ -> portxys.UpdateAll() ]
                 ]
@@ -533,12 +583,13 @@ module Updates =
                 nodeXys 
                 |> List.fold 
                     (fun nodes (id,x,y) -> 
-                        nodes.Add( id, { nodes[id] with X = x; Y = y }) 
+                        nodes.Add( id, nodes[id].SetXY(x,y)) 
                     ) 
                     (model.Graph.Nodes)
 
             { model with Graph = { model.Graph with Nodes = moveNodes } }, 
                 Cmd.batch [
+                    Cmd.ofMsg CalculateBounds
                     Cmd.ofMsg NotifyChange
                     [ fun _ -> portxys.UpdateAll() ]
                 ]
@@ -546,9 +597,10 @@ module Updates =
         | MoveResizeNode (id,x,y,w,h) ->
             let g = model.Graph
             let n = g.Nodes[id]
-            let g' = { g with Nodes = g.Nodes.Add( id, { n with X = x; Y = y; Width = w; Height = h }) }
+            let g' = { g with Nodes = g.Nodes.Add( id, { n with Rect = Rect.Create(x,y,w,h) }) }
             { model with Graph = g' },
                 Cmd.batch [
+                    Cmd.ofMsg CalculateBounds
                     Cmd.ofMsg NotifyChange
                     [ fun _ -> portxys.UpdateAll() ]
                 ]
@@ -615,7 +667,7 @@ module EventHandlers =
     open Updates
     open DomHelpers
 
-    let resizeHandler dispatch (nodeId : string) (rectS : IStore<Rect>) (x:int,y:int) = 
+    let resizeHandler (model : IStore<Model>) dispatch (nodeId : string) (rectS : IStore<Rect>) (x:int,y:int) = 
 
         Ev.onMouseDown( fun e -> 
             let handleEl = targetEl e
@@ -638,7 +690,7 @@ module EventHandlers =
 
             let stop = listen "mousemove" containerEl (fun e ->
                 let nx, ny = parentXY (e :?> MouseEvent) |> newXY
-                let rect = rectS.Value
+                let rect = rectS.Value.Transform(model.Value._ViewTransform)
 
                 let newRectX, newRectW = 
                     match x with 
@@ -657,7 +709,7 @@ module EventHandlers =
                         rect with 
                             X = newRectX; Width = newRectW
                             Y = newRectY; Height = newRectH
-                    }
+                    }.TransformInverse(model.Value._ViewTransform)
 
                 newRect |> Store.set rectS
 
@@ -732,7 +784,9 @@ module EventHandlers =
             let nodeIds = 
                 model.Value.Graph.Nodes.Values 
                 |> Seq.filter (fun n ->
-                    rectIntersect (n.X,n.Y,n.Width,n.Height) (sx, sy, nx-sx, ny-sy)
+                    let x1,y1 = localToScreen model.Value (n.Rect.X, n.Rect.Y )
+                    let x2,y2 = localToScreen model.Value (n.Rect.X2, n.Rect.Y2 )
+                    rectIntersect (x1,y1,x2,y2) (sx, sy, nx, ny)
                 ) 
                 |> Seq.map (fun n -> n.Id) |> Seq.toList
             //Fable.Core.JS.console.log(sprintf "%A" nodeIds)
@@ -776,7 +830,13 @@ module EventHandlers =
                     (nx,ny)
 
             let newXY (cx,cy) (node : Node) =
-                let nx, ny = ((node.X + cx - sx, node.Y + cy - sy) |> snap)
+                // To screen space
+                let nodeX,nodeY = localToScreen model.Value (node.Rect.X, node.Rect.Y )
+
+                // Calculate in screen space
+                let screen_nx, screen_ny = ((nodeX + cx - sx, nodeY + cy - sy) |> snap)
+
+                let nx, ny = screenToLocal model.Value ( screen_nx, screen_ny )                
                 node.Id, nx, ny
 
             dispatch (SetMovingNode true)
@@ -1075,7 +1135,28 @@ module Views =
     open EventHandlers
     open Updates
 
-    let background (bg: Background)=
+
+    let setBounds(widthHeightS : System.IObservable<(float*float)*Rect*Transform2D>) =
+        Bind.style(widthHeightS, 
+            fun style ( ((ox,oy),r,t) : (float*float) * Rect * Transform2D) ->
+
+            //Fable.Core.JS.console.log(sprintf "bounds (model space): %f %f %f %f" r.X r.Y r.Width r.Height)
+
+            let screenRect = r.Transform(t)
+
+            //Fable.Core.JS.console.log(sprintf "bounds (screen space): %f %f %f %f" screenRect.X screenRect.Y screenRect.Width screenRect.Height)
+
+            let w = System.Math.Abs(screenRect.Width)
+            let h = System.Math.Abs(screenRect.Height)
+
+            if w <> 0.0 && h <> 0.0 then
+                style.width <- sprintf "max(100%%,%fpx)" w
+                style.height <- sprintf "max(100%%,%fpx)" h
+            
+            style.transform <- sprintf "translate(%fpx,%fpx)" -ox -oy
+        )
+
+    let background boundsView (bg: Background)=
         match bg with
         | Clear -> fragment []
         | Dotted ->
@@ -1106,6 +1187,7 @@ module Views =
                     Svg.height (percent 100)
                     Attr.custom ("fill", "url(#pattern-bg)")
                 ]
+                setBounds boundsView // Bind bounds to container width / height
             ]
 
     let renderPort (portxys : PortXYs) (node : Node)  (port : Port) =
@@ -1152,33 +1234,35 @@ module Views =
         let handley = cy + (float y) * dy
         (handlex,handley)
 
-    let resizeHandle dispatch (nodeId : string) (rect : IStore<Rect>) (x,y) =
+    let resizeHandle (model : IStore<Model>) dispatch (nodeId : string) (rect : IStore<Rect>) (x,y) =
         let lr = match x with -1 -> " left"| 1 -> " right" | _ -> ""
         let tb = match y with -1 -> " top"| 1 -> " bottom" | _ -> ""
 
         Html.divc (sprintf "resize-handle%s%s" tb lr )
             [
-                EventHandlers.resizeHandler  dispatch nodeId rect (x,y)
+                EventHandlers.resizeHandler model dispatch nodeId rect (x,y)
                 Bind.style( rect |> Store.map (handleXY (x,y)), fun style (hx,hy) -> 
-                    style.left <- (string hx) + "px"
-                    style.top <- (string hy) + "px"
+                    let screenHx, screenHy = localToScreen model.Value (hx,hy)
+                    style.left <- (string screenHx) + "px"
+                    style.top <- (string screenHy) + "px"
                 )
             ]
 
-    let renderResizeHandles dispatch (node : Node) =
-        let rectS = Store.make ({ X = node.X; Y = node.Y; Width = node.Width; Height = node.Height }: Rect)
+    let renderResizeHandles model dispatch (node : Node) =
+        let rectS = Store.make (node.Rect)
         [
             yield! [
                 (-1,-1); (-1,0); (-1,1)
                 ( 0,-1);         ( 0,1)
                 ( 1,-1); ( 1,0); ( 1,1)
                 ] 
-                |> List.map (resizeHandle dispatch (node.Id) rectS)
+                |> List.map (resizeHandle model dispatch (node.Id) rectS)
         ]
         
-    let injectNodeDefaults dispatch (isSelected : System.IObservable<bool>) options portxys (nodeS : IReadOnlyStore<Node>) view =
+    let injectNodeDefaults (model:IStore<Model>) dispatch (isSelected : System.IObservable<bool>) options portxys (nodeS : IReadOnlyStore<Node>) view =
 
         let node = nodeS.Value
+
         view |> CoreElements.inject [
 
             Attr.custom("x-node-id", node.Id)
@@ -1188,18 +1272,23 @@ module Views =
             ] |> String.concat " " |> Attr.className)
 
             Bind.toggleClass( isSelected, "selected")
-            Bind.style( nodeS, fun style node ->
-                style.left <- sprintf "%fpx" node.X
-                style.top <- sprintf "%fpx" node.Y
-                style.width <- sprintf "%fpx" node.Width
-                style.height <- sprintf "%fpx" node.Height
+
+            Bind.style( nodeS |> Store.zip (model .>> (fun m -> m._ViewTransform)), 
+                fun style (vt,node) ->
+                let x1, y1 = localToScreenT vt ( node.Rect.X, node.Rect.Y )
+                let x2, y2 = localToScreenT vt ( node.Rect.X2, node.Rect.Y2 )
+
+                style.left <- sprintf "%fpx" x1
+                style.top <- sprintf "%fpx" y1
+                style.width <- sprintf "%fpx" (x2 - x1)
+                style.height <- sprintf "%fpx" (y2 - y1)
             )
 
             yield! renderPorts options portxys node
         ]
 
-    let renderNode dispatch (isSelected : System.IObservable<bool>) options portxys (node : IReadOnlyStore<Node>) =
-        options.ViewNode(node) |> injectNodeDefaults dispatch isSelected options portxys node
+    let renderNode (model:IStore<Model>) dispatch (isSelected : System.IObservable<bool>) options portxys (node : IReadOnlyStore<Node>) =
+        options.ViewNode(node) |> injectNodeDefaults model dispatch isSelected options portxys node
 
     let findPortXY (model : Model) options (np : NodePort) =
         let node = model.Graph.Nodes[np.NodeId]
@@ -1208,12 +1297,13 @@ module Views =
 
         let loc = if port.Mode = Input then node.TargetLocation else node.SourceLocation
 
+        let rect = node.Rect
         match loc with 
-        | Left   -> node.X,                    node.Y + node.Height / 2.0
-        | Right  -> node.X + node.Width,       node.Y + node.Height / 2.0
-        | Top    -> node.X + node.Width / 2.0, node.Y
-        | Bottom -> node.X + node.Width / 2.0, node.Y + node.Height
-        | Centre -> node.X + node.Width / 2.0, node.Y + node.Height / 2.0
+        | Left   -> rect.X,                    rect.Y + rect.Height / 2.0
+        | Right  -> rect.X + rect.Width,       rect.Y + rect.Height / 2.0
+        | Top    -> rect.X + rect.Width / 2.0, rect.Y
+        | Bottom -> rect.X + rect.Width / 2.0, rect.Y + rect.Height
+        | Centre -> rect.X + rect.Width / 2.0, rect.Y + rect.Height / 2.0
 
     let renderEdge (model : Model) options (portxys : PortXYs) (edge : Edge) =
         let x1, y1 = findPortXY model options edge.Source
@@ -1224,19 +1314,6 @@ module Views =
             Edges.drawEdgeSvg (BasicLocation.Bottom) x1 y1 (BasicLocation.Top) x2 y2 "bezier"
         ))
 
-    let graphBounds (nodes : Node seq) =
-        nodes |> Seq.fold (fun (mx,my) n -> 
-            System.Math.Max(n.X + n.Width,mx),System.Math.Max(n.Y + n.Height,my))
-            (0.0,0.0)
-
-    let setBounds( widthHeightS ) =
-        Bind.style(widthHeightS |> Store.map (fun (x,y) -> (x+50.0, y+50.0)), 
-            fun style (w,h) ->
-            if w <> 0.0 && h <> 0.0 then
-                style.width <- sprintf "max(100%%,%fpx)" w
-                style.height <- sprintf "max(100%%,%fpx)" h
-        )
-
     let resizeNode options (m : Model) =
         match selectedNodes m |> List.ofSeq with
         | [ n ] when options.CanResize n && not (m.MovingNode) -> Some n
@@ -1246,19 +1323,12 @@ module Views =
 
         let portXYs = PortXYs()
         let model, dispatch = graph |> Store.makeElmish (Updates.init) (Updates.update options portXYs) ignore
-        let widthHeightS = Store.make (0.0, 0.0)
+        let boundsView = model .>> (fun m -> m.Origin, m.Bounds, m._ViewTransform)
 
         Html.divc "graph-container" [
-            disposeOnUnmount [
-                // Recompute bounds upon model change
-                model.Subscribe(fun m -> 
-                    if not m.MovingNode then
-                        graphBounds (m.Graph.Nodes.Values) |> Store.set widthHeightS
-                )
-            ] 
             
-            background Dotted
-            setBounds widthHeightS // Bind bounds to container width / height
+            background boundsView Dotted
+            setBounds boundsView // Bind bounds to container width / height
 
             // Install the event handlers
             yield! containerEventHandlers options model dispatch
@@ -1266,7 +1336,7 @@ module Views =
             // Render the nodes
             SutilKeyed.keyedUnordered
                 (model .> (fun m -> m.Graph.Nodes.Values))
-                (fun n -> renderNode dispatch (model .>> (isNodeSelected n.Value)) options portXYs n)
+                (fun n -> renderNode model dispatch (model .>> (isNodeSelected n.Value)) options portXYs n)
                 (fun n -> n.Id)
 
             // Bind.each(
@@ -1280,7 +1350,7 @@ module Views =
                 | None -> 
                         fragment []
                 | Some (node) -> 
-                        fragment <| renderResizeHandles dispatch node
+                        fragment <| renderResizeHandles model dispatch node
             )
 
             // Render the edges
