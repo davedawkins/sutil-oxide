@@ -371,12 +371,12 @@ module Updates =
     }
 
     let localToScreenT (t:Transform2D) (x,y) = 
-        (x,y)
-        //t.Transform(x,y)
+        //(x,y)
+        t.Transform(x,y)
 
     let screenToLocalT (t:Transform2D) (x,y) =
-        (x,y)
-        //t.TransformInverse(x,y)
+        //(x,y)
+        t.TransformInverse(x,y)
 
     let localToScreen (m : Model) (x,y) = 
         localToScreenT (m._ViewTransform) (x,y)
@@ -1135,7 +1135,6 @@ module Views =
     open EventHandlers
     open Updates
 
-
     let setBounds(widthHeightS : System.IObservable<(float*float)*Rect*Transform2D>) =
         Bind.style(widthHeightS, 
             fun style ( ((ox,oy),r,t) : (float*float) * Rect * Transform2D) ->
@@ -1153,7 +1152,7 @@ module Views =
                 style.width <- sprintf "max(100%%,%fpx)" w
                 style.height <- sprintf "max(100%%,%fpx)" h
             
-            style.transform <- sprintf "translate(%fpx,%fpx)" -ox -oy
+            //style.transform <- sprintf "translate(%fpx,%fpx)" -ox -oy
         )
 
     let background boundsView (bg: Background)=
@@ -1187,7 +1186,7 @@ module Views =
                     Svg.height (percent 100)
                     Attr.custom ("fill", "url(#pattern-bg)")
                 ]
-                setBounds boundsView // Bind bounds to container width / height
+                //setBounds boundsView // Bind bounds to container width / height
             ]
 
     let renderPort (portxys : PortXYs) (node : Node)  (port : Port) =
