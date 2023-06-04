@@ -898,15 +898,12 @@ module EventHandlers =
         )
 
         once "mouseup" containerEl (fun e ->
-//            SutilOxide.Logging.log("mouseup")
             let el = targetEl e
             if el.classList.contains("port") then
                 let sourceNodeId = portEl.getAttribute("x-node-id")
                 let sourcePortId = portEl.getAttribute("x-port-id")
                 let targetNodeId = el.getAttribute("x-node-id")
                 let targetPortId = el.getAttribute("x-port-id")
-//                SutilOxide.Logging.log($"connection: {sourceNodeId}:{sourcePortId} -> {targetNodeId}:{targetPortId}")
-//                Fable.Core.JS.console.log(el)
                 el |> centreXY |> toLocalXY containerEl |> Store.set mousexy
                 dispatch (AddEdge (sourceNodeId,sourcePortId,targetNodeId,targetPortId))
             else
@@ -969,7 +966,17 @@ module Styles =
 
     let styleDefault = [
 
+        rule ".column" [
+            Css.displayFlex
+            Css.flexDirectionColumn
+            Css.alignItemsCenter
+            Css.justifyContentCenter
+            Css.width (percent 100)
+            Css.height (percent 100)
+        ]
+
         rule ".graph-container" [
+            Css.custom("--scale", "1.0")
             Css.positionRelative
             Css.width (percent 100)
             Css.height (percent 100)
@@ -978,16 +985,38 @@ module Styles =
 
         rule ".node" [
             Css.positionAbsolute
-            Css.displayFlex
-            Css.flexDirectionColumn
-            Css.alignItemsCenter
-            Css.justifyContentCenter
-            Css.padding (rem 1)
-            Css.width auto
-            Css.height auto
+            // Css.displayFlex
+            // Css.flexDirectionColumn
+            // Css.alignItemsCenter
+            // Css.justifyContentCenter
+            // Css.padding (rem 1)
+            // Css.width auto
+            // Css.height auto
+            // Css.backgroundColor "white"
+            // Css.cursorGrab
+        ]
+
+        rule ".content" [
+//            Css.positionAbsolute
+            // Css.displayFlex
+            // Css.flexDirectionColumn
+            // Css.alignItemsCenter
+            // Css.justifyContentCenter
+//            Css.padding (rem 1)
+            Css.width (percent 100)
+            Css.height (percent 100)
             Css.backgroundColor "white"
             Css.cursorGrab
         ]
+
+        //rule ".content:has(.scale)" [
+        rule ".scale" [
+            //Css.custom("transform", "translate( calc(-50%*var(--scale)), calc(-50%*var(--scale)) ) scale(var(--scale)) translate(50%,50%)")
+            Css.custom("transform", "translate(-50%,-50%) scale(var(--scale)) translate(50%,50%)")
+            Css.custom("width",  "calc(100% / var(--scale))")
+            Css.custom("height", "calc(100% / var(--scale))")
+        ]
+
 
         rule ".node:after" [
             Css.positionAbsolute
@@ -1158,7 +1187,7 @@ module Views =
                 style.width <- sprintf "max(100%%,%fpx)" w
                 style.height <- sprintf "max(100%%,%fpx)" h
             
-            //style.transform <- sprintf "scale(%f)" s
+            //style.transform <- sprintf "scale(%f) translate(%fpx,%fpx)" s -ox -oy
         )
 
     let background boundsView (bg: Background)=
@@ -1192,7 +1221,7 @@ module Views =
                     Svg.height (percent 100)
                     Attr.custom ("fill", "url(#pattern-bg)")
                 ]
-                //setBounds boundsView // Bind bounds to container width / height
+                setBounds boundsView // Bind bounds to container width / height
             ]
 
     let renderPort (portxys : PortXYs) (node : Node)  (port : Port) =
@@ -1243,10 +1272,13 @@ module Views =
         let lr = match x with -1 -> " left"| 1 -> " right" | _ -> ""
         let tb = match y with -1 -> " top"| 1 -> " bottom" | _ -> ""
 
+        let scale = model .>> (fun m -> m.Scale)
+        let hxys = rect .>> (handleXY (x,y))
+
         Html.divc (sprintf "resize-handle%s%s" tb lr )
             [
                 EventHandlers.resizeHandler model dispatch nodeId rect (x,y)
-                Bind.style( rect |> Store.map (handleXY (x,y)), fun style (hx,hy) -> 
+                Bind.style( Store.zip scale hxys, fun style (_, (hx,hy)) -> 
                     let screenHx, screenHy = localToScreen model.Value (hx,hy)
                     style.left <- (string screenHx) + "px"
                     style.top <- (string screenHy) + "px"
@@ -1264,12 +1296,9 @@ module Views =
                 |> List.map (resizeHandle model dispatch (node.Id) rectS)
         ]
         
-    let injectNodeDefaults (model:IStore<Model>) dispatch (isSelected : System.IObservable<bool>) options portxys (nodeS : IReadOnlyStore<Node>) view =
-
+    let nodeBoilerplate (model:IStore<Model>) dispatch (isSelected : System.IObservable<bool>) options portxys (nodeS : IReadOnlyStore<Node>) =
         let node = nodeS.Value
-
-        view |> CoreElements.inject [
-
+        [
             Attr.custom("x-node-id", node.Id)
             ([
                 "node"
@@ -1292,8 +1321,14 @@ module Views =
             yield! renderPorts options portxys node
         ]
 
-    let renderNode (model:IStore<Model>) dispatch (isSelected : System.IObservable<bool>) options portxys (node : IReadOnlyStore<Node>) =
-        options.ViewNode(node) |> injectNodeDefaults model dispatch isSelected options portxys node
+    let injectNodeDefaults (model:IStore<Model>) dispatch (isSelected : System.IObservable<bool>) options portxys (nodeS : IReadOnlyStore<Node>) view =
+        view |> CoreElements.inject (nodeBoilerplate model dispatch isSelected options portxys nodeS)
+
+    let renderNode (model:IStore<Model>) dispatch (isSelected : System.IObservable<bool>) options portxys (nodeS : IReadOnlyStore<Node>) =
+        Html.divc "node" [
+            options.ViewNode(nodeS)// |> injectNodeDefaults model dispatch isSelected options portxys node
+            yield! nodeBoilerplate model dispatch isSelected options portxys nodeS
+        ]
 
     let findPortXY (model : Model) options (np : NodePort) =
         let node = model.Graph.Nodes[np.NodeId]
@@ -1332,6 +1367,10 @@ module Views =
 
         Html.divc "graph-container" [
             
+            Bind.style( model .>> (fun m -> m.Scale), fun style scale ->
+                style.setProperty( "--scale", sprintf "%f" scale)
+            )
+
             background boundsView Dotted
             setBounds boundsView // Bind bounds to container width / height
 
