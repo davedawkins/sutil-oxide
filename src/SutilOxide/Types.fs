@@ -4,7 +4,8 @@ module SutilOxide.Types
 // Copyright (c) 2022 David Dawkins
 //
 
-
+open Sutil
+open Sutil.Core
 
 type BasicTransform2D =
     | Translate of float * float
@@ -94,6 +95,7 @@ with
         |Top -> Bottom
         |Bottom -> Top
 
+
 type DockLocation =
     | LeftTop
     | LeftBottom
@@ -135,9 +137,65 @@ with
     member __.CssName =
         __.Primary.LowerName + "-" + __.Secondary.LowerName
 
-type DockPane = {
-    Name : string
-}
+// type DockPane = {
+//     Key : string
+//     Label : string
+// }
+
+type PaneOptions =
+    | Label of string
+    | CanClose of bool
+    | Location of DockLocation
+    | Header of SutilElement
+    | Content of SutilElement
+    | IsOpen of bool
+    | OnClose of (unit -> unit)
+
+type DockPane = 
+    {
+        Label : string
+        CanClose : bool
+        Key : string
+        Location : DockLocation
+        Header : SutilElement
+        Content : SutilElement
+        IsOpen : bool
+        OnClose : unit -> unit
+    }
+    static member Equals( p1 : DockPane, p2 : DockPane) =
+        p1.Label = p2.Label &&
+        p1.CanClose = p2.CanClose &&
+        p1.Key = p2.Key &&
+        p1.Location = p2.Location &&
+        p1.IsOpen = p2.IsOpen 
+        
+//    static member MakeKey(s:string) = s.ToLower().Replace(".", "_")
+    static member Default( key : string ) =
+        {
+            Key = key
+            Label = key
+            CanClose = false
+            Location = CentreCentre
+            Header = text key
+            Content = Html.div key
+            IsOpen = true
+            OnClose = ignore
+        }
+        
+    static member Create( key : string, options : PaneOptions list ) : DockPane =
+        let withOpt cfg opt : DockPane =
+            match opt with 
+            | Label s -> { cfg with Label = s }
+            | CanClose s -> { cfg with CanClose = s }
+            | Location s -> { cfg with Location = s }
+            | Content s -> { cfg with Content = s }
+            | Header s -> { cfg with Header = s }
+            | IsOpen s -> { cfg with IsOpen = s }
+            | OnClose s -> { cfg with OnClose = s }
+
+        let init = (DockPane.Default(key))
+        options |> List.fold withOpt init
+
 
 type DockStation = {
     Panes : DockPane list

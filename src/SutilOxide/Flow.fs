@@ -985,24 +985,9 @@ module Styles =
 
         rule ".node" [
             Css.positionAbsolute
-            // Css.displayFlex
-            // Css.flexDirectionColumn
-            // Css.alignItemsCenter
-            // Css.justifyContentCenter
-            // Css.padding (rem 1)
-            // Css.width auto
-            // Css.height auto
-            // Css.backgroundColor "white"
-            // Css.cursorGrab
         ]
 
         rule ".content" [
-//            Css.positionAbsolute
-            // Css.displayFlex
-            // Css.flexDirectionColumn
-            // Css.alignItemsCenter
-            // Css.justifyContentCenter
-//            Css.padding (rem 1)
             Css.width (percent 100)
             Css.height (percent 100)
             Css.backgroundColor "white"

@@ -123,6 +123,14 @@ let private dockStyling (theme : Theme) = [
         Css.custom("grid-template-rows", "max-content 1fr 1fr max-content")
     ]
 
+    rule ".tab-label .close-button" [
+        Css.cursorPointer
+    ]
+    
+    rule ".tab-label .close-button i:hover" [
+        Css.color "black"
+    ]
+    
     rule ".dock-main-grid" [
         Css.displayGrid
         Css.gridRow ("2","4")
@@ -134,6 +142,12 @@ let private dockStyling (theme : Theme) = [
         Css.custom("grid-template-rows", "max-content auto max-content")
     ]
 
+    rule ".dock-centre-container2" [
+        Css.gridColumn ("2","2")
+        Css.displayFlex
+        Css.flexDirectionColumn
+    ]
+
     rule ".dock-centre-container" [
         Css.displayGrid
         Css.gridRow ("2","2")
@@ -142,7 +156,8 @@ let private dockStyling (theme : Theme) = [
         // centre tabs
         // centre-container
         // right-container
-        Css.custom("grid-template-columns", "max-content max-content minmax(0,auto) max-content")
+        //Css.custom("grid-template-columns", "max-content max-content minmax(0,auto) max-content")
+        Css.custom("grid-template-columns", "max-content minmax(0,auto) max-content")
     ]
 
     rule ".dock-left-container" [
@@ -174,6 +189,7 @@ let private dockStyling (theme : Theme) = [
         Css.minWidth (rem 2)
         Css.gridRow ("1","1")
         Css.gridColumn ("4", "4")
+        Css.gridColumn ("3", "3")
         Css.displayFlex
         Css.flexDirectionColumn
     ]
@@ -243,10 +259,10 @@ let private dockStyling (theme : Theme) = [
         //Css.gap (rem 1)
     ]
 
-    rule ".tabs-centre" [
-        yield! sidewaysLr
-        Css.custom ("justify-content", "end")
-    ]
+    // rule ".tabs-centre" [
+    //     yield! sidewaysLr
+    //     Css.custom ("justify-content", "end")
+    // ]
 
     rule ".tabs-left-top" [
 
@@ -376,11 +392,17 @@ let private dockStyling (theme : Theme) = [
         Css.paddingLeft (px 2)
     ]
 
+    // rule ".tabs-centre .tab-label" [
+    //     Css.paddingBottom (rem 0.5)
+    //     Css.paddingRight (rem 0)
+    //     Css.paddingTop (rem 0.5)
+    //     Css.paddingLeft (px 2)
+    // ]
     rule ".tabs-centre .tab-label" [
-        Css.paddingBottom (rem 0.5)
-        Css.paddingRight (rem 0)
-        Css.paddingTop (rem 0.5)
-        Css.paddingLeft (px 2)
+        Css.paddingRight (rem 0.5)
+        Css.paddingBottom (rem 0.1)
+        Css.paddingLeft (rem 0.5)
+        Css.paddingTop (px 2)
     ]
 
 
@@ -396,10 +418,9 @@ let private dockStyling (theme : Theme) = [
         Css.transformRotate(180)
     ]
 
-    rule ".tabs-centre .tab-label>i" [
-       //Css.custom("writing-mode","tb")
-        Css.transformRotate(180)
-    ]
+    // rule ".tabs-centre .tab-label>i" [
+    //     Css.transformRotate(180)
+    // ]
 
 //    rule ".tabs-right .tab-label>i" [
 //        Css.custom("writing-mode","tb")

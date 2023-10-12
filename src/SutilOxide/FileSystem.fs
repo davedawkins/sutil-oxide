@@ -5,7 +5,7 @@ module SutilOxide.FileSystem
 //
 
 open System
-open Fable.SimpleJson
+//open Fable.SimpleJson
 open Browser
 
 type Uid = int
@@ -81,6 +81,7 @@ type IFileSystem =
     abstract member CreateFolder   : string -> unit
     abstract member RenameFile     : string * string -> unit
 
+
 [<AutoOpen>]
 module IFileSystemExt =
     type IFileSystem with
@@ -107,12 +108,14 @@ type LocalStorageFileSystem( rootKey : string ) =
         Storage.remove rootKey (uidKey e.Uid)
 
     let putEntry (e : FileEntry) =
-        Storage.setContents rootKey (uidKey e.Uid) (Json.serialize(e))
+        Storage.setContents rootKey (uidKey e.Uid) (Thoth.Json.Encode.Auto.toString(e))
 
     let getEntry uid =
-        try
-            Json.parseAs<FileEntry>( Storage.getContents rootKey (uidKey uid) ) |> Some
-        with _ -> None
+        match Thoth.Json.Decode.Auto.fromString<FileEntry>( Storage.getContents rootKey (uidKey uid) ) with
+        | Ok r -> Some r
+        | Error msg ->
+            Fable.Core.JS.console.log(sprintf "Error: getEntry %A: %A" uid msg)
+            None
 
     let entryExists uid =
         Storage.exists rootKey uid
@@ -125,8 +128,14 @@ type LocalStorageFileSystem( rootKey : string ) =
             | None -> failwith ("Non-existent UID " + string uid)
             | Some e when e.Type <> FileEntryType.Folder -> failwith (sprintf "Not a folder: %d" uid)
             | Some e -> e.Children |> Array.map (snd>>getEntry) |> Array.choose id
+        result
 
-        //Fable.Core.JS.console.log("genEntries", uid, result)
+    let hasEntries uid =
+        let result = 
+            match getEntry uid with
+            | None -> failwith ("Non-existent UID " + string uid)
+            | Some e when e.Type <> FileEntryType.Folder -> failwith (sprintf "Not a folder: %d" uid)
+            | Some e -> e.Children.Length > 0
         result
 
     let entryName uid =
@@ -195,6 +204,13 @@ type LocalStorageFileSystem( rootKey : string ) =
         if file.Contains("..") || file.Contains("/") || file.Contains("\\") then
             failwith ("Invalid file name: " + file)
 
+    let hasEntries (path : string) =
+        path
+        |> canonical
+        |> uidOf
+        |> Option.map hasEntries
+        |> Option.defaultValue false
+
     let getEntriesWhere (filter: FileEntry -> bool) (path : string) =
         path
         |> canonical
@@ -205,7 +221,7 @@ type LocalStorageFileSystem( rootKey : string ) =
         |> Option.defaultValue Array.empty
 
     let putRoot() =
-        Storage.setContents rootKey "(root)" (Json.serialize root)
+        Storage.setContents rootKey "(root)" (Thoth.Json.Encode.Auto.toString root)
 
     let initRoot() =
 
@@ -215,7 +231,11 @@ type LocalStorageFileSystem( rootKey : string ) =
 
         Storage.getContents rootKey "(root)"
             |> function
-            | s when s <> null -> root <- Json.parseAs<Root>(s)
+            | s when s <> null -> 
+                match Thoth.Json.Decode.Auto.fromString<Root>(s) with
+                | Ok r -> root <- r
+                | Error msg ->
+                    Fable.Core.JS.console.log("Root entry corrupted: " + msg)
             |_ -> ()
 
         putRoot()
@@ -329,6 +349,9 @@ with
             notifyOnChange path
 
         member __.RemoveFile( path : string ) =
+            if isFolder path && hasEntries path then
+                failwith ("Folder is not empty")
+
             getEntryByPath path |>
             Option.map (fun entry ->
                 let folderName = getFolderName path
@@ -404,3 +427,64 @@ with
             )
 
             notifyOnChange path
+
+type MountedFileSystem( fs : IFileSystem, mountPoint : string) =
+    let makePath( path : string ) = IFileSystem.Combine(mountPoint, path)
+
+    let fixPath ( path :string ) = 
+        Fable.Core.JS.console.log( "fixPath: ", path, mountPoint )
+        path.Substring( mountPoint.Length )
+
+    let fixFiles ( files :string[] ) = files
+
+    let fixFolders ( folders :string[] ) = folders 
+
+    interface IFileSystem with
+        member this.CreateFile(path: string, name: string): unit = 
+            fs.CreateFile( makePath path, name )
+
+        member this.CreateFolder(path: string): unit = 
+            fs.CreateFolder(makePath path)
+
+        member this.Exists(path: string): bool = 
+            fs.Exists(makePath path)
+
+        member this.Files(path: string): string array = 
+            fs.Files( makePath path ) |> fixFiles
+            
+        member this.Folders(path: string): string array = 
+            fs.Folders( makePath path ) |> fixFolders
+
+        member this.GetFileContent(path: string): string = 
+            fs.GetFileContent(makePath path)
+            
+        member this.IsFile(path: string): bool = 
+            fs.IsFile( makePath path )
+            
+        member this.IsFolder(path: string): bool = 
+            fs.IsFolder( makePath path )
+
+        member this.OnChange(callback: string -> unit): unit = 
+            fs.OnChange( fun path -> if path.StartsWith(mountPoint) then callback(fixPath path))
+
+        member this.RemoveFile(path: string): unit = 
+            fs.RemoveFile( makePath path )
+
+        member this.RenameFile(src: string, tgt: string): unit = 
+            fs.RenameFile( makePath src, makePath tgt )
+        member this.SetFileContent(path: string, content: string): unit = 
+            fs.SetFileContent( makePath path, content)
+
+
+[<AutoOpen>]
+module Extensions = 
+
+    type IFileSystem with
+        member __.Remove( path : string ) =
+            if (__.IsFolder path ) then
+                __.Files(path) 
+                |> Array.iter( fun name -> __.RemoveFile( IFileSystem.Combine( path, name )) )
+                __.Folders(path)
+                |> Array.iter( fun name -> __.Remove( IFileSystem.Combine( path, name )) )
+            __.RemoveFile( path )
+            

@@ -9,17 +9,14 @@ open Browser.CssExtensions
 
 open Sutil.Core
 open Sutil.CoreElements
-open Sutil.DomHelpers
 open Sutil
-open Sutil.Styling
 open type Feliz.length
-open Fable.Core
 open Fable.Core.JsInterop
 open Browser.Types
-open SutilOxide.Css
 open SutilOxide.DomHelpers
 open SutilOxide.Types
 open SutilOxide.Toolbar
+
 
 type DraggingTab = {
     BeingDragged : string
@@ -40,19 +37,23 @@ type Options =
     static member Create() = {
         OnTabShow = ignore
     }
-
 module DockHelpers =
     let tabsContains name tabLabels=
-        tabLabels |> List.exists (fun t -> t.Name = name)
+        tabLabels |> List.exists (fun t -> t.Key = name)
 
-    let removeFromPanesList panes name =
-        panes |> List.filter (fun t -> t.Name <> name)
+    let removeFromPanesList (panes : DockPane list) name =
+        panes |> List.filter (fun t -> t.Key <> name)
 
     let insertIntoPanes (panes : List<'a>) pane i =
         if i >= panes.Length then
             panes @ [ pane ]
         else
             panes |> List.insertAt i pane
+
+    let allPaneNames (docks : DockCollection) =
+        docks.Stations.Values
+            |> Seq.collect (fun s -> s.Panes |> List.map (fun p -> p.Key) )
+            |> Seq.toArray
 
     let findPaneLocationIndex (docks : DockCollection) name =
         docks.Stations
@@ -61,7 +62,7 @@ module DockHelpers =
                 station.Panes
                 |> List.tryFindIndex (fun t ->
                     //SutilOxide.Logging.log("Finding " + t.Name + " ? " + name)
-                    t.Name = name)
+                    t.Key = name)
                 |> Option.map (fun i -> loc,i)
             )
 
@@ -77,17 +78,21 @@ module DockHelpers =
 
     let tryGetPane docks name =
         findPaneLocation docks name
-        |> Option.bind (fun loc -> getPanes docks loc |> List.tryFind (fun t -> t.Name = name))
+        |> Option.bind (fun loc -> getPanes docks loc |> List.tryFind (fun t -> t.Key = name))
 
     let getPane docks name =
         match findPaneLocation docks name with
-        | None -> failwith "Not found"
+        | None -> 
+            Fable.Core.JS.console.log("Panes: ", allPaneNames(docks))
+            failwith ("Not found: " + name)
         | Some (loc) ->
-            getPanes docks loc |> List.find (fun t -> t.Name = name)
+            getPanes docks loc |> List.find (fun t -> t.Key = name)
 
     let removeFromPanes docks name =
         match findPaneLocation docks name with
-        | None -> failwith "Not found"
+        | None -> 
+            Fable.Core.JS.console.log("Panes: ", allPaneNames(docks))
+            failwith ("Not found: " + name)
         | Some (cloc) ->
             let tabLabels = removeFromPanesList (getPanes docks cloc) name
             setPanes docks cloc tabLabels
@@ -113,7 +118,7 @@ module DockHelpers =
         |> List.map (fun loc ->
                 let selectedPaneName =
                         m.SelectedPanes[loc]
-                        |> Option.orElseWith (fun () -> m.Docks.GetPanes(loc) |> List.tryHead |> Option.map (fun p -> p.Name))
+                        |> Option.orElseWith (fun () -> m.Docks.GetPanes(loc) |> List.tryHead |> Option.map (fun p -> p.Key))
                 loc, selectedPaneName)
         |> Map.ofList
         |> (fun map -> { m with SelectedPanes = map } )
@@ -125,7 +130,7 @@ module DockHelpers =
                 SelectedPanes =
                     m.SelectedPanes.Add(
                         CentreCentre,
-                        m.Docks.GetPanes CentreCentre |> List.tryHead |> Option.map (fun p -> p.Name))
+                        m.Docks.GetPanes CentreCentre |> List.tryHead |> Option.map (fun p -> p.Key))
             }
         | _ -> m
 
@@ -142,7 +147,7 @@ type DockProperty =
 
 type private Message =
     | RemoveTab of string
-    | AddTab of (string*string*DockLocation*bool)
+    | AddTab of DockPane //(string*string*string*DockLocation*bool)
     | SetDragging of string
     | CancelDrag
     | PreviewDockLocation of (DockLocation * int) option
@@ -167,7 +172,7 @@ let private cmdMonitorAll : Cmd<Message> =
         fun d -> Toolbar.MenuMonitor.monitorAll() 
     ]
 
-let private update (options : Options) msg model =
+let private update (options : Options) (unmount : string -> unit) msg model =
     //SutilOxide.Logging.log($"Dock: {msg}")
 
     match msg with
@@ -180,20 +185,31 @@ let private update (options : Options) msg model =
             model, Cmd.ofMsg (MoveTo (name,l))
 
     | RemoveTab name ->
-        let docks = DockHelpers.removeFromPanes (DockHelpers.minimizePane model name).Docks name
+        let selectedPanes =
+            DockHelpers.findPaneLocation model.Docks name
+            |> Option.map (fun loc ->
+                if (model.SelectedPanes.ContainsKey loc && model.SelectedPanes[loc] = Some name) then
+                    model.SelectedPanes.Add( loc, None )
+                else 
+                    model.SelectedPanes
+            )
+            |> Option.defaultValue (model.SelectedPanes)
+
+        let docks = DockHelpers.removeFromPanes model.Docks name
         {
             model with
-                Docks = docks
-        }, cmdMonitorAll
+                Docks = docks 
+                SelectedPanes = selectedPanes
+        } |> DockHelpers.ensureCentreSelected, [ fun _ -> unmount name ] @ cmdMonitorAll
 
-    | AddTab (name,icon,location,show) ->
-        let station = model.Docks.Stations[location]
-        let panes = station.Panes @ [ { Name = name }]
+    | AddTab pane ->
+        let station = model.Docks.Stations[pane.Location]
+        let panes = station.Panes @ [ pane ]
         let station' = { station with Panes = panes }
         {
             model with
-                Docks = { Stations = model.Docks.Stations.Add( location, station' ) }
-        } , Cmd.batch [ if show then Cmd.ofMsg (ShowPane name) else Cmd.none; cmdMonitorAll ]
+                Docks = { Stations = model.Docks.Stations.Add( pane.Location, station' ) }
+        } , Cmd.batch [ if pane.IsOpen then Cmd.ofMsg (ShowPane pane.Key) else Cmd.none; cmdMonitorAll ]
 
     | SelectPane (loc,pane) ->
         { model with SelectedPanes = model.SelectedPanes.Add(loc,pane) }, Cmd.none
@@ -274,7 +290,7 @@ module ModelHelpers =
             |> Store.map( fun m ->
                     match beingDragged m with
                     | None -> false
-                    | Some name  -> tabs m |> List.exists (fun t -> t.Name = name))
+                    | Some name  -> tabs m |> List.exists (fun t -> t.Key = name))
 
     let showOverlay (model : System.IObservable<Model>) (target: DockLocation) =
             model
@@ -360,9 +376,9 @@ module private EventHandlers =
     let drop dispatch (e : DragEvent) =
         dispatch CommitDrag
 
-    let dragStart tabLabel dispatch (e : DragEvent) =
-        e.dataTransfer.setData("text/plain", tabLabel.Name) |> ignore
-        dispatch (SetDragging (tabLabel.Name))
+    let dragStart (tabLabel : DockPane) dispatch (e : DragEvent) =
+        e.dataTransfer.setData("text/plain", tabLabel.Key) |> ignore
+        dispatch (SetDragging (tabLabel.Key))
         let el = targetEl e
         let img = el.cloneNode(true) |> toEl
         img.classList.add("dragimage")
@@ -381,30 +397,34 @@ module private EventHandlers =
     let tabClick dockLocation (tabLabel : DockPane) dispatch (e : MouseEvent) =
         match dockLocation with
         | CentreCentre ->
-            (dockLocation,Some (tabLabel.Name)) |> SelectPane |>  dispatch
+            (dockLocation,Some (tabLabel.Key)) |> SelectPane |>  dispatch
         | _ ->
-            (dockLocation,(tabLabel.Name)) |> TogglePane |>  dispatch
+            (dockLocation,(tabLabel.Key)) |> TogglePane |>  dispatch
 
-let private viewTabLabel (model : System.IObservable<Model>) dispatch dockLocation (tabLabel : DockPane) =
+let private viewTabLabel (model : System.IObservable<Model>) dispatch dockLocation (pane : DockPane) =
     //console.log($"{tabLabel.Name} @ {dockLocation}")
     UI.divc "tab-label" [
         Bind.toggleClass(
             model
-            |> Store.map (fun m -> (beingDragged m |> Option.defaultValue "") = tabLabel.Name),
+            |> Store.map (fun m -> (beingDragged m |> Option.defaultValue "") = pane.Key),
             "preview")
 
         Bind.toggleClass(
             model
-            |> Store.map (fun m -> (m.SelectedPanes[dockLocation] |> Option.defaultValue "") = tabLabel.Name),
+            |> Store.map (fun m -> (m.SelectedPanes[dockLocation] |> Option.defaultValue "") = pane.Key),
             "selected")
 
         Html.i [ Attr.className "fa fa-folder" ]
-        Html.span [ text tabLabel.Name ]
-
+        Html.span [ text pane.Label ]
+        if pane.CanClose then
+            Html.divc "close-button" [
+                Html.ic "fa fa-times" []
+                Ev.onClick( fun _ -> pane.OnClose())
+            ]
         Attr.draggable true
-        Ev.onDragStart (EventHandlers.dragStart tabLabel dispatch)
+        Ev.onDragStart (EventHandlers.dragStart pane dispatch)
         Ev.onDragEnd (EventHandlers.dragEnd dispatch)
-        Ev.onClick (EventHandlers.tabClick dockLocation tabLabel dispatch)
+        Ev.onClick (EventHandlers.tabClick dockLocation pane dispatch)
     ]
 
 
@@ -435,8 +455,23 @@ let dockContainer model (loc : DockLocation) =
     ]
 
 
+let paneEq (p1 : DockPane) (p2 : DockPane) =
+    DockPane.Equals(p1,p2)
+
+let paneListEq (p1 : DockPane list) (p2 : DockPane list) =
+    let paneCmp a b = if paneEq a b then 0 else 1
+    (List.compareWith paneCmp p1 p2) = 0
+
+let paneDistinct = Observable.distinctUntilChangedCompare paneListEq
+
 type DockContainer( options : Options ) =
-    let model, dispatch = DockCollection.Empty |> Store.makeElmish init (update options) ignore
+    let mutable unmounters : Map<string,System.IDisposable> = Map.empty
+
+    let unmount (paneKey : string) =
+        unmounters[paneKey].Dispose()
+        unmounters <- unmounters.Remove(paneKey)
+
+    let model, dispatch = DockCollection.Empty |> Store.makeElmish init (update options unmount) ignore
 
 
     let dockContainer() =
@@ -445,25 +480,25 @@ type DockContainer( options : Options ) =
             Ev.onDragOver (EventHandlers.dragOver dispatch)
             Ev.onDrop (EventHandlers.drop dispatch)
 
-            Bind.el( model |> Store.map (fun m -> m.Docks.GetPanes(TopLeft)) |> Observable.distinctUntilChanged, fun tabs ->
+            Bind.el( model |> Store.map (fun m -> m.Docks.GetPanes(TopLeft)) |> paneDistinct , fun tabs ->
                 UI.divc "dock-tabs tabs-top tabs-top-left border border-bottom" [
                     yield! tabs |> List.map (viewTabLabel model dispatch TopLeft)
                 ]
             )
 
-            Bind.el( model |> Store.map (fun m -> m.Docks.GetPanes(TopRight)) |> Observable.distinctUntilChanged, fun tabs ->
+            Bind.el( model |> Store.map (fun m -> m.Docks.GetPanes(TopRight)) |> paneDistinct, fun tabs ->
                 UI.divc "dock-tabs tabs-top tabs-top-right border border-bottom" [
                     yield! tabs |> List.map (viewTabLabel model dispatch TopRight)
                 ]
             )
 
-            Bind.el( model |> Store.map (fun m -> m.Docks.GetPanes(LeftTop)) |> Observable.distinctUntilChanged, fun tabs ->
+            Bind.el( model |> Store.map (fun m -> m.Docks.GetPanes(LeftTop)) |> paneDistinct, fun tabs ->
                 UI.divc "dock-tabs tabs-left tabs-left-top border border-right" [
                     yield! tabs |> List.map (viewTabLabel model dispatch LeftTop)
                 ]
             )
 
-            Bind.el( model |> Store.map (fun m -> m.Docks.GetPanes(LeftBottom)) |> Observable.distinctUntilChanged, fun tabs ->
+            Bind.el( model |> Store.map (fun m -> m.Docks.GetPanes(LeftBottom)) |> paneDistinct, fun tabs ->
                 UI.divc "dock-tabs tabs-left tabs-left-bottom border border-right" [
                     yield! tabs |> List.map (viewTabLabel model dispatch LeftBottom)
                 ]
@@ -496,21 +531,22 @@ type DockContainer( options : Options ) =
                         ]
                     ]
 
-                    Bind.el(
-                        model
-                            |> Store.map (fun m -> m.Docks.GetPanes(CentreCentre))
-                            |> Observable.distinctUntilChanged,
-                        fun tabs ->
-                            UI.divc "dock-tabs tabs-centre border border-bottom" [
-                                match tabs with
-                                | [] | [ _ ] -> yield! []
-                                | _ -> yield! tabs |> List.map (viewTabLabel model dispatch CentreCentre)
-                            ]
-                    )
+                    UI.divc "dock-centre-container2" [
+                        Bind.el(
+                            model |> Store.map (fun m -> m.Docks.GetPanes(CentreCentre)) |> paneDistinct,
+                            fun tabs ->
+                                UI.divc "dock-tabs tabs-centre border border-bottom" [
+                                    // match tabs with
+                                    // | [] | [ _ ] -> yield! []
+                                    // | _ -> yield! tabs |> List.map (viewTabLabel model dispatch CentreCentre)
+                                    yield! tabs |> List.map (viewTabLabel model dispatch CentreCentre)
+                                ]
+                        )
 
 
-                    UI.divc "dock-main" [
-                        dockContainer model CentreCentre
+                        UI.divc "dock-main" [
+                            dockContainer model CentreCentre
+                        ]
                     ]
 
                     UI.divc "dock-right-container" [
@@ -549,13 +585,13 @@ type DockContainer( options : Options ) =
                 ]
             ]
 
-            Bind.el( model |> Store.map (fun m -> m.Docks.GetPanes(RightTop)) |> Observable.distinctUntilChanged, fun tabs ->
+            Bind.el( model |> Store.map (fun m -> m.Docks.GetPanes(RightTop)) |> paneDistinct, fun tabs ->
                 UI.divc "dock-tabs tabs-right tabs-right-top border border-left" [
                     yield! tabs |> List.map (viewTabLabel model dispatch RightTop)
                 ]
             )
 
-            Bind.el( model |> Store.map (fun m -> m.Docks.GetPanes(RightBottom)) |> Observable.distinctUntilChanged, fun tabs ->
+            Bind.el( model |> Store.map (fun m -> m.Docks.GetPanes(RightBottom)) |> paneDistinct, fun tabs ->
                 UI.divc "dock-tabs tabs-right tabs-right-bottom border border-left" [
                     yield! tabs |> List.map (viewTabLabel model dispatch RightBottom)
                 ]
@@ -564,13 +600,13 @@ type DockContainer( options : Options ) =
             // Bottom left corner, so we can place a border on top
             UI.divc "dock-tabs box-left border border-top" []
 
-            Bind.el( model |> Store.map (fun m -> m.Docks.GetPanes(BottomLeft)) |> Observable.distinctUntilChanged, fun tabs ->
+            Bind.el( model |> Store.map (fun m -> m.Docks.GetPanes(BottomLeft)) |> paneDistinct, fun tabs ->
                 UI.divc "dock-tabs tabs-bottom tabs-bottom-left border border-top" [
                     yield! tabs |> List.map (viewTabLabel model dispatch BottomLeft)
                 ]
             )
 
-            Bind.el( model |> Store.map (fun m -> m.Docks.GetPanes(BottomRight)) |> Observable.distinctUntilChanged, fun tabs ->
+            Bind.el( model |> Store.map (fun m -> m.Docks.GetPanes(BottomRight)) |> paneDistinct, fun tabs ->
                 UI.divc "dock-tabs tabs-bottom tabs-bottom-right border border-top" [
                     yield! tabs |> List.map (viewTabLabel model dispatch BottomRight)
                 ]
@@ -616,10 +652,16 @@ with
         dispatch (RemoveTab name)
 
     member __.AddPane (name : string, initLoc : DockLocation, content : SutilElement ) =
-        __.AddPane( name, initLoc, content, true )
+        __.AddPane( name, name, initLoc, content, true )
 
     member __.AddPane (name : string, initLoc : DockLocation, content : SutilElement, show : bool ) =
-        __.AddPane( name, initLoc, text name, content, show )
+        __.AddPane( name, name, initLoc, content, show )
+
+    member __.AddPane (name : string, label : string, initLoc : DockLocation, content : SutilElement ) =
+        __.AddPane( name, label, initLoc, text label, content, true )
+
+    member __.AddPane (name : string, label: string, initLoc : DockLocation, content : SutilElement, show : bool ) =
+        __.AddPane( name, label, initLoc, text label, content, show )
 
     member __.ContainsPane( name : string ) = 
         (DockHelpers.tryGetPane model.Value.Docks name).IsSome
@@ -627,28 +669,31 @@ with
     member __.ShowPane( name : string ) =
         dispatch (ShowPane name)
 
-    member __.AddPane (name : string, initLoc : DockLocation, header : SutilElement, content : SutilElement, show : bool ) =
+    member __.AddPane (key : string, label : string, initLoc : DockLocation, header : SutilElement, content : SutilElement, show : bool ) =
+        __.AddPane { DockPane.Default(key) with Label = label; Location = initLoc; Header = header; Content = content; IsOpen = show}
+    member __.AddPane (key, options : PaneOptions list) =
+        __.AddPane( DockPane.Create(key, options ))
 
-        let lname = name.ToLower()
+    member private __.AddPane (cfg : DockPane) =
 
-        let loc = model |> Store.map (fun m -> (DockHelpers.findPaneLocation m.Docks name)) |> Observable.distinctUntilChanged
+        let loc = model |> Store.map (fun m -> (DockHelpers.findPaneLocation m.Docks cfg.Key)) |> Observable.distinctUntilChanged
 
         let toolbar =
             buttonGroup [
-                buttonItem [ Icon "fa-window-minimize"; Label ""; OnClick (fun _ -> MinimizePane name |> dispatch) ]
-                dropDownItem [ Icon "fa-cog"; Label ""] [
+                buttonItem [ Icon "fa-window-minimize"; ButtonProperty.Label ""; OnClick (fun _ -> MinimizePane cfg.Key |> dispatch) ]
+                dropDownItem [ Icon "fa-cog"; ButtonProperty.Label ""] [
                     menuItem [
-                        Label "Move To"
+                        ButtonProperty.Label "Move To"
                     ] [
-                        buttonItem [ Icon "fa-caret-square-left"; Label "Left Top"; OnClick (fun _ -> MoveTo (name,LeftTop) |> dispatch) ]
-                        buttonItem [ Icon "fa-caret-square-left"; Label "Left Bottom"; OnClick (fun _ -> MoveTo (name,LeftBottom) |> dispatch) ]
-                        buttonItem [ Icon "fa-caret-square-right"; Label "Right Top"; OnClick (fun _ -> MoveTo (name,RightTop) |> dispatch) ]
-                        buttonItem [ Icon "fa-caret-square-right"; Label "Right Bottom"; OnClick (fun _ -> MoveTo (name,RightBottom) |> dispatch) ]
-                        buttonItem [ Icon "fa-caret-square-down"; Label "Bottom Left"; OnClick (fun _ -> MoveTo (name,BottomLeft) |> dispatch) ]
-                        buttonItem [ Icon "fa-caret-square-down"; Label "Bottom Right"; OnClick (fun _ -> MoveTo (name,BottomRight) |> dispatch) ]
-                        buttonItem [ Icon "fa-caret-square-up"; Label "Top Left"; OnClick (fun _ -> MoveTo (name,TopLeft) |> dispatch) ]
-                        buttonItem [ Icon "fa-caret-square-up"; Label "Top Right"; OnClick (fun _ -> MoveTo (name,TopRight) |> dispatch) ]
-                        buttonItem [ Icon "fa-square"; Label "Centre"; OnClick (fun _ -> MoveTo (name,CentreCentre) |> dispatch) ]
+                        buttonItem [ Icon "fa-caret-square-left"; ButtonProperty.Label "Left Top"; OnClick (fun _ -> MoveTo (cfg.Key,LeftTop) |> dispatch) ]
+                        buttonItem [ Icon "fa-caret-square-left"; ButtonProperty.Label "Left Bottom"; OnClick (fun _ -> MoveTo (cfg.Key,LeftBottom) |> dispatch) ]
+                        buttonItem [ Icon "fa-caret-square-right"; ButtonProperty.Label "Right Top"; OnClick (fun _ -> MoveTo (cfg.Key,RightTop) |> dispatch) ]
+                        buttonItem [ Icon "fa-caret-square-right"; ButtonProperty.Label "Right Bottom"; OnClick (fun _ -> MoveTo (cfg.Key,RightBottom) |> dispatch) ]
+                        buttonItem [ Icon "fa-caret-square-down"; ButtonProperty.Label "Bottom Left"; OnClick (fun _ -> MoveTo (cfg.Key,BottomLeft) |> dispatch) ]
+                        buttonItem [ Icon "fa-caret-square-down"; ButtonProperty.Label "Bottom Right"; OnClick (fun _ -> MoveTo (cfg.Key,BottomRight) |> dispatch) ]
+                        buttonItem [ Icon "fa-caret-square-up"; ButtonProperty.Label "Top Left"; OnClick (fun _ -> MoveTo (cfg.Key,TopLeft) |> dispatch) ]
+                        buttonItem [ Icon "fa-caret-square-up"; ButtonProperty.Label "Top Right"; OnClick (fun _ -> MoveTo (cfg.Key,TopRight) |> dispatch) ]
+                        buttonItem [ Icon "fa-square"; ButtonProperty.Label "Centre"; OnClick (fun _ -> MoveTo (cfg.Key,CentreCentre) |> dispatch) ]
                     ]
                 ]
             ]
@@ -656,31 +701,36 @@ with
         let wrapper =
             UI.divc "dock-pane-wrapper" [
 
-                Attr.id ("pane-" + lname)
+                Attr.id ("pane-" + cfg.Key.ToLower().Replace(".","_").Replace("#","_"))
 
                 Bind.toggleClass(
                     model
-                    |> Store.map (fun m -> (DockHelpers.findPaneLocation m.Docks name
-                    |> Option.bind (fun l -> m.SelectedPanes[l]) |> Option.defaultValue "") = name),
+                    |> Store.map (fun m -> (DockHelpers.findPaneLocation m.Docks cfg.Key
+                    |> Option.bind (fun l -> m.SelectedPanes[l]) |> Option.defaultValue "") = cfg.Key),
                     "selected")
 
-                UI.divc "pane-header" [
-                    Html.div [
-                        header
-                        Bind.visibility
-                            (loc |> Store.map (fun optLoc -> initLoc <> CentreCentre || optLoc <> Some CentreCentre))
+                Bind.visibility
+                    (loc |> Store.map (fun optLoc -> cfg.Location <> CentreCentre || optLoc <> Some CentreCentre))
+                    (UI.divc "pane-header" [
+                        Html.div [
+                            cfg.Header
                             toolbar
-                    ]
-                ]
+                            // Bind.visibility
+                            //     (loc |> Store.map (fun optLoc -> cfg.Location <> CentreCentre || optLoc <> Some CentreCentre))
+                            //     toolbar
+                        ]
+                    ])
 
                 UI.divc "pane-content" [
-                    content
+                    cfg.Content
                 ]
             ]
 
-        (DomHelpers.getContentParentNode initLoc, wrapper) |> Program.mountAppend |> ignore
+        let unmount = (DomHelpers.getContentParentNode cfg.Location, wrapper) |> Program.mountAppend
 
-        dispatch <| Message.AddTab (name,"",initLoc,show)
+        unmounters <- unmounters.Add( cfg.Key, unmount )
+
+        dispatch <| Message.AddTab cfg // (cfg.Key, cfg.Label,"",cfg.Location,cfg.IsOpen)
 
 // let container (tabLabels : DockCollection) =
 //     let c = DockContainer()

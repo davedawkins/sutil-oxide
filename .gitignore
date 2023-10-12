@@ -298,3 +298,4 @@ public/.DS_Store
 .DS_Store
 .DS_Store
 **/ace-builds
+src/App/public/build/**

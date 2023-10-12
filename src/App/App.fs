@@ -14,8 +14,6 @@ open SutilOxide.Types
 open Fable.Formatting.Markdown
 open Fetch
 open SutilOxide.FileSystem
-open Fable.SimpleJson
-
 
 type Theme =
     | Light
@@ -239,13 +237,12 @@ let mainLog (model : IObservable<Model>) =
     ]
 
 open Flow
-
 let exampleGraph : Graph = {
     Nodes = Map [
         "n1", Node.Create("n1", "Hello", 250.0, 50.0)
         "n2", Node.Create("n2", "World", 250.0, 150.0)
-        "n3", { Node.Create("n3", "No Select", 50.0, 50.0) with CanSelect = false }
-        "n4", { Node.Create("n4", "No Move", 50.0, 150.0) with CanMove = false; Type = "" }
+        "n3", Node.Create("n3", "No Select", 50.0, 50.0)
+        "n4", Node.Create("n4", "No Move", 50.0, 150.0)
     ]
     Edges = Map [
         "e1", Edge.Create( "e1", "n1", "out", "n2", "in")
@@ -306,7 +303,8 @@ let flowGraph graph dispatch =
     let options' = GraphOptions.Create()
     let nodeFactory(name,typ) =
         options'.NodeFactory(name,typ)
-    let viewNode (node : Node) =
+    let viewNode (nodeS : IReadOnlyStore<Node>) =
+        let node = nodeS.Value
         if (node.Id.StartsWith("Clock")) then
             Html.div [
                 Bind.el( clockS, fun c -> Html.span (c.ToLongTimeString()))
@@ -316,7 +314,7 @@ let flowGraph graph dispatch =
                 Bind.el( getNodeStore node.Id, Html.span)
             ]
         else
-            options'.ViewNode(node)
+            options'.ViewNode(nodeS)
     let fc = Flow.FlowChart( 
         { options' with 
                 NodeFactory = nodeFactory 
@@ -378,7 +376,7 @@ let initPanes  (fileExplorer : FileExplorer.FileExplorer) (textEditor : TextEdit
 
     dc.AddPane( "Preview",       RightTop, bindMd (model |> Store.map (fun m -> m.PreviewText)), true )
     dc.AddPane(
-        "Ace",
+        "Ace", "Ace",
         CentreCentre,
         editorTitle model,
         textEditor.View,

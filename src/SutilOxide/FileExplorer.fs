@@ -9,7 +9,7 @@ open System
 
 open Browser.Dom
 open Browser.Types
-open Fable.SimpleJson
+open Thoth.Json
 open FileSystem
 open Sutil
 open Sutil.Core
@@ -33,6 +33,7 @@ type Msg =
     | RenameTo of string
     | Edit of string
     | Refresh
+    | SetCwd of string
 
 type SessionState = {
     Cwd : string
@@ -51,12 +52,15 @@ type Model = {
 }
 
 let saveSessionState (m : Model) =
-    window.localStorage.setItem("file-explorer-session", Json.serialize { Cwd = m.Cwd; Selected = m.Selected; Editing = m.Editing})
+    window.localStorage.setItem("file-explorer-session", Encode.Auto.toString { Cwd = m.Cwd; Selected = m.Selected; Editing = m.Editing})
 
 let loadSessionState() =
     match (window.localStorage.getItem("file-explorer-session")) with
     | null -> None
-    | s -> Json.parseAs<SessionState>(s) |> Some
+    | s -> 
+        match Decode.Auto.fromString<SessionState>(s) with
+        | Ok r -> r |> Some
+        | Error _ -> None
 
 let defaultSessionState() = {
     Cwd = "/"
@@ -76,9 +80,10 @@ let init (fs : IFileSystem, s : SessionState) =
     }, if s.Editing <> "" then Cmd.ofMsg (Edit s.Editing) else Cmd.none
 
 let update edit msg model =
-    //applog (sprintf "update %A selected=%s" msg (model.Selected))
+    Fable.Core.JS.console.log (sprintf "update %A selected=%s" msg (model.Selected))
     match msg with
     | Refresh -> { model with RefreshId = model.RefreshId + 1 }, Cmd.none
+    | SetCwd d -> { model with Cwd = d }, Cmd.none
     | Edit name ->
         if (name <> "") then
             edit (IFileSystem.Combine(model.Cwd, name))
@@ -258,13 +263,13 @@ let fileExplorer dispatch (m : Model) =
         ]
     ] |> withStyle css
 
-type FileExplorer(fs : IFileSystem) =
+type FileExplorer( fs : IFileSystem ) =
 
     let mutable onEdit : string -> unit = ignore
 
     let create fs =
         let sessionState = loadSessionState() |> Option.defaultWith defaultSessionState
-        let model, dispatch = (fs,sessionState) |> Sutil.Store.makeElmish init (updateWithSaveSession onEdit) ignore
+        let model, dispatch = (fs,sessionState) |> Sutil.Store.makeElmish init (updateWithSaveSession (fun f -> onEdit f)) ignore
         model, dispatch
 
     let model, dispatch = create fs

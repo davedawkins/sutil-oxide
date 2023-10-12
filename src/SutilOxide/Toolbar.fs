@@ -93,6 +93,8 @@ module internal MenuMonitor =
     let moveMenu (e : Types.HTMLElement) (bcr : Types.ClientRect) (ir : Types.ClientRect) =
         //SutilOxide.Logging.log(sprintf "Move menu %s" e.tagName)
         //e.style.position <- "fixed"
+        //Fable.Core.JS.console.log( "moveMenu", e, bcr, ir )
+        //e.style.top <- "0px"
         if (bcr.right > ir.right) then
             //resetMenu e
             e.style.left <- "unset"
@@ -149,13 +151,18 @@ let menuStack items =
     ]
 
 let mkButton b =
+    let checkedS = Store.make b.IsChecked
     Html.a [
+        disposeOnUnmount [ checkedS ]
         Attr.className ("xd-item-button" + (if b.Mode = Checkbox then " checkbox" else ""))
         Attr.href "-"
         match b.Mode, b.Icon, b.Display with
 
         | Checkbox, _, _ ->
-            Html.i [ Attr.className ("fa fa-check " + (if b.IsChecked then "checked" else "")) ]
+
+            Bind.el( checkedS,
+                fun ch -> Html.i [ Attr.className ("fa fa-check " + (if ch then "checked" else "")) ]
+            )
 
         | _, Some icon, LabelIcon | _, Some icon, IconOnly ->
             Html.i [ Attr.className ("fa " + icon) ]
@@ -175,11 +182,15 @@ let mkButton b =
             Html.span [ Attr.style [ Css.displayNone ] ]
 
         b.OnClick
-            |> Option.map (fun cb ->  Ev.onClick (fun e -> console.log("click"); e.preventDefault(); cb e))
+            |> Option.map (fun cb ->  Ev.onClick (fun e -> e.preventDefault(); cb e))
             |> Option.defaultValue nothing
 
         b.OnCheckChanged
-            |> Option.map (fun cb ->  Ev.onClick (fun e -> console.log("click2"); e.preventDefault(); cb (not (b.IsChecked))))
+            |> Option.map (fun cb ->  Ev.onClick (fun e -> 
+                e.preventDefault()
+                checkedS |> Store.modify (not)
+                cb (checkedS.Value)
+            ))
             |> Option.defaultValue nothing
 
     ]

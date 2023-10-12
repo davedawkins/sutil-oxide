@@ -74,7 +74,6 @@ module DomHelpers =
     let getWrapperNode (name : string) =
         document.querySelector("#pane-" + name.ToLower())
 
-
     // https://jsfiddle.net/x9o7y561/
     let resizeController
             (pos : MouseEvent -> float)
