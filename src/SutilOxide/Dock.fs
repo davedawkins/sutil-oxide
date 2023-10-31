@@ -414,7 +414,7 @@ let private viewTabLabel (model : System.IObservable<Model>) dispatch dockLocati
             |> Store.map (fun m -> (m.SelectedPanes[dockLocation] |> Option.defaultValue "") = pane.Key),
             "selected")
 
-        Html.i [ Attr.className "fa fa-folder" ]
+        Html.i [ Attr.className pane.Icon ]
         Html.span [ text pane.Label ]
         if pane.CanClose then
             Html.divc "close-button" [

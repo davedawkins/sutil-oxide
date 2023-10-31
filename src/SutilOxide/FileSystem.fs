@@ -432,7 +432,7 @@ type MountedFileSystem( fs : IFileSystem, mountPoint : string) =
     let makePath( path : string ) = IFileSystem.Combine(mountPoint, path)
 
     let fixPath ( path :string ) = 
-        Fable.Core.JS.console.log( "fixPath: ", path, mountPoint )
+//        Fable.Core.JS.console.log( "fixPath: ", path, mountPoint )
         path.Substring( mountPoint.Length )
 
     let fixFiles ( files :string[] ) = files
@@ -480,6 +480,7 @@ type MountedFileSystem( fs : IFileSystem, mountPoint : string) =
 module Extensions = 
 
     type IFileSystem with
+
         member __.Remove( path : string ) =
             if (__.IsFolder path ) then
                 __.Files(path) 
@@ -487,4 +488,14 @@ module Extensions =
                 __.Folders(path)
                 |> Array.iter( fun name -> __.Remove( IFileSystem.Combine( path, name )) )
             __.RemoveFile( path )
-            
+
+        member __.MakeUnique( folder : string, basename : string, ?ext : string) =
+            let ext' = ext |> Option.defaultValue ""
+
+            let rec findUnique name (i : int) =
+                if __.Exists (IFileSystem.Combine(folder, name)) then 
+                    findUnique (sprintf "%s%d%s" basename i ext') (i+1)
+                else
+                    name
+
+            findUnique (basename + ext') 1

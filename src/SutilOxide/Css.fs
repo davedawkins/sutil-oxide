@@ -83,7 +83,7 @@ let containerIds = [
 
 let private baseStyling (theme : Theme) = [
 
-    rule "*" [
+    rule "body" [
         Css.color theme.TextColor
     ]
 

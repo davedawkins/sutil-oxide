@@ -149,6 +149,7 @@ type PaneOptions =
     | Header of SutilElement
     | Content of SutilElement
     | IsOpen of bool
+    | Icon of string
     | OnClose of (unit -> unit)
 
 type DockPane = 
@@ -156,6 +157,7 @@ type DockPane =
         Label : string
         CanClose : bool
         Key : string
+        Icon: string
         Location : DockLocation
         Header : SutilElement
         Content : SutilElement
@@ -180,12 +182,14 @@ type DockPane =
             Content = Html.div key
             IsOpen = true
             OnClose = ignore
+            Icon = "fa fa-folder"
         }
         
     static member Create( key : string, options : PaneOptions list ) : DockPane =
         let withOpt cfg opt : DockPane =
             match opt with 
             | Label s -> { cfg with Label = s }
+            | Icon s -> { cfg with Icon = s }
             | CanClose s -> { cfg with CanClose = s }
             | Location s -> { cfg with Location = s }
             | Content s -> { cfg with Content = s }

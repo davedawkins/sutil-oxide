@@ -174,7 +174,7 @@ let mkButton b =
 
         | Some label, LabelOnly | Some label, LabelIcon ->
             Html.span [
-                Ev.onClick (fun e -> console.log("click span"))
+                //Ev.onClick (fun e -> console.log("click span"))
                 text label
             ]
 
@@ -240,7 +240,7 @@ let menuItem props items =
             |> Option.defaultValue (Html.span "")
 
         b.OnClick
-            |> Option.map (fun cb ->  Ev.onClick (fun e -> console.log("click"); e.preventDefault(); cb e))
+            |> Option.map (fun cb ->  Ev.onClick (fun e -> e.preventDefault(); cb e))
             |> Option.defaultValue nothing
 
         Html.i [ Attr.className "fa fa-angle-right"]

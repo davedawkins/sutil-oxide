@@ -80,7 +80,7 @@ let init (fs : IFileSystem, s : SessionState) =
     }, if s.Editing <> "" then Cmd.ofMsg (Edit s.Editing) else Cmd.none
 
 let update edit msg model =
-    Fable.Core.JS.console.log (sprintf "update %A selected=%s" msg (model.Selected))
+//    Fable.Core.JS.console.log (sprintf "update %A selected=%s" msg (model.Selected))
     match msg with
     | Refresh -> { model with RefreshId = model.RefreshId + 1 }, Cmd.none
     | SetCwd d -> { model with Cwd = d }, Cmd.none
