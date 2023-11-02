@@ -182,7 +182,15 @@ let mkButton b =
             Html.span [ Attr.style [ Css.displayNone ] ]
 
         b.OnClick
-            |> Option.map (fun cb ->  Ev.onClick (fun e -> e.preventDefault(); cb e))
+            |> Option.map (fun cb ->  Ev.onClick (fun e -> 
+                e.preventDefault(); cb e
+
+                let mutable e  = (e.target :?> Browser.Types.HTMLElement)
+                while e <> null do
+                    e.blur()
+                    e <- e.parentElement
+                )
+            )
             |> Option.defaultValue nothing
 
         b.OnCheckChanged
