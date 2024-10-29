@@ -21,9 +21,10 @@
     <Compile Include="Dock.fs" />
   </ItemGroup>
   <ItemGroup>
-    <!-- <PackageReference Include="Sutil" Version="2.0.11" /> -->
+    <!-- <PackageReference Include="Sutil" Version="2.*" /> -->
     <ProjectReference Include="../../../Sutil/src/Sutil/Sutil.fsproj"/>
-    <PackageReference Include="Thoth.Json" Version="10.0.0" />
+    <PackageReference Include="Thoth.Json" Version="10.0.*" />
+    <PackageReference Include="Fable.Browser.IndexedDB" Version="2.2.*" />
   </ItemGroup>
   <!-- Add source files to "fable" folder in Nuget package -->
   <ItemGroup>

@@ -492,6 +492,8 @@ let private dockStyling (theme : Theme) = [
 
     // Borders
 
+    let borderSize = 0
+
     rule ".border" [
         Css.borderStyleSolid
         Css.borderColor theme.Border
@@ -499,19 +501,19 @@ let private dockStyling (theme : Theme) = [
     ]
 
     rule ".border-top" [
-        Css.borderTopWidth  (px 1)
+        Css.borderTopWidth  (px borderSize)
     ]
 
     rule ".border-bottom" [
-        Css.borderBottomWidth  (px 1)
+        Css.borderBottomWidth  (px borderSize)
     ]
 
     rule ".border-left" [
-        Css.borderLeftWidth  (px 1)
+        Css.borderLeftWidth  (px borderSize)
     ]
 
     rule ".border-right" [
-        Css.borderRightWidth  (px 1)
+        Css.borderRightWidth  (px borderSize)
     ]
 
     // Miscellaneous
@@ -830,7 +832,7 @@ let overrides (theme : Theme) = [
         Css.flexDirectionColumn
     ]
 
-    CssMedia.maxWidth( px 1200, [
+    CssMedia.maxWidth( px 768, [
         rule ".tabs-left" [
             Css.displayNone
         ]

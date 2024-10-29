@@ -108,9 +108,19 @@ type DockLocation =
     | TopRight
 with
     static member All =
-        [
+        [|
             LeftTop; LeftBottom; BottomLeft; BottomRight; RightTop; RightBottom; CentreCentre; TopLeft; TopRight
-        ]
+        |]
+
+    static member AllNames = 
+        DockLocation.All |> Array.map _.ToString()
+
+    static member TryParse (s : string) =
+        let i = DockLocation.AllNames |> Array.findIndex (fun name -> name = s)
+        if i < 0 then 
+            None
+        else
+            DockLocation.All[i] |> Some
 
     member __.Hand =
         match __.Primary, __.Secondary with
@@ -142,8 +152,13 @@ with
 //     Label : string
 // }
 
+type LabelElement =
+    | LabelString of string
+    | LabelElement of SutilElement
+
 type PaneOptions =
     | Label of string
+    | LabelEl of SutilElement
     | CanClose of bool
     | Location of DockLocation
     | Header of SutilElement
@@ -151,10 +166,12 @@ type PaneOptions =
     | IsOpen of bool
     | Icon of string
     | OnClose of (unit -> unit)
+    | OnShow of (bool -> unit)
+    | Size of float
 
 type DockPane = 
     {
-        Label : string
+        Label : LabelElement
         CanClose : bool
         Key : string
         Icon: string
@@ -163,6 +180,8 @@ type DockPane =
         Content : SutilElement
         IsOpen : bool
         OnClose : unit -> unit
+        OnShow : bool -> unit
+        Size : float
     }
     static member Equals( p1 : DockPane, p2 : DockPane) =
         p1.Label = p2.Label &&
@@ -175,7 +194,7 @@ type DockPane =
     static member Default( key : string ) =
         {
             Key = key
-            Label = key
+            Label = LabelString key
             CanClose = false
             Location = CentreCentre
             Header = text key
@@ -183,12 +202,15 @@ type DockPane =
             IsOpen = true
             OnClose = ignore
             Icon = "fa fa-folder"
+            OnShow = ignore
+            Size = -1
         }
         
     static member Create( key : string, options : PaneOptions list ) : DockPane =
         let withOpt cfg opt : DockPane =
             match opt with 
-            | Label s -> { cfg with Label = s }
+            | LabelEl e -> { cfg with Label = LabelElement e }
+            | Label s -> { cfg with Label = LabelString s }
             | Icon s -> { cfg with Icon = s }
             | CanClose s -> { cfg with CanClose = s }
             | Location s -> { cfg with Location = s }
@@ -196,6 +218,8 @@ type DockPane =
             | Header s -> { cfg with Header = s }
             | IsOpen s -> { cfg with IsOpen = s }
             | OnClose s -> { cfg with OnClose = s }
+            | OnShow s -> { cfg with OnShow = s }
+            | Size s -> { cfg with Size = s }
 
         let init = (DockPane.Default(key))
         options |> List.fold withOpt init
@@ -213,6 +237,6 @@ type  DockCollection = {
 with
     static member Empty =
         {
-            Stations = DockLocation.All |> List.fold (fun s e -> s.Add(e, DockStation.Empty)) Map.empty
+            Stations = DockLocation.All |> Array.fold (fun s e -> s.Add(e, DockStation.Empty)) Map.empty
         }
     member __.GetPanes loc = __.Stations[loc].Panes

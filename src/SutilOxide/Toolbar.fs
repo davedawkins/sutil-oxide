@@ -63,7 +63,7 @@ with
         p |> Seq.fold (fun (b:Button) x -> b.With(x)) Button.Empty
 
 
-module internal MenuMonitor =
+module MenuMonitor =
     open Browser
 
     let seqOfNodeList<'T> (nodes: Browser.Types.NodeListOf<'T>) =
@@ -72,14 +72,14 @@ module internal MenuMonitor =
                 yield nodes.[i]
         }
 
-    let logEntry (e : Types.IntersectionObserverEntry) =
-        console.log("boundingClientRect=", e.boundingClientRect)
-        console.log("intersectionRatio=", e.intersectionRatio)
-        console.log("intersectionRect=", e.intersectionRect)
-        console.log("isIntersecting=", e.isIntersecting)
-        console.log("rootBounds=", e.rootBounds)
-        console.log("target=", e.target)
-        console.log("time=", e.time)
+    // let logEntry (e : Types.IntersectionObserverEntry) =
+    //     console.log("boundingClientRect=", e.boundingClientRect)
+    //     console.log("intersectionRatio=", e.intersectionRatio)
+    //     console.log("intersectionRect=", e.intersectionRect)
+    //     console.log("isIntersecting=", e.isIntersecting)
+    //     console.log("rootBounds=", e.rootBounds)
+    //     console.log("target=", e.target)
+    //     console.log("time=", e.time)
 
     let removeStyle( e : HTMLElement ) name=
         e.style.removeProperty(name) |> ignore
@@ -91,21 +91,13 @@ module internal MenuMonitor =
             "right" ] |> List.iter (removeStyle e)
 
     let moveMenu (e : Types.HTMLElement) (bcr : Types.ClientRect) (ir : Types.ClientRect) =
-        //SutilOxide.Logging.log(sprintf "Move menu %s" e.tagName)
-        //e.style.position <- "fixed"
-        //Fable.Core.JS.console.log( "moveMenu", e, bcr, ir )
-        //e.style.top <- "0px"
         if (bcr.right > ir.right) then
-            //resetMenu e
             e.style.left <- "unset"
             e.style.right <- "0px"
         if (bcr.bottom > ir.bottom) then
-            //resetMenu e
-            //let pr = e.parentElement.getBoundingClientRect()
             e.style.top <- sprintf "%fpx" ((ir.bottom - bcr.height) (*- pr.top - 12.0 *) )
             e.style.bottom <- "unset"
         else if (bcr.top < ir.top) then
-            //resetMenu e
             e.style.top <- "0px"
             e.style.bottom <- "unset"
 
@@ -130,16 +122,18 @@ module internal MenuMonitor =
             _io
         | Some x -> x
 
-
     let monitorMenu( e : HTMLElement ) =
         resetMenu e
         getObserver().observe(e)
 
-    let monitorAll() =
+    let monitorQuery( query : string ) =
         getObserver().disconnect()
-        document.querySelectorAll(".menu-stack")
+        document.querySelectorAll(query)
         |> seqOfNodeList
         |> Seq.iter (fun n -> monitorMenu (n :?> Types.HTMLElement) )
+
+    let monitorAll() =
+        monitorQuery( ".menu-stack" )
 
 let buttonGroup items =
     UI.divc "button-group" items

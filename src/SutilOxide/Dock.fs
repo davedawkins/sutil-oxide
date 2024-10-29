@@ -30,13 +30,20 @@ type Model = {
     SelectedPanes : Map<DockLocation,string option>
 }
 
+type Configuration = Map<string,string>
+
 type Options = 
     {
+        Log : (string -> unit)
         OnTabShow : (string * bool -> unit)
+        OnConfigurationChanged : (unit -> unit)
     }
     static member Create() = {
+        Log = ignore
         OnTabShow = ignore
+        OnConfigurationChanged = ignore
     }
+
 module DockHelpers =
     let tabsContains name tabLabels=
         tabLabels |> List.exists (fun t -> t.Key = name)
@@ -58,15 +65,12 @@ module DockHelpers =
     let findPaneLocationIndex (docks : DockCollection) name =
         docks.Stations
             |> Map.tryPick (fun loc station ->
-                //SutilOxide.Logging.log(sprintf "Finding %A %A " loc station)
                 station.Panes
-                |> List.tryFindIndex (fun t ->
-                    //SutilOxide.Logging.log("Finding " + t.Name + " ? " + name)
-                    t.Key = name)
+                |> List.tryFindIndex (fun t -> t.Key = name)
                 |> Option.map (fun i -> loc,i)
             )
 
-    let findPaneLocation(docks : DockCollection) name =
+    let findPaneLocation(docks : DockCollection) name : DockLocation option =
         findPaneLocationIndex docks name |> Option.map fst
 
     let getPanes (docks : DockCollection) loc =
@@ -80,7 +84,7 @@ module DockHelpers =
         findPaneLocation docks name
         |> Option.bind (fun loc -> getPanes docks loc |> List.tryFind (fun t -> t.Key = name))
 
-    let getPane docks name =
+    let getPane docks name: DockPane =
         match findPaneLocation docks name with
         | None -> 
             Fable.Core.JS.console.log("Panes: ", allPaneNames(docks))
@@ -115,12 +119,12 @@ module DockHelpers =
 
     let ensurePaneSelected (m : Model) =
         DockLocation.All
-        |> List.map (fun loc ->
+        |> Array.map (fun loc ->
                 let selectedPaneName =
                         m.SelectedPanes[loc]
                         |> Option.orElseWith (fun () -> m.Docks.GetPanes(loc) |> List.tryHead |> Option.map (fun p -> p.Key))
                 loc, selectedPaneName)
-        |> Map.ofList
+        |> Map.ofArray
         |> (fun map -> { m with SelectedPanes = map } )
 
     let ensureCentreSelected (m : Model) =
@@ -140,6 +144,10 @@ module DockHelpers =
             { model with SelectedPanes = model.SelectedPanes.Add(loc,None) } )
         |> Option.defaultValue model
 
+    let isPaneShowing (model : Model) (pane : string) =
+        model.SelectedPanes.Values 
+        |> Seq.choose (id)
+        |> Seq.exists (fun name -> name = pane)
 
 type DockProperty =
     | Visible of bool
@@ -152,10 +160,12 @@ type private Message =
     | CancelDrag
     | PreviewDockLocation of (DockLocation * int) option
     | CommitDrag
-    | SelectPane of DockLocation*string option
-    | TogglePane of DockLocation*string
+    //| SelectPane of DockLocation*string option
+    | TogglePane of string
+    | TogglePaneWithNotify of string * bool
     | MinimizePane of string
     | ShowPane of string
+    | ShowPaneWithNotify of string * bool
     | MoveTo of string*DockLocation
     | DockProp of (string *DockProperty)
 
@@ -164,7 +174,7 @@ let private init docks =
         RefreshId = 0
         Docks = docks
         DraggingTab = None
-        SelectedPanes = DockLocation.All |> List.fold (fun s loc -> s.Add(loc, None)) Map.empty
+        SelectedPanes = DockLocation.All |> Array.fold (fun s loc -> s.Add(loc, None)) Map.empty
     } |> DockHelpers.ensurePaneSelected, Cmd.none
 
 let private cmdMonitorAll : Cmd<Message> =
@@ -172,8 +182,22 @@ let private cmdMonitorAll : Cmd<Message> =
         fun d -> Toolbar.MenuMonitor.monitorAll() 
     ]
 
-let private update (options : Options) (unmount : string -> unit) msg model =
-    //SutilOxide.Logging.log($"Dock: {msg}")
+
+let private _update (options : unit -> Options) (unmount : string -> unit) msg (model : Model) =
+    //Fable.Core.JS.console.log($"Dock: {msg}")
+
+    let cmdOnTabShow currentPane pane = 
+
+        let notifyTabShow (show : bool) (name : string) =
+            options().Log("notifyTabShow: " + name + " " + show.ToString())
+            DockHelpers.tryGetPane (model.Docks) name |> Option.iter (fun p -> p.OnShow(show))
+            options().OnTabShow(name,show)
+
+        [ fun _ ->
+            if pane <> currentPane then
+                currentPane |> Option.iter (notifyTabShow false)
+                pane |> Option.iter (notifyTabShow true)
+        ]
 
     match msg with
 
@@ -211,27 +235,42 @@ let private update (options : Options) (unmount : string -> unit) msg model =
                 Docks = { Stations = model.Docks.Stations.Add( pane.Location, station' ) }
         } , Cmd.batch [ if pane.IsOpen then Cmd.ofMsg (ShowPane pane.Key) else Cmd.none; cmdMonitorAll ]
 
-    | SelectPane (loc,pane) ->
-        { model with SelectedPanes = model.SelectedPanes.Add(loc,pane) }, Cmd.none
+    // | SelectPane (loc,pane) ->
+    //     let currentPane = model.SelectedPanes[loc]
 
-    | TogglePane (loc,pane) ->
-        let selected, show =
-            match model.SelectedPanes[loc] with
-            | Some name when name = pane -> None, false
-            | _ -> Some pane, true
+    //     { model with SelectedPanes = model.SelectedPanes.Add(loc,pane) }, [ cmdOnTabShow currentPane pane ]
 
-        options.OnTabShow( pane, show )
-        { model with SelectedPanes = model.SelectedPanes.Add(loc,selected) } |> DockHelpers.ensureCentreSelected, cmdMonitorAll
+    | TogglePane pane ->
+        model, Cmd.ofMsg (TogglePaneWithNotify (pane, false))
+
+    | TogglePaneWithNotify (pane,notify) ->
+
+        match DockHelpers.findPaneLocation model.Docks pane with
+
+        | Some loc -> 
+            let selected, show =
+                match model.SelectedPanes[loc] with
+                | Some name when name = pane -> None, false
+                | _ -> Some pane, true
+
+            let currentPane = model.SelectedPanes[loc]
+
+            { model with SelectedPanes = model.SelectedPanes.Add(loc,selected) } |> DockHelpers.ensureCentreSelected, Cmd.batch [ if notify then cmdOnTabShow currentPane selected ; cmdMonitorAll ]
+
+        | None -> 
+            model, Cmd.none
 
     | ShowPane pane ->
-        let m =
-            DockHelpers.findPaneLocation model.Docks pane
-            |> Option.map (fun loc ->
-                { model with SelectedPanes = model.SelectedPanes.Add(loc,Some pane) }
-            )
-            |> Option.defaultValue model
-        options.OnTabShow( pane, true )
-        m,  cmdMonitorAll
+        model, Cmd.ofMsg (ShowPaneWithNotify (pane,false))
+
+    | ShowPaneWithNotify (pane,notify) ->
+
+        match DockHelpers.findPaneLocation model.Docks pane with
+        | Some loc -> 
+            let currentPane = model.SelectedPanes[loc]
+            { model with SelectedPanes = model.SelectedPanes.Add(loc,Some pane) }, Cmd.batch [ if notify then cmdOnTabShow currentPane (Some pane); cmdMonitorAll ]
+        | None -> 
+            model, Cmd.none
 
     | MinimizePane pane ->
         DockHelpers.minimizePane model pane, cmdMonitorAll
@@ -279,6 +318,11 @@ let private update (options : Options) (unmount : string -> unit) msg model =
             | Some d ->
                 { model with DraggingTab = Some { d with Preview = dockLoc } }
         m, Cmd.none
+
+let private update (options : unit -> Options) (unmount : string -> unit) msg (model : Model) =
+    // Fable.Core.JS.console.log(sprintf "DOCK: %A" msg)
+    let m, c = _update options unmount msg model
+    m, Cmd.batch [ c; [ fun _ -> options().OnConfigurationChanged() ] ]
 
 [<AutoOpen>]
 module ModelHelpers =
@@ -334,7 +378,7 @@ module private EventHandlers =
             //| TopLeft  -> if x < (r.width/2.0) then y else 999
             //| TopRight -> if x > (r.width/2.0) then y else 999
 
-        let (loc, dist) = DockLocation.All |> List.map (fun loc -> loc, distanceTo loc) |> List.minBy snd
+        let (loc, dist) = DockLocation.All |> Array.map (fun loc -> loc, distanceTo loc) |> Array.minBy snd
         if System.Math.Abs dist < 200 then Some loc else None
 
     let dragOver dispatch (e : DragEvent) =
@@ -397,9 +441,9 @@ module private EventHandlers =
     let tabClick dockLocation (tabLabel : DockPane) dispatch (e : MouseEvent) =
         match dockLocation with
         | CentreCentre ->
-            (dockLocation,Some (tabLabel.Key)) |> SelectPane |>  dispatch
+            ShowPaneWithNotify (tabLabel.Key,true) |>  dispatch
         | _ ->
-            (dockLocation,(tabLabel.Key)) |> TogglePane |>  dispatch
+            TogglePaneWithNotify (tabLabel.Key,true) |>  dispatch
 
 let private viewTabLabel (model : System.IObservable<Model>) dispatch dockLocation (pane : DockPane) =
     //console.log($"{tabLabel.Name} @ {dockLocation}")
@@ -415,7 +459,12 @@ let private viewTabLabel (model : System.IObservable<Model>) dispatch dockLocati
             "selected")
 
         Html.i [ Attr.className pane.Icon ]
-        Html.span [ text pane.Label ]
+        Html.span [ 
+            match pane.Label with
+            | LabelString s ->
+               text s
+            | LabelElement e -> e 
+        ]
         if pane.CanClose then
             Html.divc "close-button" [
                 Html.ic "fa fa-times" []
@@ -434,7 +483,7 @@ let dragOverlay model (loc:DockLocation) =
     ]
 
 
-let dockContainer model (loc : DockLocation) =
+let dockContainer (options : unit -> Options) model (loc : DockLocation) =
 
     UI.divc $"dock-{loc.CssName}-container dock-{loc.Hand.LowerName}-hand" [
 
@@ -445,15 +494,50 @@ let dockContainer model (loc : DockLocation) =
         match loc with
         | LeftBottom | RightBottom ->
             UI.divc $"dock-resize-handle top vertical" [
-                resizeControllerNsFlex 1
+                resizeControllerNsFlex 1 (fun _ -> options().OnConfigurationChanged())
             ]
         | TopRight | BottomRight ->
             UI.divc $"dock-resize-handle left horizontal" [
-                resizeControllerEwFlex 1
+                resizeControllerEwFlex 1 (fun _ -> options().OnConfigurationChanged())
             ]
         | _ -> ()
     ]
 
+let dockLeftContainer (rootElement : HTMLElement) =
+    (rootElement.querySelector(".dock-left-container") :?> HTMLElement)
+
+let dockRightContainer (rootElement : HTMLElement) =
+    (rootElement.querySelector(".dock-right-container") :?> HTMLElement)
+
+let dockTopContainer (rootElement : HTMLElement) =
+    (rootElement.querySelector(".dock-top-container") :?> HTMLElement)
+
+let dockBottomContainer (rootElement : HTMLElement) =
+    (rootElement.querySelector(".dock-bottom-container") :?> HTMLElement)
+
+let dockLeftTopContainer (rootElement : HTMLElement) =
+    (rootElement.querySelector(".dock-left-top-container") :?> HTMLElement)
+
+let dockLeftBottomContainer (rootElement : HTMLElement) =
+    (rootElement.querySelector(".dock-left-bottom-container") :?> HTMLElement)
+
+let dockRightTopContainer (rootElement : HTMLElement) =
+    (rootElement.querySelector(".dock-right-top-container") :?> HTMLElement)
+
+let dockRightBottomContainer (rootElement : HTMLElement) =
+    (rootElement.querySelector(".dock-right-bottom-container") :?> HTMLElement)
+
+let dockTopLeftContainer (rootElement : HTMLElement) =
+    (rootElement.querySelector(".dock-top-left-container") :?> HTMLElement)
+
+let dockTopRightContainer (rootElement : HTMLElement) =
+    (rootElement.querySelector(".dock-top-right-container") :?> HTMLElement)
+
+let dockBottomLeftContainer (rootElement : HTMLElement) =
+    (rootElement.querySelector(".dock-bottom-left-container") :?> HTMLElement)
+
+let dockBottomRightContainer (rootElement : HTMLElement) =
+    (rootElement.querySelector(".dock-bottom-right-container") :?> HTMLElement)
 
 let paneEq (p1 : DockPane) (p2 : DockPane) =
     DockPane.Equals(p1,p2)
@@ -464,18 +548,53 @@ let paneListEq (p1 : DockPane list) (p2 : DockPane list) =
 
 let paneDistinct = Observable.distinctUntilChangedCompare paneListEq
 
-type DockContainer( options : Options ) =
+type DockContainer() =
+    let mutable options = Options.Create()
+
     let mutable unmounters : Map<string,System.IDisposable> = Map.empty
 
     let unmount (paneKey : string) =
         unmounters[paneKey].Dispose()
         unmounters <- unmounters.Remove(paneKey)
 
-    let model, dispatch = DockCollection.Empty |> Store.makeElmish init (update options unmount) ignore
+    let model, dispatch = DockCollection.Empty |> Store.makeElmish init (update (fun _ -> options) unmount) ignore
 
+    let mutable rootElement : HTMLElement option = None
+    let mutable config : Configuration option = None
+
+    let setOption (cfg : Configuration) (name : string) (setter : string -> unit) =
+        match cfg.TryFind( name ) with
+        | Some s when not (System.String.IsNullOrEmpty(s)) -> setter s
+        | _ -> ()
+
+    let applyOptions( rootElement : HTMLElement ) =
+        match config with
+        | Some cfg ->
+            setOption cfg "left.width" (fun v -> (dockLeftContainer rootElement).style.width <- v)
+            setOption cfg "right.width" (fun v -> (dockRightContainer rootElement).style.width <- v)
+            setOption cfg "top.height" (fun v -> (dockTopContainer rootElement).style.height <- v)
+            setOption cfg "bottom.height" (fun v -> (dockBottomContainer rootElement).style.height <- v)
+
+            setOption cfg "top-left.pct" (fun v -> (dockTopLeftContainer rootElement).style.flexGrow <- v)
+            setOption cfg "top-right.pct" (fun v -> (dockTopRightContainer rootElement).style.flexGrow <- v)
+            setOption cfg "bottom-left.pct" (fun v -> (dockBottomLeftContainer rootElement).style.flexGrow <- v)
+            setOption cfg "bottom-right.pct" (fun v -> (dockBottomRightContainer rootElement).style.flexGrow <- v)
+
+            setOption cfg "left-top.pct" (fun v -> (dockLeftTopContainer rootElement).style.flexGrow <- v)
+            setOption cfg "left-bottom.pct" (fun v -> (dockLeftBottomContainer rootElement).style.flexGrow <- v)
+            setOption cfg "right-top.pct" (fun v -> (dockRightTopContainer rootElement).style.flexGrow <- v)
+            setOption cfg "right-bottom.pct" (fun v -> (dockRightBottomContainer rootElement).style.flexGrow <- v)
+            config <- None
+        | None -> ()
 
     let dockContainer() =
         UI.divc "dock-container" [
+
+            Ev.onMount (fun e -> 
+                let rootE = (e.target :?> HTMLElement)
+                rootElement <-  rootE |> Some
+                applyOptions(rootE)
+            )
 
             Ev.onDragOver (EventHandlers.dragOver dispatch)
             Ev.onDrop (EventHandlers.drop dispatch)
@@ -509,11 +628,11 @@ type DockContainer( options : Options ) =
                 UI.divc "dock-top-container" [
                     Bind.toggleClass( model |> Store.map (fun m -> (m.SelectedPanes[TopLeft], m.SelectedPanes[TopRight]) = (None,None)), "hidden" )
 
-                    dockContainer model TopLeft
-                    dockContainer model TopRight
+                    dockContainer (fun _ -> options) model TopLeft
+                    dockContainer (fun _ -> options) model TopRight
 
                     UI.divc $"dock-resize-handle bottom vertical" [
-                        resizeControllerNs -1
+                        resizeControllerNs -1 (fun _ -> options.OnConfigurationChanged())
                     ]
                 ]
 
@@ -523,11 +642,11 @@ type DockContainer( options : Options ) =
                     UI.divc "dock-left-container" [
                         Bind.toggleClass( model |> Store.map (fun m -> (m.SelectedPanes[LeftTop], m.SelectedPanes[LeftBottom]) = (None,None)), "hidden" )
 
-                        dockContainer model LeftTop
-                        dockContainer model LeftBottom
+                        dockContainer (fun _ -> options) model LeftTop
+                        dockContainer (fun _ -> options) model LeftBottom
 
                         UI.divc $"dock-resize-handle right horizontal" [
-                            resizeControllerEw -1
+                            resizeControllerEw -1 (fun _ -> options.OnConfigurationChanged())
                         ]
                     ]
 
@@ -545,18 +664,18 @@ type DockContainer( options : Options ) =
 
 
                         UI.divc "dock-main" [
-                            dockContainer model CentreCentre
+                            dockContainer (fun _ -> options) model CentreCentre
                         ]
                     ]
 
                     UI.divc "dock-right-container" [
                         Bind.toggleClass( model |> Store.map (fun m -> (m.SelectedPanes[RightTop], m.SelectedPanes[RightBottom]) = (None,None)), "hidden" )
 
-                        dockContainer model RightTop
-                        dockContainer model RightBottom
+                        dockContainer (fun _ -> options) model RightTop
+                        dockContainer (fun _ -> options) model RightBottom
 
                         UI.divc $"dock-resize-handle left horizontal" [
-                            resizeControllerEw 1
+                            resizeControllerEw 1 (fun _ -> options.OnConfigurationChanged())
                         ]
                     ]
 
@@ -566,22 +685,22 @@ type DockContainer( options : Options ) =
                 UI.divc "dock-bottom-container" [
                     Bind.toggleClass( model |> Store.map (fun m -> (m.SelectedPanes[BottomLeft], m.SelectedPanes[BottomRight]) = (None,None)), "hidden" )
 
-                    dockContainer model BottomLeft
-                    dockContainer model BottomRight
+                    dockContainer (fun _ -> options) model BottomLeft
+                    dockContainer (fun _ -> options) model BottomRight
 
                     UI.divc $"dock-resize-handle top vertical" [
-                        resizeControllerNs 1
+                        resizeControllerNs 1 (fun _ -> options.OnConfigurationChanged())
                     ]
                 ]
             ]
 
             UI.divc "overlays" [
                 UI.divc "overlays-left" [
-                    yield! DockLocation.All |> List.filter (fun l -> l.Primary = Left || l.Secondary = Left) |> List.map (fun l -> dragOverlay model l)
+                    yield! DockLocation.All |> Array.filter (fun l -> l.Primary = Left || l.Secondary = Left) |> Array.map (fun l -> dragOverlay model l)
                 ]
 
                 UI.divc "overlays-right" [
-                    yield! DockLocation.All |> List.filter (fun l -> l.Primary = Right || l.Secondary = Right) |> List.map (fun l -> dragOverlay model l)
+                    yield! DockLocation.All |> Array.filter (fun l -> l.Primary = Right || l.Secondary = Right) |> Array.map (fun l -> dragOverlay model l)
                 ]
             ]
 
@@ -633,11 +752,63 @@ type DockContainer( options : Options ) =
     do
         ()
 with
-    static member Create (init : DockContainer -> unit, options) =
-        let dc = DockContainer(options)
+    member _.Options 
+        with get() = options 
+        and set opts = 
+            options <- opts
+
+    static member Create (init : DockContainer -> unit) =
+        let dc = DockContainer()
         dc.View init
 
     member __.View (init: DockContainer -> unit)  =  view init __
+
+    member __.GetPaneConfigurationLocation( paneId : string, defaultValue : DockLocation ) =
+        config 
+        |> Option.bind (fun d -> d.TryFind (sprintf "pane.%s.location" paneId))
+        |> Option.bind (fun loc -> DockLocation.TryParse loc)
+        |> Option.defaultValue defaultValue
+
+    member __.GetPaneConfigurationShow( paneId : string, defaultValue : bool ) =
+        config 
+        |> Option.bind (fun d -> d.TryFind (sprintf "pane.%s.show" paneId))
+        |> Option.bind (fun s -> try System.Boolean.Parse s |> Some with | _ -> None)
+        |> Option.defaultValue defaultValue
+
+    member __.Configuration
+        with get() =
+            match rootElement with
+            | Some rootElement ->
+                let panes = 
+                    model.Value.Docks.Stations 
+                    |> Seq.collect (fun x -> 
+                        x.Value.Panes 
+                        |> List.collect (fun p -> 
+                                [
+                                    "pane." + p.Key + ".location", x.Key.ToString()
+                                    "pane." + p.Key + ".show", (DockHelpers.isPaneShowing model.Value p.Key).ToString()
+                                ] ))
+                    |> Seq.toList
+
+                [
+                    "left.width", (dockLeftContainer rootElement).style.width
+                    "right.width", (dockRightContainer rootElement).style.width 
+                    "top.height", (dockTopContainer rootElement).style.height 
+                    "bottom.height", (dockBottomContainer rootElement).style.height 
+                    "left-top.pct", (dockLeftTopContainer rootElement).style.flexGrow
+                    "left-bottom.pct", (dockLeftBottomContainer rootElement).style.flexGrow
+                    "right-top.pct", (dockRightTopContainer rootElement).style.flexGrow
+                    "right-bottom.pct", (dockRightBottomContainer rootElement).style.flexGrow
+                    "top-left.pct", (dockTopLeftContainer rootElement).style.flexGrow
+                    "top-right.pct", (dockTopRightContainer rootElement).style.flexGrow
+                    "bottom-left.pct", (dockBottomLeftContainer rootElement).style.flexGrow
+                    "bottom-right.pct", (dockBottomRightContainer rootElement).style.flexGrow
+                    yield! panes
+                ] |> Map
+            | _ -> Map.empty
+        and set( cfg ) =
+            config <- Some cfg
+            rootElement |> Option.iter applyOptions
 
     member __.SetProperty (name:string, p : DockProperty) =
         dispatch (DockProp (name,p))
@@ -667,10 +838,14 @@ with
         (DockHelpers.tryGetPane model.Value.Docks name).IsSome
         
     member __.ShowPane( name : string ) =
+        Fable.Core.JS.console.log("ShowPane: " + name)
         dispatch (ShowPane name)
 
+    member __.ShowingPanes =
+        model.Value.SelectedPanes.Values |> Seq.toArray |> Array.choose id
+
     member __.AddPane (key : string, label : string, initLoc : DockLocation, header : SutilElement, content : SutilElement, show : bool ) =
-        __.AddPane { DockPane.Default(key) with Label = label; Location = initLoc; Header = header; Content = content; IsOpen = show}
+        __.AddPane { DockPane.Default(key) with Label = LabelString label; Location = initLoc; Header = header; Content = content; IsOpen = show}
     member __.AddPane (key, options : PaneOptions list) =
         __.AddPane( DockPane.Create(key, options ))
 

@@ -13,6 +13,36 @@ type FileEntryType =
     | File
     | Folder
 
+let isRooted (p : string) = p.StartsWith "/"
+
+let collapseDotDot (path : string) =
+
+    match path with
+    | "" | "/" ->
+        path
+    | _ ->
+        let items = path.Split([|'/'|], StringSplitOptions.RemoveEmptyEntries ) |> List.ofArray
+
+        let rec go (items,pitems) =
+            match items,pitems with
+            | [],_ -> 
+                [], pitems
+
+            | x::xs, _ when x = "." ->
+                go (xs, pitems)
+
+            | x::_, [] when x = ".." ->
+                failwith ("Invalid path: " + path)
+
+            | x::xs, y::ys when x = ".." ->
+                go (xs, ys)
+
+            | x::xs,_ -> 
+                go (xs, x :: pitems)
+
+        go (items,[]) |> snd |> List.rev |> String.concat "/" 
+        |> fun p -> if isRooted path then "/" + p else p
+
 let private parsePath (path:string) =
     path.Split([|'/'|], StringSplitOptions.RemoveEmptyEntries)
 
@@ -24,16 +54,34 @@ let private canonical (path : string ) =
 
 let getFolderName path =
     let items = path |> parsePath
+    if (items.Length = 0) then failwith ("Invalid path for getFolderName: " + path)
+    if (items.Length = 1) then "" else
     items |> Array.take (items.Length - 1) |> buildPath
 
-let getFileName path =
+let getFileNameWithExt path =
     let items = path |> parsePath
-    items |> Array.last
+    if items.Length = 0 then "" else items |> Array.last
 
-let private combine path file =
-    sprintf "%s/%s" path file |> canonical
+let getFileNameNoExt path =
+    let items = path |> parsePath
+    let fname =
+        if items.Length = 0 then "" else items |> Array.last
+    let dot = fname.LastIndexOf '.'
+    if dot < 0 then fname else fname.Substring(0,dot)
 
-module Storage =
+let cleanSlash (f:string) =
+    f.Replace("\\", "/").Replace("//", "/")
+
+let private combine (path:string) file =
+    sprintf "%s/%s" (path.TrimEnd([|'/'|])) file |> canonical
+
+type IKeyedStorage =
+    abstract Exists: string -> bool
+    abstract Get: string -> string
+    abstract Put: string * string -> unit
+    abstract Remove: string -> unit
+
+module private BrowserStorage =
     let mk rootKey key = sprintf "%s/%s" rootKey key
 
     let exists rootKey key =
@@ -47,6 +95,43 @@ module Storage =
 
     let remove rootKey key =
         window.localStorage.removeItem (mk rootKey key)
+
+type LocalStorage(rootKey : string) =
+    interface IKeyedStorage with
+        member __.Exists (key: string): bool = 
+            BrowserStorage.exists rootKey key
+        member __.Get (key: string): string = 
+            BrowserStorage.getContents rootKey key
+        member __.Put(key, content) = BrowserStorage.setContents rootKey key content
+        member __.Remove (key: string): unit = 
+            BrowserStorage.remove rootKey key
+
+// TODO
+type TODO_IndexedDbStorage(rootKey : string) =
+    let mutable db : Browser.Types.IDBDatabase = Unchecked.defaultof<_>
+    let mutable store : Browser.Types.IDBObjectStore = Unchecked.defaultof<_>
+
+    let init() =
+        let openRequest = Browser.IndexedDB.indexedDB.``open``(rootKey, 1)
+        openRequest.onsuccess <- fun ev ->
+            db <- openRequest.result :> obj :?> Browser.Types.IDBDatabase
+            ()
+        openRequest.onerror <- fun ev ->
+            ()
+        openRequest.onupgradeneeded <- fun ev ->
+            ()
+
+    do
+        init()
+
+    interface IKeyedStorage with
+        member __.Exists (key: string): bool = 
+            BrowserStorage.exists rootKey key
+        member __.Get (key: string): string = 
+            BrowserStorage.getContents rootKey key
+        member __.Put(key, content) = BrowserStorage.setContents rootKey key content
+        member __.Remove (key: string): unit = 
+            BrowserStorage.remove rootKey key
 
 type FileEntry = {
     Type : FileEntryType
@@ -64,6 +149,26 @@ type Root = {
     NextUid : int
 }
 
+type Promise<'T> = Fable.Core.JS.Promise<'T>
+type AsyncResult<'T> = Promise<Result<'T, string>>
+
+module internal ResultHelpers =
+    let inline mkResult (value : unit -> 't) : Result<'t,string> =
+        try
+            value() |> Ok
+        with
+        | x -> x.Message |> Error
+
+    let inline mkAsyncResult (value : unit -> 't) : AsyncResult<'t> =
+        value |> mkResult |> Promise.lift
+        
+    let inline mkAsyncResultP (value : unit -> Promise<'t>) : AsyncResult<'t> =
+        value() 
+        |> Promise.result
+        |> Promise.mapResultError (fun x -> x.Message)
+
+open ResultHelpers
+
 type IReadOnlyFileSystem =
     abstract member Files : path : string -> string[]
     abstract member Folders : path :string -> string[]
@@ -73,6 +178,15 @@ type IReadOnlyFileSystem =
     abstract member GetFileContent : path : string  -> string
     abstract member OnChange : (string -> unit) -> unit
 
+type IReadOnlyFileSystemAsync =
+    abstract member Files : path : string -> AsyncResult<string[]>
+    abstract member Folders : path :string -> AsyncResult<string[]>
+    abstract member Exists : path : string -> AsyncResult<bool>
+    abstract member IsFile : path : string -> AsyncResult<bool>
+    abstract member IsFolder : path : string -> AsyncResult<bool>
+    abstract member GetFileContent : path : string  -> AsyncResult<string>
+    abstract member OnChange : (string -> unit) -> AsyncResult<unit>
+
 type IFileSystem =
     inherit IReadOnlyFileSystem
     abstract member SetFileContent : string * string -> unit
@@ -81,20 +195,66 @@ type IFileSystem =
     abstract member CreateFolder   : string -> unit
     abstract member RenameFile     : string * string -> unit
 
+type IFileSystemAsync =
+    inherit IReadOnlyFileSystemAsync
+    abstract member SetFileContent : string * string -> AsyncResult<unit>
+    abstract member RemoveFile     : path : string -> AsyncResult<unit>
+    abstract member CreateFile     : string * string  -> AsyncResult<unit>
+    abstract member CreateFolder   : string -> AsyncResult<unit>
+    abstract member RenameFile     : string * string -> AsyncResult<unit>
+
+let internal mkAsync( fs : IFileSystem ) : IFileSystemAsync =
+    { new IFileSystemAsync with
+          member _.CreateFile(arg1: string, arg2: string): AsyncResult<unit> = 
+            mkAsyncResult (fun () -> fs.CreateFile(arg1, arg2))
+
+          member _.CreateFolder(arg1: string): AsyncResult<unit> = 
+            mkAsyncResult (fun () -> fs.CreateFolder(arg1))
+
+          member _.Exists(path: string): AsyncResult<bool> = 
+            mkAsyncResult (fun () -> fs.Exists(path))
+
+          member _.Files(path: string): AsyncResult<string array> = 
+            mkAsyncResult (fun () -> fs.Files(path))
+
+          member _.Folders(path: string): AsyncResult<string array> = 
+            mkAsyncResult (fun () -> fs.Folders(path))
+
+          member _.GetFileContent(path: string): AsyncResult<string> = 
+            mkAsyncResult (fun () -> fs.GetFileContent(path))
+
+          member _.IsFile(path: string): AsyncResult<bool> = 
+            mkAsyncResult (fun () -> fs.IsFile(path))
+
+          member _.IsFolder(path: string): AsyncResult<bool> = 
+            mkAsyncResult (fun () -> fs.IsFolder(path))
+
+          member _.OnChange(arg1: string -> unit): AsyncResult<unit> = 
+            mkAsyncResult (fun () -> fs.OnChange(arg1))
+
+          member _.RemoveFile(path: string): AsyncResult<unit> = 
+            mkAsyncResult (fun () -> fs.RemoveFile(path))
+
+          member _.RenameFile(arg1: string, arg2: string): AsyncResult<unit> = 
+            mkAsyncResult (fun () -> fs.RenameFile(arg1, arg2))
+
+          member _.SetFileContent(arg1: string, arg2: string): AsyncResult<unit> = 
+            mkAsyncResult (fun () -> fs.SetFileContent(arg1, arg2))
+    }
 
 [<AutoOpen>]
 module IFileSystemExt =
     type IFileSystem with
         static member Combine( a, b ) = combine a b |> canonical
         static member GetFolderName path = getFolderName path
-        static member GetFileName path = getFileName path
+        static member GetFileName path = getFileNameWithExt path
+        static member GetFileNameNoExt path = getFileNameNoExt path
         static member GetExtension (path : string) =
-            let fileName = getFileName path
+            let fileName = getFileNameWithExt path
             let p = fileName.LastIndexOf('.')
             if p < 0 then "" else fileName.Substring(p)
 
-type LocalStorageFileSystem( rootKey : string ) =
-
+type KeyedStorageFileSystem( keyStorage : IKeyedStorage ) =
     //let mutable root : FileEntry = { Type = Folder; Name = "/"; Uid = 0; Content = ""; Children = Array.empty }
     let mutable root = { NextUid = 1 }
 
@@ -105,20 +265,20 @@ type LocalStorageFileSystem( rootKey : string ) =
     let uidKey uid = sprintf "uid:%d" uid
 
     let delEntry (e : FileEntry) =
-        Storage.remove rootKey (uidKey e.Uid)
+        keyStorage.Remove (uidKey e.Uid)
 
     let putEntry (e : FileEntry) =
-        Storage.setContents rootKey (uidKey e.Uid) (Thoth.Json.Encode.Auto.toString(e))
+        keyStorage.Put( (uidKey e.Uid), (Thoth.Json.Encode.Auto.toString(e)) )
 
     let getEntry uid =
-        match Thoth.Json.Decode.Auto.fromString<FileEntry>( Storage.getContents rootKey (uidKey uid) ) with
+        match Thoth.Json.Decode.Auto.fromString<FileEntry>( keyStorage.Get (uidKey uid) ) with
         | Ok r -> Some r
         | Error msg ->
             Fable.Core.JS.console.log(sprintf "Error: getEntry %A: %A" uid msg)
             None
 
     let entryExists uid =
-        Storage.exists rootKey uid
+        keyStorage.Exists uid
 
     let nameOf (e:FileEntry) = e.Name
 
@@ -221,15 +381,15 @@ type LocalStorageFileSystem( rootKey : string ) =
         |> Option.defaultValue Array.empty
 
     let putRoot() =
-        Storage.setContents rootKey "(root)" (Thoth.Json.Encode.Auto.toString root)
+        keyStorage.Put( "(root)", (Thoth.Json.Encode.Auto.toString root) )
 
     let initRoot() =
 
-        if not (Storage.exists rootKey (uidKey 0)) then
+        if not (keyStorage.Exists(uidKey 0)) then
             { Type = Folder; Name = "/"; Uid = 0; Content = ""; Children = Array.empty }
             |> putEntry
 
-        Storage.getContents rootKey "(root)"
+        keyStorage.Get("(root)")
             |> function
             | s when s <> null -> 
                 match Thoth.Json.Decode.Auto.fromString<Root>(s) with
@@ -279,7 +439,7 @@ type LocalStorageFileSystem( rootKey : string ) =
             notifyOnChange fname
 
     let createFolder folderPath notify=
-        let name = getFileName folderPath
+        let name = getFileNameWithExt folderPath
         let parent = getFolderName folderPath
 
         validateFileName name
@@ -340,7 +500,7 @@ with
                 failwith ("Not a file: " + cpath)
 
             if not (isFile cpath) then
-                createFile (cpath |> getFolderName) (cpath |> getFileName) false
+                createFile (cpath |> getFolderName) (cpath |> getFileNameWithExt) false
 
             getEntryByPath cpath
             |> Option.iter (fun e -> { e with Content = content } |> putEntry)
@@ -355,7 +515,7 @@ with
             getEntryByPath path |>
             Option.map (fun entry ->
                 let folderName = getFolderName path
-                let fileName = getFileName path
+                let fileName = getFileNameWithExt path
 
                 folderName |> getEntryByPath
                 |> Option.iter (fun parentEntry ->
@@ -376,12 +536,14 @@ with
             notifyOnChange path
 
         member _.CreateFolder( path : string ) =
-            createFolder path false
+            createFolder path true
 
         member __.CreateFile( path : string, name : string ) =
             createFile path name true
 
         member __.RenameFile( path : string, newNameOrPath : string ) =
+            Fable.Core.JS.console.log("RenameFile", path, newNameOrPath)
+
             let cpath = path |> canonical
 
             let npath =
@@ -402,31 +564,60 @@ with
 
             let cparent = getFolderName cpath
             let nparent = getFolderName npath
-            let cname = getFileName cpath
-            let nname = getFileName npath
+            let cname = getFileNameWithExt cpath
+            let nname = getFileNameWithExt npath
 
             if not (isEntry nparent) then
                 failwith ("Parent folder for rename target does not exist: " + nparent)
 
-            getEntryByPath path
+            //Fable.Core.JS.console.log("RenameFile: ", cparent, cname, nparent, nname)
+            getEntryByPath cpath
             |> Option.map (fun entry ->
-                if cparent = nparent then
-                    cparent |> getEntryByPath
+
+                    cparent 
+                    |> getEntryByPath
                     |> Option.map (fun parentEntry ->
-                        { parentEntry with Children = parentEntry.Children |> Array.map (fun (name, uid) -> if name = cname then (nname, uid) else (name, uid) )}
-                            |> putEntry
-                        { entry with Name = nname }
-                            |> putEntry
+
+                        if nparent = cparent then
+
+                            { parentEntry with Children = parentEntry.Children |> Array.map (fun (name, uid) -> if name = cname then (nname, uid) else (name, uid) )}
+                                |> putEntry
+
+                            { entry with Name = nname }
+                                |> putEntry
+                        else
+                            nparent
+                            |> getEntryByPath
+                            |> Option.map (fun destParentEntry ->
+
+                                { parentEntry with Children = parentEntry.Children |> Array.filter (fun (name, _) -> name <> cname )}
+                                    |> putEntry
+
+                                { destParentEntry with Children = Array.append destParentEntry.Children [| nname, entry.Uid |]  }
+                                    |> putEntry
+
+                                { entry with Name = nname }
+                                    |> putEntry
+
+                            )
+                            |> Option.defaultWith (fun _ ->
+                                failwith ("Cannot find entry for target " + nparent)
+                            )
+
                     )
                     |> Option.defaultWith (fun _ ->
                         failwith ("Cannot find entry for parent " + cparent)
                     )
+
             )
             |> Option.defaultWith (fun _ ->
                 failwith ("Cannot find entry for " + path)
             )
 
             notifyOnChange path
+
+type LocalStorageFileSystem( rootKey : string ) =
+    inherit KeyedStorageFileSystem( new LocalStorage(rootKey) )
 
 type MountedFileSystem( fs : IFileSystem, mountPoint : string) =
     let makePath( path : string ) = IFileSystem.Combine(mountPoint, path)
@@ -480,6 +671,71 @@ type MountedFileSystem( fs : IFileSystem, mountPoint : string) =
 module Extensions = 
 
     type IFileSystem with
+
+        /// Wraps the non-async methods so that this instance can be passed to an 
+        /// API that wants IFileSystemAsync
+        member __.GetAsync() : IFileSystemAsync =
+            mkAsync __
+
+        member __.CreateFolderRecursive (path : string) =
+            if __.IsFile path then
+                failwith ("File exists: " + path)
+            else if __.IsFolder path then
+                ()
+            else
+                match IFileSystem.GetFolderName path with 
+                | "" -> ()
+                | parent -> __.CreateFolderRecursive parent
+                __.CreateFolder path
+                
+        member __.FilesRecursive (path : string) : string []=
+            Array.append (__.Folders path) (__.Files path) 
+            |> Array.collect ( fun f -> 
+                let p = combine path f
+                if __.IsFile p then
+                    [| p |]
+                else
+                    __.FilesRecursive p
+            )
+
+        member __.CopyFile( src : string, tgt : string ) =
+            if __.Exists src then
+                if __.Exists tgt then
+                    failwith ("Cannot copy, file exists: " + tgt)
+                let item = __.GetFileContent src
+                __.SetFileContent(tgt,item)
+            else
+                failwith ("File does not exist: " + src)
+
+        member fs.Copy( src : string, dst : string ) =
+            let copyFileFs path (fs : IFileSystem) (fs2 : IFileSystem) =
+                fs2.CreateFolderRecursive (IFileSystem.GetFolderName path)
+                fs2.SetFileContent( path, fs.GetFileContent path )
+
+            let copyFolderFs path (fs : IFileSystem) (fs2 : IFileSystem) =
+                fs.FilesRecursive path |> Array.iter (fun file -> copyFileFs file fs fs2)
+
+            if fs.IsFolder src then
+                if fs.IsFile dst then 
+                    failwith "Attempt to copy folder to file"
+
+                let dst = if fs.IsFolder dst then combine dst (IFileSystem.GetFileName src) else dst
+
+                if fs.Exists dst then   
+                    failwith ("File/folder exists: " + dst)
+
+                if src.StartsWith dst || dst.StartsWith src then
+                    failwith "Attempt to copy folder to itself"
+
+                fs.CreateFolder dst
+
+                let dstFs = MountedFileSystem(fs, dst)
+                let srcFs = MountedFileSystem(fs, src)
+
+                copyFolderFs "/" srcFs dstFs
+            else
+                let dst = if fs.IsFolder dst then combine dst (IFileSystem.GetFileName src) else dst
+                fs.CopyFile( src, dst )
 
         member __.Remove( path : string ) =
             if (__.IsFolder path ) then

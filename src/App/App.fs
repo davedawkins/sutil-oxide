@@ -352,7 +352,11 @@ let initPanes  (fileExplorer : FileExplorer.FileExplorer) (textEditor : TextEdit
             )
         |> Html.span
 
-    dc.AddPane( "Explorer",      LeftTop,     fileExplorer.View)
+    dc.AddPane( 
+        "Explorer",
+        LeftTop,     
+        fileExplorer.View( (fun _ -> ""), (fun _ -> ""))
+    )
     dc.AddPane( "Database",      LeftTop,     dummy "Database" "hsl(43, 100%, 95%)", false )
     dc.AddPane( "Solution",      LeftTop,     dummy "Solution" "hsl(43, 100%, 95%)", false )
 
@@ -390,7 +394,7 @@ let initPanes  (fileExplorer : FileExplorer.FileExplorer) (textEditor : TextEdit
 open Toolbar
 
 let view () =
-    let dc = DockContainer( Options.Create() )
+    let dc = DockContainer()
     let app = { Fs = LocalStorageFileSystem("oxide-demo") }
     let graph = exampleGraph
 

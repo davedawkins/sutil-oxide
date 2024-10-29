@@ -101,17 +101,17 @@ module DomHelpers =
             document.body.addEventListener("pointermove", !!mouseDragHandler)
         )
 
-    let resizeControllerEw (direction : int) =
-        resizeController (fun e -> e.pageX) getPaneWidth setPaneWidth setPaneWidth direction
+    let resizeControllerEw (direction : int) commit =
+        resizeController (fun e -> e.pageX) getPaneWidth setPaneWidth (fun e s -> setPaneWidth e s; commit()) direction
 
-    let resizeControllerNs (direction : int) =
-        resizeController (fun e -> e.pageY) getPaneHeight setPaneHeight setPaneHeight direction
+    let resizeControllerNs (direction : int) commit =
+        resizeController (fun e -> e.pageY) getPaneHeight setPaneHeight (fun e s -> setPaneHeight e s; commit()) direction
 
-    let resizeControllerNsFlex (direction : int) =
-        resizeController (fun e -> e.pageY) getPaneHeight setPaneHeightUsingFlexGrow setPaneHeightUsingFlexGrow direction
+    let resizeControllerNsFlex (direction : int) commit =
+        resizeController (fun e -> e.pageY) getPaneHeight setPaneHeightUsingFlexGrow (fun e s -> setPaneHeightUsingFlexGrow e s; commit()) direction
 
-    let resizeControllerEwFlex (direction : int) =
-        resizeController (fun e -> e.pageX) getPaneWidth setPaneWidthUsingFlexGrow setPaneWidthUsingFlexGrow direction
+    let resizeControllerEwFlex (direction : int) commit =
+        resizeController (fun e -> e.pageX) getPaneWidth setPaneWidthUsingFlexGrow (fun e s -> setPaneWidthUsingFlexGrow e s; commit()) direction
 
     let toListFromNodeList (l : NodeListOf<'a>) =
         [0..l.length-1] |> List.map (fun i -> l.item(i),i)

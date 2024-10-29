@@ -1,4 +1,3 @@
-
 module SutilOxide.FileExplorer
 
 //
@@ -51,16 +50,16 @@ type Model = {
     Editing : string
 }
 
-let saveSessionState (m : Model) =
-    window.localStorage.setItem("file-explorer-session", Encode.Auto.toString { Cwd = m.Cwd; Selected = m.Selected; Editing = m.Editing})
+// let saveSessionState (m : Model) =
+//     window.localStorage.setItem("file-explorer-session", Encode.Auto.toString { Cwd = m.Cwd; Selected = m.Selected; Editing = m.Editing})
 
-let loadSessionState() =
-    match (window.localStorage.getItem("file-explorer-session")) with
-    | null -> None
-    | s -> 
-        match Decode.Auto.fromString<SessionState>(s) with
-        | Ok r -> r |> Some
-        | Error _ -> None
+// let loadSessionState() =
+//     match (window.localStorage.getItem("file-explorer-session")) with
+//     | null -> None
+//     | s -> 
+//         match Decode.Auto.fromString<SessionState>(s) with
+//         | Ok r -> r |> Some
+//         | Error _ -> None
 
 let defaultSessionState() = {
     Cwd = "/"
@@ -80,7 +79,7 @@ let init (fs : IFileSystem, s : SessionState) =
     }, if s.Editing <> "" then Cmd.ofMsg (Edit s.Editing) else Cmd.none
 
 let update edit msg model =
-//    Fable.Core.JS.console.log (sprintf "update %A selected=%s" msg (model.Selected))
+    Fable.Core.JS.console.log (sprintf "update %A selected=%s" msg (model.Selected))
     match msg with
     | Refresh -> { model with RefreshId = model.RefreshId + 1 }, Cmd.none
     | SetCwd d -> { model with Cwd = d }, Cmd.none
@@ -113,6 +112,11 @@ let update edit msg model =
                 let path = model.Selected
                 if model.Fs.IsFile path then
                     model.Fs.RemoveFile path
+                elif model.Fs.IsFolder path then
+                    if (model.Fs.Files path).Length = 0 then
+                        model.Fs.RemoveFile path
+                    else
+                        failwith ("Folder is not empty")
                 else
                     failwith ("Not a file: " + path)
 
@@ -132,7 +136,7 @@ let update edit msg model =
 
 let updateWithSaveSession edit msg model =
     let result = update edit msg model
-    saveSessionState (fst result)
+    //saveSessionState (fst result)
     result
 
 let css = [
@@ -140,6 +144,7 @@ let css = [
         Css.displayFlex
         Css.flexDirectionColumn
         Css.gap (rem 0.5)
+        Css.userSelectNone
     ]
 
     rule ".file-explorer-buttons" [
@@ -171,6 +176,16 @@ let css = [
         Css.backgroundColor "#DDDDDD"
     ]
 
+    rule ".file-explorer i" [
+        Css.displayInlineBlock
+        Css.width (rem 1.2)
+//        Css.color ("#888888")
+    ]
+
+    rule ".file-explorer .dragging" [
+        Css.opacity 0.5
+    ]
+
 ]
 let buttons m dispatch=
     UI.divc "file-explorer-buttons" [
@@ -200,20 +215,59 @@ let buttons m dispatch=
         ]
     ]
 
-let fileExplorer dispatch (m : Model) =
+let isRoot f = f = "/" || f = ""
+
+let fileExplorer (classifier : string -> string) iconselector dispatch (m : Model) =
 
     let cwd = m.Cwd
     let fs = m.Fs
 
+    let icon path def =
+        match iconselector path with
+        | "" -> def
+        | s -> s
+
     UI.divc "file-explorer" [
         //buttons m dispatch
         UI.divc "file-explorer-entries" [
+
+            if (not (isRoot cwd)) then
+                let parent = IFileSystem.GetFolderName(cwd)
+                UI.divc ("fx-folder " + classifier "[parent]") [
+                    Html.ic (icon "[parent]" "fa fa-arrow-up") []
+                    text "[parent]"
+                    Ev.onMouseDown( fun e ->
+                        e.stopPropagation()
+                        e.preventDefault()
+                    )
+                    Ev.onMouseUp( fun e ->
+                        DomHelpers.rafu (fun _ -> parent |> SetSelected |> dispatch)
+                    )
+                    Ev.onDblClick (fun e ->
+                        e.preventDefault(); 
+                        dispatch (SetCwd parent)
+                    )
+                    if m.Selected = parent then
+                        Attr.className "selected"
+                ]
+
             fs.Folders(cwd)
                 |> Array.map (fun name ->
                     let path = IFileSystem.Combine(cwd, name)
-                    UI.divc "fx-folder" [
+                    UI.divc ("fx-folder " + classifier path) [
+                        Html.ic (icon path "fa fa-folder") []
                         text name
-                        Ev.onClick (fun _ -> path |> SetSelected |> dispatch )
+                        Ev.onMouseDown( fun e ->
+                            e.stopPropagation()
+                            e.preventDefault()
+                        )
+                        Ev.onMouseUp( fun e ->
+                            DomHelpers.rafu (fun _ -> path |> SetSelected |> dispatch)
+                        )
+                        Ev.onDblClick (fun e ->
+                            e.preventDefault(); 
+                            dispatch (SetCwd (IFileSystem.Combine (cwd, name)))
+                        )
                         if m.Selected = path then
                             Attr.className "selected"
                     ])
@@ -241,18 +295,28 @@ let fileExplorer dispatch (m : Model) =
                             )
                         ]
                     else
-                        UI.divc "fx-file" [
+                        UI.divc ("fx-file " + classifier path) [
+                            Attr.draggable true
+
+                            Html.ic (icon path "fa fa-file-o") []
                             text name
-                            Ev.onMouseDown( fun e ->
-                                e.stopPropagation()
-                                e.preventDefault()
+
+                            Ev.onClick (fun e ->
+                                DomHelpers.timeout (fun _ -> path |> SetSelected |> dispatch) 10
+                                    |> ignore
                             )
-                            Ev.onMouseUp( fun e ->
-                                DomHelpers.rafu (fun _ -> path |> SetSelected |> dispatch)
-                            )
+
                             Ev.onDblClick (fun e ->
-                                m.Selected |> Edit |> dispatch
+                                name |> Edit |> dispatch
                             )
+
+                            // Ev.onDragStart (fun e ->
+                            //     (e.target :?> HTMLElement).classList.add "dragging"
+                            // )
+
+                            // Ev.onDragEnd( fun e ->
+                            //     (e.target :?> HTMLElement).classList.remove "dragging"
+                            // )
                             if m.Selected = path then
                                 Attr.className "selected"
                 ])
@@ -268,19 +332,20 @@ type FileExplorer( fs : IFileSystem ) =
     let mutable onEdit : string -> unit = ignore
 
     let create fs =
-        let sessionState = loadSessionState() |> Option.defaultWith defaultSessionState
-        let model, dispatch = (fs,sessionState) |> Sutil.Store.makeElmish init (updateWithSaveSession (fun f -> onEdit f)) ignore
-        model, dispatch
+        //let sessionState = loadSessionState() |> Option.defaultWith defaultSessionState
+        (fs,defaultSessionState()) |> Sutil.Store.makeElmish init (updateWithSaveSession (fun f -> onEdit f)) ignore
 
     let model, dispatch = create fs
 
-    let view () =
-        Bind.el( model, fileExplorer dispatch )
+    let view  classifier iconselector =
+        Bind.el( model, fileExplorer classifier iconselector dispatch )
 
     do
         fs.OnChange( fun _ -> dispatch Refresh )
 
     with
-        member _.View = view()
+        member _.View( classifier : string -> string, iconselector : string -> string ) = view classifier iconselector 
         member _.OnEdit( h : string -> unit) = onEdit <- h
         member _.Dispatch = dispatch
+        member _.Selected = model.Value.Selected
+        member _.CurrentFolder = model.Value.Cwd        
