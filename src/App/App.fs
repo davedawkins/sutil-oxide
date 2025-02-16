@@ -2,7 +2,6 @@ module App
 
 open System
 open Sutil
-//open Sutil.Toastr
 open Sutil.Core
 open Sutil.CoreElements
 open Sutil.Styling
@@ -39,7 +38,7 @@ type Model = {
     Editing : string option
     NeedsSave : bool
     Log : string
-    Graph : SutilOxide.Flow.Types.Graph
+    // Graph : SutilOxide.Flow.Types.Graph
 }
 
 let lorem = "Nunc dapibus tempus sapien, vitae efficitur nunc posuere non. Suspendisse in placerat turpis, at sodales nisl. Etiam in tempus nulla. Praesent sed interdum ligula. Sed non nisl est. Praesent vel metus magna. Morbi eget mi est. Nam volutpat purus ligula, ut convallis libero rhoncus ac. "
@@ -49,12 +48,11 @@ type Message =
     | Nop
     | SetTheme of Theme
     | SetPreviewText of string
-    | SimpleProgressBar
     | Edit of string
     | SaveEdits
     | SetEdited of bool
     | DeleteFile of bool * (unit->unit)
-    | SetGraph of Flow.Types.Graph
+    // | SetGraph of Flow.Types.Graph
 
 let log = SutilOxide.Logging.log
 
@@ -71,20 +69,20 @@ let uploadFile (url : string) (targetFileName : string) (fs : IFileSystem)  =
         fs.SetFileContent( targetFileName, content )
     }
 
-let init (app : AppContext, graph) =
+let init (app : AppContext) =
     {
         Theme = Light
         PreviewText = "(no markdown to preview)"
         Editing = None
         NeedsSave = false
-        Graph = graph
+        // Graph = graph
         Log = "" },
     //Cmd.none
     Cmd.OfPromise.perform (uploadFile "README.md" "README.md") app.Fs (fun _ -> Edit "README.md")
 
-let update (app : AppContext) (textEditor : TextEditor.Editor) msg model =
+let update (app : AppContext) (textEditor : TextEditor.Editor) msg model : Model * Cmd<Message> =
     match msg with
-    | SetGraph g -> { model with Graph = g }, Cmd.none
+    // | SetGraph g -> { model with Graph = g }, Cmd.none
     | AppendToLog m ->
         { model with Log = model.Log + m + "\n" }, Cmd.none
     | DeleteFile (confirmed,delete) ->
@@ -119,13 +117,6 @@ let update (app : AppContext) (textEditor : TextEditor.Editor) msg model =
     | SetTheme t -> { model with Theme = t }, Cmd.none
     | SetPreviewText s ->
         { model with PreviewText = s}, Cmd.none
-    | SimpleProgressBar ->
-        let cmd = Cmd.none
-            // Toastr.message "Countdown has started"
-            // |> Toastr.title "Be aware"
-            // |> Toastr.withProgressBar
-            // |> Toastr.warning
-        model, cmd
     | Edit name ->
         //startEdit (app.Fs) name
         // if model.NeedsSave then
@@ -236,19 +227,6 @@ let mainLog (model : IObservable<Model>) =
         )
     ]
 
-open Flow
-let exampleGraph : Graph = {
-    Nodes = Map [
-        "n1", Node.Create("n1", "Hello", 250.0, 50.0)
-        "n2", Node.Create("n2", "World", 250.0, 150.0)
-        "n3", Node.Create("n3", "No Select", 50.0, 50.0)
-        "n4", Node.Create("n4", "No Move", 50.0, 150.0)
-    ]
-    Edges = Map [
-        "e1", Edge.Create( "e1", "n1", "out", "n2", "in")
-    ]
-}
-
 let catalogStyle = [
     rule ".flow-catalog" [
         Css.displayFlex
@@ -293,52 +271,6 @@ let catalogTypes = [
 let clockS = Store.make (System.DateTime.Now)
 
 DomHelpers.interval (fun _ -> DateTime.Now |> Store.set clockS) 500 |> ignore
-
-let flowCatalog() =
-    Html.divc "flow-catalog" [
-        yield! catalogTypes |> List.map (fun t -> Flow.Views.makeCatalogItem(t,catalogItem t ))
-    ] |> withStyle catalogStyle
-
-let flowGraph graph dispatch =
-    let options' = GraphOptions.Create()
-    let nodeFactory(name,typ) =
-        options'.NodeFactory(name,typ)
-    let viewNode (nodeS : IReadOnlyStore<Node>) =
-        let node = nodeS.Value
-        if (node.Id.StartsWith("Clock")) then
-            Html.div [
-                Bind.el( clockS, fun c -> Html.span (c.ToLongTimeString()))
-            ]
-        else if (node.Id.StartsWith("Start")) then
-            Html.div [
-                Bind.el( getNodeStore node.Id, Html.span)
-            ]
-        else
-            options'.ViewNode(nodeS)
-    let fc = Flow.FlowChart( 
-        { options' with 
-                NodeFactory = nodeFactory 
-                ViewNode = viewNode
-                OnChange = (dispatch<<SetGraph)
-                } )
-
-    fc.Render(graph)
-
-let runGraph (g : Graph) =
-    let threads = g.Nodes.Values |> Seq.map (fun n ->
-        if n.Id.StartsWith("Start") then
-            promise {
-                let mutable i = 0
-                while true do
-                    do! Promise.sleep 1000
-                    i <- i + 1 
-                    (string i) |> Store.set (getNodeStore n.Id)
-
-            }
-        else 
-            promise { return () }
-    )
-    threads |> Promise.all |> Promise.start
 
 let initPanes  (fileExplorer : FileExplorer.FileExplorer) (textEditor : TextEditor.Editor) (model : IStore<Model>) dispatch (dc : DockContainer)  =
 
@@ -386,9 +318,6 @@ let initPanes  (fileExplorer : FileExplorer.FileExplorer) (textEditor : TextEdit
         textEditor.View,
         true )
 
-    dc.AddPane( "Catalog",       LeftTop, flowCatalog(), true )
-    dc.AddPane( "Graph",         CentreCentre, flowGraph (model |> Store.getMap (fun m -> m.Graph)) dispatch , true )
-
     ()
 
 open Toolbar
@@ -396,7 +325,6 @@ open Toolbar
 let view () =
     let dc = DockContainer()
     let app = { Fs = LocalStorageFileSystem("oxide-demo") }
-    let graph = exampleGraph
 
     // Text editor control
     let textEditor = TextEditor.Editor( app.Fs )
@@ -405,7 +333,7 @@ let view () =
     //let (modelFx,dispatchFx) = SutilOxide.FileExplorer.create (dispatch << Edit) app.Fs
 
     // Main model and dispatch
-    let model, dispatch = (app,graph) |> Store.makeElmish (init) (update app textEditor) ignore
+    let model, dispatch = (app) |> Store.makeElmish (init) (update app textEditor) ignore
 
     textEditor.OnEditedChange( dispatch << SetEdited )
     SutilOxide.Logging.appendHandler( dispatch << AppendToLog )
@@ -461,7 +389,6 @@ let view () =
                     checkItem [ Label "Dark"; IsChecked (t = Dark); OnCheckChanged (fun b -> if b then dispatch (SetTheme Dark))]
                 ])
             ]
-            buttonItem [ Label "Run"; Icon "fa-play"; OnClick (fun _ -> runGraph(model |> Store.getMap (fun m->m.Graph)))]
 
             buttonItem [ Label "Help"; Icon "fa-life-ring"; OnClick (fun _ -> dc.SetProperty( "Help", Visible true))]
         ]

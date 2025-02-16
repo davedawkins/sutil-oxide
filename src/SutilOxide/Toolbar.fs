@@ -10,17 +10,12 @@ open Browser.CssExtensions
 open Sutil.Core
 open Sutil.CoreElements
 open Sutil
-open Sutil.Styling
-open type Feliz.length
-open Fable.Core
 open Fable.Core.JsInterop
 open Browser.Types
-open SutilOxide.Css
 
 type UI =
     static member divc (cls:string) (items : seq<SutilElement>) =
         Html.div [ Attr.className cls ; yield! items ]
-
 
 type ButtonMode =
     | Checkbox
@@ -30,6 +25,7 @@ type DisplayMode =
     | LabelOnly
     | IconOnly
     | LabelIcon
+
 type ButtonProperty =
     | Display of DisplayMode
     | Mode of ButtonMode
@@ -150,6 +146,16 @@ let mkButton b =
         disposeOnUnmount [ checkedS ]
         Attr.className ("xd-item-button" + (if b.Mode = Checkbox then " checkbox" else ""))
         Attr.href "-"
+        
+        if b.Mode = Checkbox then
+            Attr.roleCheckbox
+        else
+            Attr.roleButton
+
+        match b.Label with
+        | Some label -> Attr.custom("data-cmd", label.ToLower().Replace(" ", "-"))
+        | _ -> ()
+        
         match b.Mode, b.Icon, b.Display with
 
         | Checkbox, _, _ ->
@@ -227,11 +233,25 @@ let statusbar props items =
 let checkItem props =
     { (Button.From props) with Mode = Checkbox; Icon = None; OnClick = None } |> mkButton
 
+let rec findMenuLevel (e : HTMLElement ) =
+    if e = null then 
+        -1
+    else
+        let levelAttr = e.getAttribute("data-menu-level")
+        if levelAttr = null then
+            e.parentElement |> findMenuLevel
+        else
+            levelAttr |> System.Int32.TryParse |> fun (a,b) -> if a then b else -1
+
 let menuItem props items =
     let b = Button.From props
 
     Html.a [
         Attr.className "xd-item-button item-menu"
+
+        CoreElements.hookElement (fun e ->
+            e.setAttribute("data-menu-level", (e.parentElement) |> findMenuLevel |> string )
+        )
 
         b.Icon
             |> Option.map (fun icon ->  Html.i [ Attr.className ("fa " + icon) ])
@@ -248,6 +268,7 @@ let menuItem props items =
         Html.i [ Attr.className "fa fa-angle-right"]
 
         Attr.href "-"
+
         menuStack items
     ]
 
@@ -255,6 +276,7 @@ let dropDownItem props items =
     Html.a [
         Attr.className "xd-item-button xd-dropdown"
         Attr.href "-"
+        Attr.custom("data-menu-level", "0")
 
         yield! props |> Seq.map (fun p ->
 

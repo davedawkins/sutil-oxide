@@ -862,12 +862,6 @@ let overrides (theme : Theme) = [
 
 let Styling (t : Theme) = baseStyling t @ dockStyling t @ toolbarStyling t @ overrides t
 
-open Browser.DomExtensions
-open Browser.CssExtensions
-open Browser.Dom
-
-//let oxide (e : Sutil.DOM.SutilElement) = e |> withStyle Styling
-
 let installStyling (t : Theme) =
     addGlobalStyleSheet Browser.Dom.document (Styling t)
 

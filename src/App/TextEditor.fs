@@ -3,8 +3,6 @@ module TextEditor
 open Fable.Core.JsInterop
 open SutilOxide.AceEditor
 open Sutil
-open Sutil.Core
-open Sutil.CoreElements
 open SutilOxide.FileSystem
 open type Feliz.length
 

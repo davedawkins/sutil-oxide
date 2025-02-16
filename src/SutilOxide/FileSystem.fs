@@ -8,6 +8,9 @@ open System
 //open Fable.SimpleJson
 open Browser
 
+type Promise<'T> = Fable.Core.JS.Promise<'T>
+type AsyncResult<'T> = Promise<Result<'T, string>>
+
 type Uid = int
 type FileEntryType =
     | File
@@ -81,6 +84,12 @@ type IKeyedStorage =
     abstract Put: string * string -> unit
     abstract Remove: string -> unit
 
+type IKeyedStorageAsync =
+    abstract Exists: string -> Promise<bool>
+    abstract Get: string -> Promise<string>
+    abstract Put: string * string -> Promise<unit>
+    abstract Remove: string -> Promise<unit>
+
 module private BrowserStorage =
     let mk rootKey key = sprintf "%s/%s" rootKey key
 
@@ -106,32 +115,12 @@ type LocalStorage(rootKey : string) =
         member __.Remove (key: string): unit = 
             BrowserStorage.remove rootKey key
 
-// TODO
-type TODO_IndexedDbStorage(rootKey : string) =
-    let mutable db : Browser.Types.IDBDatabase = Unchecked.defaultof<_>
-    let mutable store : Browser.Types.IDBObjectStore = Unchecked.defaultof<_>
 
-    let init() =
-        let openRequest = Browser.IndexedDB.indexedDB.``open``(rootKey, 1)
-        openRequest.onsuccess <- fun ev ->
-            db <- openRequest.result :> obj :?> Browser.Types.IDBDatabase
-            ()
-        openRequest.onerror <- fun ev ->
-            ()
-        openRequest.onupgradeneeded <- fun ev ->
-            ()
+module KeyedStorageIndexedDB =
+    open Fable.Core
 
-    do
-        init()
+    let [<Import("createKeyedStorageIndexedDB", "./KeyedStorageIndexedDB.js")>] KeyedStorageIndexedDB () : IKeyedStorageAsync = jsNative
 
-    interface IKeyedStorage with
-        member __.Exists (key: string): bool = 
-            BrowserStorage.exists rootKey key
-        member __.Get (key: string): string = 
-            BrowserStorage.getContents rootKey key
-        member __.Put(key, content) = BrowserStorage.setContents rootKey key content
-        member __.Remove (key: string): unit = 
-            BrowserStorage.remove rootKey key
 
 type FileEntry = {
     Type : FileEntryType
@@ -148,9 +137,6 @@ type FileContent =
 type Root = {
     NextUid : int
 }
-
-type Promise<'T> = Fable.Core.JS.Promise<'T>
-type AsyncResult<'T> = Promise<Result<'T, string>>
 
 module internal ResultHelpers =
     let inline mkResult (value : unit -> 't) : Result<'t,string> =
@@ -737,6 +723,7 @@ module Extensions =
                 let dst = if fs.IsFolder dst then combine dst (IFileSystem.GetFileName src) else dst
                 fs.CopyFile( src, dst )
 
+        /// Remove file/folder recursively
         member __.Remove( path : string ) =
             if (__.IsFolder path ) then
                 __.Files(path) 

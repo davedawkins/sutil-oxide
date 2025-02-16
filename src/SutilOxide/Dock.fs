@@ -319,10 +319,19 @@ let private _update (options : unit -> Options) (unmount : string -> unit) msg (
                 { model with DraggingTab = Some { d with Preview = dockLoc } }
         m, Cmd.none
 
+let private shouldNotifyConfiguration msg =
+    match msg with
+    | PreviewDockLocation _ | CancelDrag | SetDragging _ -> false
+    | _ -> true
+
 let private update (options : unit -> Options) (unmount : string -> unit) msg (model : Model) =
-    // Fable.Core.JS.console.log(sprintf "DOCK: %A" msg)
+    //Fable.Core.JS.console.log(sprintf "DOCK: %A" msg)
     let m, c = _update options unmount msg model
-    m, Cmd.batch [ c; [ fun _ -> options().OnConfigurationChanged() ] ]
+    m, 
+        if shouldNotifyConfiguration msg then
+            Cmd.batch [ c; [ fun _ -> options().OnConfigurationChanged() ] ]
+        else
+            c
 
 [<AutoOpen>]
 module ModelHelpers =

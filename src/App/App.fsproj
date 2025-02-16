@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>netstandard2.0</TargetFramework>
+    <TargetFramework>net8</TargetFramework>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="TextEditor.fs" />
@@ -10,7 +10,6 @@
     <PackageReference Include="Fable.Formatting.Markdown" Version="1.0.1" />
     <PackageReference Include="Fable.Fetch" Version="2.*" />
     <ProjectReference Include="..\SutilOxide\SutilOxide.fsproj" />
-    <!-- <PackageReference Include="Sutil.Toastr" Version="1.0.6"/> -->
 </ItemGroup>
   <Target Name="ReallyClean" AfterTargets="Clean">
     <!-- Remove obj folder -->

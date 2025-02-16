@@ -13,7 +13,7 @@
     <Compile Include="FileSystem.fs" />
     <Compile Include="Css.fs" />
     <Compile Include="CellEditor.fs" />
-    <Compile Include="Flow.fs" />
+    <!-- <Compile Include="Flow.fs" /> -->
     <Compile Include="Toolbar.fs" />
     <Compile Include="DomHelpers.fs" />
     <Compile Include="FileExplorer.fs" />
