@@ -19,7 +19,7 @@ let initAce hostElement onChange =
     editor.on_change( fun _ -> onChange() )
     editor
 
-type Editor(fs : IFileSystem ) =
+type Editor(fs : IFileSystemAsyncP ) =
     let mutable editor : Ace.Editor = Unchecked.defaultof<_>
 
     let mutable editing = ""
@@ -27,7 +27,7 @@ type Editor(fs : IFileSystem ) =
 
     let save() =
         if editing <> "" then
-            fs.SetFileContent( editing, editor.getValue() )
+            fs.SetFileContent( editing, editor.getValue() ) |> Promise.start
             onEditedChange false
 
     let createDiv() =
@@ -52,11 +52,16 @@ type Editor(fs : IFileSystem ) =
             //     )
         ]
 
-    let startEdit (e : SutilOxide.AceEditor.Ace.Editor) (fs : IFileSystem) (path:string) =
-        e.setValue (fs.GetFileContent(path), -1) |> ignore
+    let startEdit (e : SutilOxide.AceEditor.Ace.Editor) (fs : IFileSystemAsyncP) (path:string) =
+
+        fs.GetFileContent(path) 
+        |> Promise.iter (fun content -> 
+            e.setValue (content, -1) |> ignore
+        )
+
         e.session.getUndoManager().reset()
 
-        match IFileSystem.GetExtension(path) with
+        match Path.getExtension(path) with
         | ".css" ->
             e.session.setMode( Fable.Core.U2.Case1 "ace/mode/css" )
         | ".js" ->

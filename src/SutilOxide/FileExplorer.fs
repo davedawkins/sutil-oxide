@@ -16,6 +16,7 @@ open Sutil.CoreElements
 open Sutil.Styling
 
 open type Feliz.length
+open PromiseResult
 
 type UI =
     static member divc (cls:string) (items : seq<SutilElement>) =
@@ -32,7 +33,11 @@ type Msg =
     | RenameTo of string
     | Edit of string
     | Refresh
+    | FetchListing
+//    | TestIsFolder of string
+    | SetCwdForce of string
     | SetCwd of string
+    | SetListing of (string[] * string[])
 
 type SessionState = {
     Cwd : string
@@ -43,11 +48,13 @@ type SessionState = {
 type Model = {
     RefreshId : int // Change this to force a redraw
     Cwd : string
-    Fs : IFileSystem
+    Fs : IFileSystemAsyncP
     Selected : string
     Renaming : bool
     Error : Exception option
     Editing : string
+    Files : string[]
+    Folders : string[]
 }
 
 // let saveSessionState (m : Model) =
@@ -67,32 +74,77 @@ let defaultSessionState() = {
     Editing = ""
 }
 
-let init (fs : IFileSystem, s : SessionState) =
+let init (fs : IFileSystemAsyncP, s : SessionState) =
     {
         RefreshId = 0
         Fs = fs
         Cwd = s.Cwd
         Selected = s.Selected
+        Files = Array.empty
+        Folders = Array.empty
         Error = None
         Renaming = false
         Editing = s.Editing
-    }, if s.Editing <> "" then Cmd.ofMsg (Edit s.Editing) else Cmd.none
+    }, 
+        Cmd.batch [
+            Cmd.ofMsg FetchListing
+            if s.Editing <> "" then Cmd.ofMsg (Edit s.Editing) else Cmd.none
+        ]
+
+let fetchListing (fs : IFileSystemAsyncP) (path : string) : Promise<string[]*string[]> =
+    promise {
+        let! exists =
+            fs.IsFolder path
+        if not exists then failwith ("Not a folder: " + path)
+        let! files = fs.Files path
+        let! folders = fs.Folders path
+        return files, folders
+    }
 
 let update edit msg model =
-    Fable.Core.JS.console.log (sprintf "update %A selected=%s" msg (model.Selected))
+//    Fable.Core.JS.console.log(sprintf "FileExplorer: %A" msg)
     match msg with
+
+    | SetListing (files, folders) ->
+        let selected = 
+            if model.Selected = "" then
+                ""
+            else
+                let name = Path.getFileName model.Selected
+                if files |> Array.contains name || folders |> Array.contains name then
+                    model.Selected
+                else 
+                    ""
+
+        { model with Files = files; Folders = folders }, 
+            Cmd.batch [
+                Cmd.ofMsg Refresh
+                Cmd.ofMsg (SetSelected selected)
+            ]
+
+    | FetchListing ->
+        model, Cmd.OfPromise.either (fetchListing model.Fs) (model.Cwd) SetListing SetError
+
     | Refresh -> { model with RefreshId = model.RefreshId + 1 }, Cmd.none
-    | SetCwd d -> { model with Cwd = d }, Cmd.none
+
+    | SetCwdForce d ->
+        { model with Cwd = d }, Cmd.ofMsg FetchListing
+
+    | SetCwd d ->
+        model, Cmd.OfPromise.either (model.Fs.IsFolder) d (fun isFolder -> if isFolder then SetCwdForce d else (SetError (System.Exception ("Not a folder: " + d)))) (SetError)
+
     | Edit name ->
         if (name <> "") then
-            edit (IFileSystem.Combine(model.Cwd, name))
+            edit (Path.combine model.Cwd name)
         { model with Editing = name }, Cmd.none
 
     | RenameTo name ->
         let tryRename () =
-            if (model.Selected <> "") then
-                model.Fs.RenameFile( model.Selected, name )
-        { model with Renaming = false }, Cmd.OfFunc.either tryRename () (fun _ -> SetSelected model.Selected) SetError
+            promise {
+                if (model.Selected <> "") then
+                    do! model.Fs.RenameFile( model.Selected, name )
+            }
+        { model with Renaming = false }, Cmd.OfPromise.either tryRename () (fun _ -> SetSelected model.Selected) SetError
 
     | SetRenaming z ->
         { model with Renaming = z }, Cmd.none
@@ -108,19 +160,31 @@ let update edit msg model =
 
     | DeleteSelected ->
         let tryDelete() =
-            if model.Selected <> "" then
-                let path = model.Selected
-                if model.Fs.IsFile path then
-                    model.Fs.RemoveFile path
-                elif model.Fs.IsFolder path then
-                    if (model.Fs.Files path).Length = 0 then
-                        model.Fs.RemoveFile path
-                    else
-                        failwith ("Folder is not empty")
-                else
-                    failwith ("Not a file: " + path)
+            let fs = model.Fs
 
-        model, Cmd.OfFunc.either tryDelete () (fun _ -> ClearError) SetError
+            promise {
+                if model.Selected = "" then return ()
+
+                let path = model.Selected
+                let! isFile = fs.IsFile path  
+
+                if isFile  then
+                    do! fs.RemoveFile path
+                else
+                    let! isFolder = fs.IsFolder path  
+                    if isFolder then
+                        let! files = fs.Files path  
+                        let! isEmpty = fs.Files path |> Promise.map (fun a -> a.Length = 0)
+
+                        if isEmpty then
+                            do! model.Fs.RemoveFile path
+                        else
+                            failwith ("Folder is not empty")
+                    else
+                        failwith ("Not a file: " + path)
+            }
+
+        model, Cmd.OfPromise.either tryDelete () (fun _ -> ClearError) SetError
 
     | Created name ->
         model, Cmd.batch [ Cmd.ofMsg (SetSelected name); Cmd.ofMsg (SetRenaming true) ]
@@ -128,11 +192,13 @@ let update edit msg model =
     | NewFile ->
 
         let tryCreate() =
-            let name = "NewFile.md"
-            model.Fs.CreateFile( model.Cwd, name )
-            IFileSystem.Combine( model.Cwd, name )
+            promise {
+                let name = "NewFile.md"
+                do! model.Fs.CreateFile( model.Cwd, name )
+                return Path.combine model.Cwd  name
+            }
 
-        model, Cmd.OfFunc.either tryCreate () Created SetError
+        model, Cmd.OfPromise.either tryCreate () Created SetError
 
 let updateWithSaveSession edit msg model =
     let result = update edit msg model
@@ -232,7 +298,7 @@ let fileExplorer (classifier : string -> string) iconselector dispatch (m : Mode
         UI.divc "file-explorer-entries" [
 
             if (not (isRoot cwd)) then
-                let parent = IFileSystem.GetFolderName(cwd)
+                let parent = Path.getFolderName(cwd)
                 UI.divc ("fx-folder " + classifier "[parent]") [
                     Html.ic (icon "[parent]" "fa fa-arrow-up") []
                     text "[parent]"
@@ -251,9 +317,9 @@ let fileExplorer (classifier : string -> string) iconselector dispatch (m : Mode
                         Attr.className "selected"
                 ]
 
-            fs.Folders(cwd)
+            m.Folders
                 |> Array.map (fun name ->
-                    let path = IFileSystem.Combine(cwd, name)
+                    let path = Path.combine cwd name
                     UI.divc ("fx-folder " + classifier path) [
                         Html.ic (icon path "fa fa-folder") []
                         text name
@@ -266,17 +332,17 @@ let fileExplorer (classifier : string -> string) iconselector dispatch (m : Mode
                         )
                         Ev.onDblClick (fun e ->
                             e.preventDefault(); 
-                            dispatch (SetCwd (IFileSystem.Combine (cwd, name)))
+                            dispatch (SetCwd (Path.combine cwd name))
                         )
                         if m.Selected = path then
                             Attr.className "selected"
                     ])
                 |> fragment
 
-            fs.Files(cwd)
+            m.Files
                 |> Array.sortBy (fun s -> s.ToLower())
                 |> Array.map (fun name ->
-                    let path = IFileSystem.Combine(cwd, name)
+                    let path = Path.combine cwd name
                     if m.Selected = path && m.Renaming then
                         Html.input [
                             autofocus
@@ -327,7 +393,11 @@ let fileExplorer (classifier : string -> string) iconselector dispatch (m : Mode
         ]
     ] |> withStyle css
 
-type FileExplorer( fs : IFileSystem ) =
+
+///
+/// Show files and folders, with ability to create, rename, remove
+/// 
+type FileExplorer( fs : IFileSystemAsyncP ) =
 
     let mutable onEdit : string -> unit = ignore
 
@@ -340,12 +410,25 @@ type FileExplorer( fs : IFileSystem ) =
     let view  classifier iconselector =
         Bind.el( model, fileExplorer classifier iconselector dispatch )
 
+    let exists (items : string[]) (path : string) =
+        items |> Array.exists (fun f -> path = Path.combine (model.Value.Cwd) f)
+
     do
-        fs.OnChange( fun _ -> dispatch Refresh )
+        fs.OnChange( fun _ -> dispatch FetchListing ) |> Promise.start
 
     with
         member _.View( classifier : string -> string, iconselector : string -> string ) = view classifier iconselector 
         member _.OnEdit( h : string -> unit) = onEdit <- h
         member _.Dispatch = dispatch
         member _.Selected = model.Value.Selected
-        member _.CurrentFolder = model.Value.Cwd        
+        member _.CurrentFolder = model.Value.Cwd
+        member _.Files = model.Value.Files
+        member _.Folders = model.Value.Folders
+        member __.Exists( path : string ) = 
+            exists (__.Files) path || exists (__.Folders) path
+        member __.IsFile( path : string ) = 
+            exists (__.Files) path
+        member __.IsFolder( path : string ) = 
+            Fable.Core.JS.console.log("IsFolder: ", path, __.Folders)
+            path = "/" || exists (__.Folders) path
+

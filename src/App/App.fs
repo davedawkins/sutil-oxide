@@ -19,7 +19,7 @@ type Theme =
     | Dark
 
 type AppContext = {
-    Fs : SutilOxide.FileSystem.IFileSystem
+    Fs : SutilOxide.FileSystem.IFileSystemAsyncP
 }
 
 
@@ -63,10 +63,10 @@ let fetchSource url  =
         return! res.text()
     }
 
-let uploadFile (url : string) (targetFileName : string) (fs : IFileSystem)  =
+let uploadFile (url : string) (targetFileName : string) (fs : IFileSystemAsyncP)  =
     promise {
         let! content = fetchSource url
-        fs.SetFileContent( targetFileName, content )
+        do! fs.SetFileContent( targetFileName, content )
     }
 
 let init (app : AppContext) =
@@ -123,7 +123,14 @@ let update (app : AppContext) (textEditor : TextEditor.Editor) msg model : Model
         //     safeSave()
         // dc.SetProperty( "Editor", Dock.Visible true)
         textEditor.Open name
-        { model with Editing = Some name; NeedsSave = false }, Cmd.ofMsg (SetPreviewText (app.Fs.GetFileContent name))
+        { model with Editing = Some name; NeedsSave = false }, 
+            [
+                fun d ->
+                    promise {
+                        let! content = app.Fs.GetFileContent name
+                        d (SetPreviewText content)
+                    } |> Promise.start
+            ]
 
 
 let appCss = [
@@ -280,7 +287,7 @@ let initPanes  (fileExplorer : FileExplorer.FileExplorer) (textEditor : TextEdit
             match m.Editing with
             | None -> "Editor"
             | Some fileName ->
-                    IFileSystem.GetFileName(fileName) + (if m.NeedsSave then " (edited)" else "")
+                    Path.getFileName(fileName) + (if m.NeedsSave then " (edited)" else "")
             )
         |> Html.span
 
@@ -321,10 +328,15 @@ let initPanes  (fileExplorer : FileExplorer.FileExplorer) (textEditor : TextEdit
     ()
 
 open Toolbar
+open KeyedStorageFileSystem
+open FileSystemExt
 
 let view () =
     let dc = DockContainer()
-    let app = { Fs = LocalStorageFileSystem("oxide-demo") }
+
+    let app = 
+        let fs : IFileSystem = LocalStorageFileSystem("oxide-demo")
+        { Fs = fs |> _.GetAsyncP() }
 
     // Text editor control
     let textEditor = TextEditor.Editor( app.Fs )

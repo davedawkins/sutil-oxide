@@ -7,10 +7,13 @@
     <Compile Include="IntersectionObserver.fs" />
     <Compile Include="Ace.fs" />
     <Compile Include="PropertyTypes.fs" />
+    <Compile Include="ResultExt.fs" />
+    <Compile Include="PromiseResult.fs" />
     <Compile Include="Types.fs" />
     <Compile Include="Logging.fs" />
     <Compile Include="Modal.fs" />
-    <Compile Include="FileSystem.fs" />
+    
+    <Compile Include="FileSystem/FileSystem.fs" /><Compile Include="FileSystem/MountedFileSystem.fs" /><Compile Include="FileSystem/FileSystemExt.fs" /><Compile Include="FileSystem/CacheFileSystem.fs" /><Compile Include="FileSystem/KeyedStorageFileSystem.fs" /><Compile Include="FileSystem/KeyedStorageFileSystemAsync.fs" />
     <Compile Include="Css.fs" />
     <Compile Include="CellEditor.fs" />
     <!-- <Compile Include="Flow.fs" /> -->
@@ -22,7 +25,7 @@
   </ItemGroup>
   <ItemGroup>
     <!-- <PackageReference Include="Sutil" Version="2.*" /> -->
-    <ProjectReference Include="../../../Sutil/src/Sutil/Sutil.fsproj"/>
+    <ProjectReference Include="../../../Sutil/src/Sutil/Sutil.fsproj" />
     <PackageReference Include="Thoth.Json" Version="10.0.*" />
     <PackageReference Include="Fable.Browser.IndexedDB" Version="2.2.*" />
   </ItemGroup>

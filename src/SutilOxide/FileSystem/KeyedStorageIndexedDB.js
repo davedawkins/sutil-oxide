@@ -1,12 +1,12 @@
 export class KeyedStorageIndexedDB {
-    constructor(dbName = 'keyValueStore', storeName = 'keyValuePairs', version = 1) {
+    constructor(dbName /*= 'keyValueStore'*/, storeName /*= 'keyValuePairs'*/, version = 1) {
         this.dbName = dbName;
         this.storeName = storeName;
         this.version = version;
         this.db = null;
     }
 
-    async init() {
+    async Init() {
         if (this.db) return;
 
         return new Promise((resolve, reject) => {
@@ -27,8 +27,8 @@ export class KeyedStorageIndexedDB {
         });
     }
 
-    async exists(key) {
-        await this.init();
+    async Exists(key) {
+        await this.Init();
         return new Promise((resolve, reject) => {
             const transaction = this.db.transaction([this.storeName], 'readonly');
             const store = transaction.objectStore(this.storeName);
@@ -39,8 +39,8 @@ export class KeyedStorageIndexedDB {
         });
     }
 
-    async get(key) {
-        await this.init();
+    async Get(key) {
+        await this.Init();
         return new Promise((resolve, reject) => {
             const transaction = this.db.transaction([this.storeName], 'readonly');
             const store = transaction.objectStore(this.storeName);
@@ -49,7 +49,8 @@ export class KeyedStorageIndexedDB {
             request.onerror = () => reject(request.error);
             request.onsuccess = () => {
                 if (request.result === undefined) {
-                    reject(new Error(`Key '${key}' not found`));
+                    resolve(null)
+//                    reject(new Error(`Key '${key}' not found`));
                 } else {
                     resolve(request.result);
                 }
@@ -57,8 +58,8 @@ export class KeyedStorageIndexedDB {
         });
     }
 
-    async put(key, value) {
-        await this.init();
+    async Put(key, value) {
+        await this.Init();
         return new Promise((resolve, reject) => {
             const transaction = this.db.transaction([this.storeName], 'readwrite');
             const store = transaction.objectStore(this.storeName);
@@ -69,8 +70,8 @@ export class KeyedStorageIndexedDB {
         });
     }
 
-    async remove(key) {
-        await this.init();
+    async Remove(key) {
+        await this.Init();
         return new Promise((resolve, reject) => {
             const transaction = this.db.transaction([this.storeName], 'readwrite');
             const store = transaction.objectStore(this.storeName);
@@ -82,4 +83,4 @@ export class KeyedStorageIndexedDB {
     }
 }
 
-export function createKeyedStorageIndexedDB() { return new KeyedStorageIndexedDB(); }
+export function createKeyedStorageIndexedDB( rootKey ) { return new KeyedStorageIndexedDB(rootKey, "keyValues", 1); }
