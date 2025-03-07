@@ -3,21 +3,29 @@
     <TargetFramework>netstandard2.0</TargetFramework>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="Types.fs" />
+    <Compile Include="Subscription.fs" />
+    <Compile Include="Cell.fs" />
+    <Compile Include="Log.fs" />
+    <Compile Include="UICss.fs" />
+    <Compile Include="UI.fs" />
     <Compile Include="MutationObserver.fs" />
     <Compile Include="IntersectionObserver.fs" />
+    <Compile Include="Toolbar.fs" />
     <Compile Include="Ace.fs" />
     <Compile Include="PropertyTypes.fs" />
     <Compile Include="ResultExt.fs" />
     <Compile Include="PromiseResult.fs" />
-    <Compile Include="Types.fs" />
-    <Compile Include="Logging.fs" />
     <Compile Include="Modal.fs" />
     
-    <Compile Include="FileSystem/FileSystem.fs" /><Compile Include="FileSystem/MountedFileSystem.fs" /><Compile Include="FileSystem/FileSystemExt.fs" /><Compile Include="FileSystem/CacheFileSystem.fs" /><Compile Include="FileSystem/KeyedStorageFileSystem.fs" /><Compile Include="FileSystem/KeyedStorageFileSystemAsync.fs" />
+    <Compile Include="FileSystem/FileSystem.fs" />
+    <Compile Include="FileSystem/MountedFileSystem.fs" />
+    <Compile Include="FileSystem/FileSystemExt.fs" />
+    <Compile Include="FileSystem/CacheFileSystem.fs" />
+    <Compile Include="FileSystem/KeyedStorageFileSystem.fs" />
+    <Compile Include="FileSystem/KeyedStorageFileSystemAsync.fs" />
     <Compile Include="Css.fs" />
     <Compile Include="CellEditor.fs" />
-    <!-- <Compile Include="Flow.fs" /> -->
-    <Compile Include="Toolbar.fs" />
     <Compile Include="DomHelpers.fs" />
     <Compile Include="FileExplorer.fs" />
     <Compile Include="PropertyEditor.fs" />

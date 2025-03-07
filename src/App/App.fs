@@ -22,7 +22,6 @@ type AppContext = {
     Fs : SutilOxide.FileSystem.IFileSystemAsyncP
 }
 
-
 let mutable nodeStores : Map<string,IStore<string>> = Map.empty
 
 let getNodeStore (name:string) =
@@ -53,8 +52,6 @@ type Message =
     | SetEdited of bool
     | DeleteFile of bool * (unit->unit)
     // | SetGraph of Flow.Types.Graph
-
-let log = SutilOxide.Logging.log
 
 let fetchSource url  =
     promise {
@@ -348,7 +345,9 @@ let view () =
     let model, dispatch = (app) |> Store.makeElmish (init) (update app textEditor) ignore
 
     textEditor.OnEditedChange( dispatch << SetEdited )
-    SutilOxide.Logging.appendHandler( dispatch << AppendToLog )
+
+    SutilOxide.Log.onLogMessage.Subscribe (fun m -> dispatch (AppendToLog m.Message)) 
+        |> ignore
 
     // Time widget in status bae
     let timeS = Store.make ""
@@ -368,8 +367,6 @@ let view () =
             | Dark -> SutilOxide.Css.DarkTheme
         styleCleanup <- SutilOxide.Css.installStyling theme
     ) |> ignore
-
-    log "SutilOxide Demo started"
 
     // Main view
     Html.div [

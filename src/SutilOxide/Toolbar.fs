@@ -11,7 +11,6 @@ open Sutil.Core
 open Sutil.CoreElements
 open Sutil
 open Fable.Core.JsInterop
-open Browser.Types
 
 type UI =
     static member divc (cls:string) (items : seq<SutilElement>) =
@@ -31,7 +30,7 @@ type ButtonProperty =
     | Mode of ButtonMode
     | Label of string
     | Icon of string
-    | OnClick of (MouseEvent -> unit)
+    | OnClick of (Browser.Types.MouseEvent -> unit)
     | OnCheckChanged of (bool -> unit)
     | IsChecked of bool
 
@@ -40,7 +39,7 @@ type Button = {
     Mode : ButtonMode
     Label : string option
     Icon : string option
-    OnClick : (MouseEvent -> unit) option
+    OnClick : (Browser.Types.MouseEvent -> unit) option
     OnCheckChanged : (bool -> unit) option
     IsChecked : bool
 }
@@ -57,7 +56,6 @@ with
         | OnCheckChanged s -> { __ with OnCheckChanged = Some s }
     static member From (p : ButtonProperty seq) =
         p |> Seq.fold (fun (b:Button) x -> b.With(x)) Button.Empty
-
 
 module MenuMonitor =
     open Browser
@@ -77,10 +75,10 @@ module MenuMonitor =
     //     console.log("target=", e.target)
     //     console.log("time=", e.time)
 
-    let removeStyle( e : HTMLElement ) name=
+    let removeStyle( e : Browser.Types.HTMLElement ) name=
         e.style.removeProperty(name) |> ignore
 
-    let resetMenu( e : HTMLElement ) =
+    let resetMenu( e : Browser.Types.HTMLElement ) =
         [   "top"
             "left"
             "bottom"
@@ -97,20 +95,20 @@ module MenuMonitor =
             e.style.top <- "0px"
             e.style.bottom <- "unset"
 
-    let callback (entries : Types.IntersectionObserverEntry[]) _ =
+    let callback (entries : Browser.Types.IntersectionObserverEntry[]) _ =
         entries |> Array.iter (fun e ->
             if (e.isIntersecting && e.intersectionRatio < 1.0) then
                 moveMenu (e.target :?> Types.HTMLElement) (e.boundingClientRect) (e.intersectionRect)
         )
 
-    let mutable _observer : IntersectionObserverType option = None
+    let mutable _observer : Browser.Types.IntersectionObserverType option = None
 
     let makeObserver() =
         let options =
             {| root = document :> Browser.Types.Node; rootMargin = ""; threshold = 0.0 |}
         IntersectionObserver.Create(callback, !! options)
 
-    let getObserver() : IntersectionObserverType =
+    let getObserver() : Browser.Types.IntersectionObserverType =
         match _observer with
         | None ->
             let _io = makeObserver()
@@ -118,7 +116,7 @@ module MenuMonitor =
             _io
         | Some x -> x
 
-    let monitorMenu( e : HTMLElement ) =
+    let monitorMenu( e : Browser.Types.HTMLElement ) =
         resetMenu e
         getObserver().observe(e)
 
@@ -161,11 +159,11 @@ let mkButton b =
         | Checkbox, _, _ ->
 
             Bind.el( checkedS,
-                fun ch -> Html.i [ Attr.className ("fa fa-check " + (if ch then "checked" else "")) ]
+                fun ch -> Html.i [ Attr.className ( (UI.Icon.makeFa "fa-check") + (if ch then " checked" else "")) ]
             )
 
         | _, Some icon, LabelIcon | _, Some icon, IconOnly ->
-            Html.i [ Attr.className ("fa " + icon) ]
+            Html.i [ Attr.className (UI.Icon.makeFa icon) ]
 
         | _ ->
             Html.i [ Attr.style [ Css.displayNone ] ]
@@ -217,7 +215,7 @@ let buttonItem props =
 let button name icon cb =
     buttonItem [
         if icon <> "" then
-            Icon ("fa-" + icon)
+            Icon (icon)
         Label name
         OnClick cb
         if icon <> "" then
@@ -233,7 +231,7 @@ let statusbar props items =
 let checkItem props =
     { (Button.From props) with Mode = Checkbox; Icon = None; OnClick = None } |> mkButton
 
-let rec findMenuLevel (e : HTMLElement ) =
+let rec findMenuLevel (e : Browser.Types.HTMLElement ) =
     if e = null then 
         -1
     else
@@ -254,7 +252,7 @@ let menuItem props items =
         )
 
         b.Icon
-            |> Option.map (fun icon ->  Html.i [ Attr.className ("fa " + icon) ])
+            |> Option.map (fun icon ->  Html.i [ Attr.className (UI.Icon.makeFa icon) ])
             |> Option.defaultValue (Html.i [])
 
         b.Label
@@ -265,7 +263,7 @@ let menuItem props items =
             |> Option.map (fun cb ->  Ev.onClick (fun e -> e.preventDefault(); cb e))
             |> Option.defaultValue nothing
 
-        Html.i [ Attr.className "fa fa-angle-right"]
+        Html.i [ Attr.className (UI.Icon.makeFa "fa-angle-right")]
 
         Attr.href "-"
 
@@ -286,7 +284,7 @@ let dropDownItem props items =
                 Html.span label
 
             | Icon icon ->
-                Html.i [ Attr.className ("fa " + icon) ]
+                Html.i [ Attr.className (UI.Icon.makeFa  icon) ]
 
             | _ ->
                 nothing

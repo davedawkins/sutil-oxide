@@ -184,7 +184,6 @@ type KeyedStorageFileSystem( keyStorage : IKeyedStorage ) =
         )
 
         if notify then
-            SutilOxide.Logging.log( "CreateFile " + path + " " + name )
             notifyOnChange fname
 
     let createFolder folderPath notify=
@@ -219,7 +218,6 @@ type KeyedStorageFileSystem( keyStorage : IKeyedStorage ) =
         )
 
         if notify then
-            SutilOxide.Logging.log( "CreateFolder " + fname + " " + name )
             notifyOnChange fname            
 
     let getFileContent(path:string) =
@@ -242,7 +240,6 @@ type KeyedStorageFileSystem( keyStorage : IKeyedStorage ) =
         getEntryByPath cpath
         |> Option.iter (fun e -> { e with Content = content } |> putEntry)
 
-        SutilOxide.Logging.log( "SetFileContent " + path )
         notifyOnChange path
 
     let removeFile (path : string) =
@@ -269,7 +266,6 @@ type KeyedStorageFileSystem( keyStorage : IKeyedStorage ) =
             failwith (sprintf "Cannot remove non-existent file '%s'" path)
         )
 
-        SutilOxide.Logging.log( "RemoveFile " + path )
         notifyOnChange path
 
     let renameFile(path : string, newNameOrPath : string) =

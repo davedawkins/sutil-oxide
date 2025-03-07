@@ -15,7 +15,7 @@ let log(s : string) =
     //    Fable.Core.JS.debugger()
     loggingHandler s
 
-let prependHandler log =
+let private prependHandler log =
     let currentHandler = loggingHandler
     loggingHandler <- fun s -> log s; currentHandler s
 
@@ -23,4 +23,4 @@ let appendHandler log =
     let currentHandler = loggingHandler
     loggingHandler <- fun s -> currentHandler s; log s
 
-let setHandler log = loggingHandler <- log
+let private setHandler log = loggingHandler <- log

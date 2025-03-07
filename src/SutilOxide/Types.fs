@@ -6,6 +6,7 @@ module SutilOxide.Types
 
 open Sutil
 open Sutil.Core
+open Fable.Core
 
 type BasicTransform2D =
     | Translate of float * float
@@ -201,7 +202,7 @@ type DockPane =
             Content = Html.div key
             IsOpen = true
             OnClose = ignore
-            Icon = "fa fa-folder"
+            Icon = "fa-folder"
             OnShow = ignore
             Size = -1
         }
@@ -240,3 +241,18 @@ with
             Stations = DockLocation.All |> Array.fold (fun s e -> s.Add(e, DockStation.Empty)) Map.empty
         }
     member __.GetPanes loc = __.Stations[loc].Panes
+
+
+[<Erase>]
+type SpacedList = SpacedList of string
+    with    static member Of s = SpacedList s
+            member __.Text = (let (SpacedList s) = __ in s)
+            member __.AsArray() = __.Text.Split( [| ' ' |], System.StringSplitOptions.RemoveEmptyEntries )
+            member __.FromArray( values : string[] ) = SpacedList.Of( values |> String.concat " " )
+
+[<Erase>]
+type MultiLineText = private MultiLineText of string
+    with    static member Of s = MultiLineText s
+            member __.Text = (let (MultiLineText s) = __ in s)
+            member __.AsLines() = __.ToString().Replace("\r\n", "\n").Split( [| '\n'; '\r' |] )
+            member __.FromLines( lines : string[] ) = SpacedList.Of( lines |> String.concat "\n" )

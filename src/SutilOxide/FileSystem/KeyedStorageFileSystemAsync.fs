@@ -301,7 +301,6 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
                 do! { e with Content = content } |> putEntry
             | None -> ()
 
-            SutilOxide.Logging.log( "SetFileContent " + path )
             notifyOnChange path
         }
 

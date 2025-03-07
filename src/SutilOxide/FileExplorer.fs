@@ -292,7 +292,8 @@ let fileExplorer (classifier : string -> string) iconselector dispatch (m : Mode
         match iconselector path with
         | "" -> def
         | s -> s
-
+        |> UI.Icon.makeFa
+        
     UI.divc "file-explorer" [
         //buttons m dispatch
         UI.divc "file-explorer-entries" [
@@ -300,7 +301,7 @@ let fileExplorer (classifier : string -> string) iconselector dispatch (m : Mode
             if (not (isRoot cwd)) then
                 let parent = Path.getFolderName(cwd)
                 UI.divc ("fx-folder " + classifier "[parent]") [
-                    Html.ic (icon "[parent]" "fa fa-arrow-up") []
+                    Html.ic (icon "[parent]" "fa-arrow-up") []
                     text "[parent]"
                     Ev.onMouseDown( fun e ->
                         e.stopPropagation()
@@ -321,7 +322,7 @@ let fileExplorer (classifier : string -> string) iconselector dispatch (m : Mode
                 |> Array.map (fun name ->
                     let path = Path.combine cwd name
                     UI.divc ("fx-folder " + classifier path) [
-                        Html.ic (icon path "fa fa-folder") []
+                        Html.ic (icon path "fa-folder") []
                         text name
                         Ev.onMouseDown( fun e ->
                             e.stopPropagation()
@@ -364,7 +365,7 @@ let fileExplorer (classifier : string -> string) iconselector dispatch (m : Mode
                         UI.divc ("fx-file " + classifier path) [
                             Attr.draggable true
 
-                            Html.ic (icon path "fa fa-file-o") []
+                            Html.ic (icon path "fa-file-o") []
                             text name
 
                             Ev.onClick (fun e ->

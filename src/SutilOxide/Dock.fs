@@ -454,6 +454,7 @@ module private EventHandlers =
         | _ ->
             TogglePaneWithNotify (tabLabel.Key,true) |>  dispatch
 
+
 let private viewTabLabel (model : System.IObservable<Model>) dispatch dockLocation (pane : DockPane) =
     //console.log($"{tabLabel.Name} @ {dockLocation}")
     UI.divc "tab-label" [
@@ -467,7 +468,7 @@ let private viewTabLabel (model : System.IObservable<Model>) dispatch dockLocati
             |> Store.map (fun m -> (m.SelectedPanes[dockLocation] |> Option.defaultValue "") = pane.Key),
             "selected")
 
-        Html.i [ Attr.className pane.Icon ]
+        Html.i [ Attr.className (UI.Icon.makeFa pane.Icon) ]
         Html.span [ 
             match pane.Label with
             | LabelString s ->
@@ -476,7 +477,7 @@ let private viewTabLabel (model : System.IObservable<Model>) dispatch dockLocati
         ]
         if pane.CanClose then
             Html.divc "close-button" [
-                Html.ic "fa fa-times" []
+                Html.ic (UI.Icon.makeFa "fa-times") []
                 Ev.onClick( fun _ -> pane.OnClose())
             ]
         Attr.draggable true
