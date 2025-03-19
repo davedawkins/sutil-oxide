@@ -61,19 +61,25 @@ module Extensions =
 
     module Promise =
 
-        let ifThen ( cond : Promise<bool>) (action : unit -> Promise<unit> ) =
+        let ifThen ( cond : Promise<bool>) (action : unit -> Promise<'T>) (defaultValue: unit -> 'T) =
             promise {
                 let! c = cond
-                if c then do! action()
+                if c then return! action() else return defaultValue()
             }
 
     type IFileSystemAsyncP with
 
-        member __.IfExists( path : string, action : unit -> Promise<unit> ) =
-            Promise.ifThen (__.Exists path) action
+        member __.DoIfExists( path : string, action : unit -> Promise<unit> ) =
+            Promise.ifThen (__.Exists path) action (fun _ -> ())
 
-        member __.IfNotExists( path : string, action : unit -> Promise<unit> ) =
-            Promise.ifThen (__.Exists path |> Promise.map not) action
+        member __.DoIfNotExists( path : string, action : unit -> Promise<unit> ) =
+            Promise.ifThen (__.Exists path |> Promise.map not) action (fun _ -> ())
+
+        member __.IfExists( path : string, action : unit -> Promise<'T>, elseWith : unit -> 'T ) =
+            Promise.ifThen (__.Exists path) action elseWith
+
+        member __.IfNotExists( path : string, action : unit -> Promise<'T>, elseWith : unit -> 'T  ) =
+            Promise.ifThen (__.Exists path |> Promise.map not) action elseWith
 
         member __.FilesRecursiveWith( path : string, filter : string -> bool, content : string -> Promise<'a> ) =
             promise {

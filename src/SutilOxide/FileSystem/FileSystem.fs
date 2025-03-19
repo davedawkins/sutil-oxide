@@ -109,6 +109,9 @@ type IKeyedStorageAsync =
     abstract Get: string -> Promise<string>
     abstract Put: string * string -> Promise<unit>
     abstract Remove: string -> Promise<unit>
+    abstract BeginBatch: unit -> unit
+    abstract CommitBatch: unit -> Promise<unit>
+    abstract Close: unit -> Promise<unit>
 
 module private BrowserStorage =
     let mk rootKey key = sprintf "%s/%s" rootKey key

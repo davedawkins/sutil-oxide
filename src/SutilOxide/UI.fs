@@ -17,6 +17,7 @@ module Common =
 
     type Orientation = Horizontal | Vertical
 
+    [<RequireQualifiedAccess>]
     type Value<'T> =   
         | Const of 'T
         | Getter of (unit -> 'T)
@@ -30,7 +31,7 @@ module Common =
         | UrlIcon of string
 
     type Text =
-        | PlainText of string
+        | PlainText of Value<string>
 
     type Shortcut = 
         Shortcut of string
@@ -155,9 +156,9 @@ module Control =
                 | ControlCheck (onCheck, value) ->
                     let checkedS = 
                         match value with
-                        | Const z -> Store.make z
-                        | Getter g -> Store.make (g())
-                        | Observable (o,init) ->
+                        | Value.Const z -> Store.make z
+                        | Value.Getter g -> Store.make (g())
+                        | Value.Observable (o,init) ->
                             let s = Store.make init
                             let d = o.Subscribe( Store.set s )
                             s
@@ -183,7 +184,12 @@ module Control =
             | _ -> Sutil.CoreElements.nothing
 
             match item.Text with
-            | Some (PlainText s) -> text s
+            | Some (PlainText textValue) -> 
+                match textValue with
+                | Value.Const s -> text s
+                | Value.Getter g -> text (g())
+                | Value.Observable (o,_) ->
+                    Bind.el( o, text )
             | _ -> Sutil.CoreElements.nothing
 
             yield!
@@ -398,12 +404,12 @@ module Input =
                 yield!
                     match cfg.Value with
 
-                    | Const s ->
+                    | Value.Const s ->
                         [ 
                             Attr.value s 
                         ]
 
-                    | Observable (o,i) ->
+                    | Value.Observable (o,i) ->
                         [ Bind.attr( "value", o, ignore) ]
 
                     | _ -> 
@@ -458,12 +464,12 @@ module Input =
                 yield!
                     match cfg.Value with
 
-                    | Const s ->
+                    | Value.Const s ->
                         [ 
                             Attr.value s 
                         ]
 
-                    | Observable (o,i) ->
+                    | Value.Observable (o,i) ->
                         [ Bind.attr( "value", o, ignore) ]
 
                     | _ -> 

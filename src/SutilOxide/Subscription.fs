@@ -12,7 +12,6 @@ module Subscription =
 #if FABLE_COMPILER
 [<Mangle>]
 #endif
-
 type ISubscriptionWithResult<'T,'R> =
     abstract Subscribe : ('T -> 'R) -> System.IDisposable
     abstract Count : int
