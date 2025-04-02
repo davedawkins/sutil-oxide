@@ -28,6 +28,11 @@ module ResultExt =
         | Ok p -> p.``then``(fun t -> Ok t)
         | Error e -> Promise.lift (Error e)
 
+    let getValueOrThrow (result: Result<'T, 'E>) : 'T =
+        match result with
+        | Ok v -> v
+        | Error e -> failwith (sprintf "%A" e)
+        
 [<AutoOpen>]
 module ResultExtensions =
 

@@ -115,5 +115,14 @@ module PromiseResult =
     let fromPromise<'T> ( p : Promise<'T> ) : PromiseResult<'T,string> =
         p |> Promise.map (Ok) |> Promise.catch (fun x -> Error x.Message)
 
+    /// Lift a Promise into a PromiseResult
     let liftp<'T>( p : Promise<'T> ) : PromiseResult<'T,string> = fromPromise p
+
+    /// Lift a value into a PromiseResult
     let lift<'T>( v : 'T ) : PromiseResult<'T,string> = v |> Promise.lift |> liftp
+
+    /// Convert a PromiseResult<'T, string> into a Promise<'T>
+    let toPromise<'T>( p : PromiseResult<'T,string> ) : Promise<'T> =
+        p |> Promise.bind (function
+            | Ok v -> Promise.lift v
+            | Error e -> Promise.reject (System.Exception e))
