@@ -458,6 +458,9 @@ module private EventHandlers =
 let private viewTabLabel (model : System.IObservable<Model>) dispatch dockLocation (pane : DockPane) =
     //console.log($"{tabLabel.Name} @ {dockLocation}")
     UI.divc "tab-label" [
+
+        Attr.custom ("data-tabname", pane.Key)
+
         Bind.toggleClass(
             model
             |> Store.map (fun m -> (beingDragged m |> Option.defaultValue "") = pane.Key),
@@ -578,6 +581,7 @@ type DockContainer() =
         | _ -> ()
 
     let applyOptions( rootElement : HTMLElement ) =
+        Fable.Core.JS.console.log("Pane: applyOptions")
         match config with
         | Some cfg ->
             setOption cfg "left.width" (fun v -> (dockLeftContainer rootElement).style.width <- v)
@@ -594,7 +598,7 @@ type DockContainer() =
             setOption cfg "left-bottom.pct" (fun v -> (dockLeftBottomContainer rootElement).style.flexGrow <- v)
             setOption cfg "right-top.pct" (fun v -> (dockRightTopContainer rootElement).style.flexGrow <- v)
             setOption cfg "right-bottom.pct" (fun v -> (dockRightBottomContainer rootElement).style.flexGrow <- v)
-            config <- None
+            //config <- None
         | None -> ()
 
     let dockContainer() =
@@ -783,7 +787,10 @@ with
         config 
         |> Option.bind (fun d -> d.TryFind (sprintf "pane.%s.show" paneId))
         |> Option.bind (fun s -> try System.Boolean.Parse s |> Some with | _ -> None)
-        |> Option.defaultValue defaultValue
+        |> Option.defaultWith (fun () -> 
+            Fable.Core.JS.console.log("DockContainer: GetPaneConfigurationShow: 'pane." + paneId + ".show' not found, using default value: " + defaultValue.ToString())
+            Fable.Core.JS.console.log("DockContainer: GetPaneConfigurationShow: config: ", config |> Option.defaultValue Map.empty |> Seq.toArray)
+            defaultValue)
 
     member __.Configuration
         with get() =

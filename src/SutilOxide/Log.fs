@@ -99,7 +99,7 @@ let enableCategory (cat : string) (enabled : bool) =
 
 let logmessage (m : LogMessage) =
     if categoryIsEnabled m.Category && sourceIsEnabled m.Source then
-        // if (m.Message.StartsWith("Error")) then
+        // if (m.Message.StartsWith("Error") || m.Category = "Error") then
         //     Fable.Core.JS.debugger()
 
         logMessages.Value.Add(m)

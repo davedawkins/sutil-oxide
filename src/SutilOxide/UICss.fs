@@ -3,6 +3,7 @@ module SutilOxide.UICss
 open Sutil.Styling
 open type Feliz.length
 open Sutil
+open SutilOxide.Css
 
 let style = [
 
@@ -40,7 +41,7 @@ let style = [
     ]
 
     rule ".ui-ribbon i" [
-        Css.color "#50719B"
+        Css.color SutilOxide.Css.LightTheme.Icon
         Css.textAlignCenter
     ]
 
@@ -132,7 +133,7 @@ let style = [
         Css.alignItemsCenter
         Css.justifyContentCenter
         Css.marginBottom (px 2)
-        Css.fontSize (percent 90)
+        Css.fontSize (SutilOxide.Css.FontSizes.RibbonSmall)
     ]
 ]
 
@@ -204,7 +205,6 @@ let styleRibbonMenu = [
     ]
 
     rule ".ui-rm-label" [
-        Css.color "gray"
         Css.positionRelative
         Css.cursorPointer
         Css.custom("width", "fit-content")
@@ -212,8 +212,7 @@ let styleRibbonMenu = [
     ]
 
     rule ".ui-rm-label" [
-        Css.color "black"
-        Css.fontWeightBold
+        CssThm.fontWeightBold
     ]
 
     rule ".ui-rm-label:after" [
@@ -224,7 +223,7 @@ let styleRibbonMenu = [
         Css.bottom 0
         Css.custom("content","''") 
         Css.displayNone
-        Css.custom("border-bottom", "2px solid #dddddd")
+        Css.custom("border-bottom", sprintf "2px solid %s" SutilOxide.Css.LightTheme.BackgroundMuted)
     ]
 
     rule ".ui-rm-label:hover::after" [
@@ -233,7 +232,7 @@ let styleRibbonMenu = [
 
     rule ".ui-rm-label.selected::after" [
         Css.displayBlock
-        Css.custom("border-bottom", "2px solid blue")
+        Css.custom("border-bottom", sprintf "2px solid %s" SutilOxide.Css.LightTheme.Icon)
         Css.transitionDurationMilliseconds (200)
     ]
 

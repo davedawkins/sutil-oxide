@@ -8,13 +8,24 @@ open Sutil
 open Sutil.Styling
 open type Feliz.length
 
+
+let inline private asVar name = sprintf "var(--%s)" name
+let inline private cssVar name value = Css.custom( name, asVar value )    
+
+type CssVar =
+    static member fontWeight (varName: string) = cssVar "font-weight" varName
+        
+type CssThm =
+    static member fontWeightBold =
+        CssVar.fontWeight "bold"
+
 type Theme = {
+    ControlTextColor : string        // text
     TextColor : string               // text
     Border : string                  // muted
     ControlBackground  : string;     // primary
-    ControlForeground  : string;     // text
     ContentBackground  : string;     // background
-    ContentForeground  : string;     // text
+    BackgroundMuted    : string;     // accent / highlight
     BackgroundHover    : string;     // accent / highlight
     BackgroundSelected : string;     // highlight
     Handle    :string;               // muted
@@ -22,6 +33,20 @@ type Theme = {
     Highlight :string;               // highlight
     Overlay   :string;               // muted
 }
+
+module FontSizes =
+    let NormalPx = 14
+
+    let Large = px 24
+    let Normal = px NormalPx
+
+    let Ribbon = px 12
+    let RibbonSmall = px 9
+
+    let Toolbar = Ribbon
+    
+    let Control = Normal
+    let MenuBar = Control
 
 let LightTheme =
     // https://theme-ui.com/theming
@@ -34,16 +59,16 @@ let LightTheme =
     let highlight = "#B7DAFA"
     let muted = "#DBDBDB"
     {
+        ControlTextColor = "#46494f"
         TextColor = "black"
         Border = muted
         ControlBackground = "#EBEBEB"
-        ControlForeground = "black"
         ContentBackground = "#F4F4F4"
-        ContentForeground = "black"
-        BackgroundHover = "#DDDDDD"
-        BackgroundSelected = "#CCCCCC"
+        BackgroundMuted    = "#dbdbdc"
+        BackgroundHover    = "#ebebec"
+        BackgroundSelected = "#e2e3e6"
         Handle = muted
-        Icon = "#50719B"  // hsl(214,31%,46%)
+        Icon = "#b36c10" //"#7a3e00" //"#50719B"  // hsl(214,31%,46%)
         Highlight = highlight
         Overlay = highlight
     }
@@ -52,12 +77,12 @@ let DarkTheme =
     let border = "rgb(40,40,40)"
     let highlight = "#495764" //"#6D8296"
     {
+        ControlTextColor = "rgb(207,207,207)"
         TextColor = "rgb(207,207,207)"
         Border = border
         ControlBackground = "rgb(85,85,85)"
-        ControlForeground = "rgb(207,207,207)"
         ContentBackground = "rgb(105,105,105)"
-        ContentForeground = "rgb(207,207,207)"
+        BackgroundMuted = "rgb(60,60,60)"
         BackgroundHover = "rgb(60,60,60)"
         BackgroundSelected = "rgb(50,50,50)"
         Handle = border
@@ -347,7 +372,7 @@ let private dockStyling (theme : Theme) = [
 
     rule ".tab-label" [
         Css.positionRelative
-        Css.fontSize (percent 75)
+        Css.fontSize (FontSizes.Ribbon)
         Css.cursorPointer
         Css.displayFlex
         Css.flexDirectionRow
@@ -666,7 +691,8 @@ let private dockStyling (theme : Theme) = [
 let private toolbarStyling (theme : Theme) = [
 
     rule ".xd-toolbar" [
-        Css.fontSize (percent 75)
+        Css.fontSize (FontSizes.Toolbar)
+        Css.color (theme.ControlTextColor)
         Css.displayFlex
         Css.flexDirectionRow
         Css.backgroundColor theme.ControlBackground
@@ -751,7 +777,7 @@ let private toolbarStyling (theme : Theme) = [
     ]
 
     rule ".xd-item-button>i" [
-        Css.color theme.Icon
+        Css.color LightTheme.Icon
         Css.textAlignCenter
     ]
 

@@ -574,7 +574,7 @@ module Forms =
                     Get = fun () -> Unchecked.defaultof<'T> } : Field<'T>
 
         /// Map system types to input type
-        static member internal Init<'T>( t : System.Type, sysTypeName : string ) : Field<'T> = 
+        static member Init<'T>( t : System.Type, sysTypeName : string ) : Field<'T> = 
 
             let empty = { Field.Empty<'T>() with  SystemTypeName = sysTypeName }
 
