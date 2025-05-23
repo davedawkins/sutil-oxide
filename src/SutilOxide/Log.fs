@@ -11,6 +11,7 @@ type ILog =
     abstract error: ?message: obj * [<System.ParamArray>] optionalParams: obj[] -> unit
     abstract warning: ?message: obj * [<System.ParamArray>] optionalParams: obj[] -> unit
     abstract info: ?message: obj * [<System.ParamArray>] optionalParams: obj[] -> unit
+    abstract console: ?message: obj * [<System.ParamArray>] optionalParams: obj[] -> unit
 
 let Console = 
     {|
@@ -105,7 +106,7 @@ let logmessage (m : LogMessage) =
         logMessages.Value.Add(m)
         logMessages.Set( logMessages.Value )
         logListeners.Notify(m)
-        Console.log(m.Category,m.Source,m.Message)
+        Console.log(m.Category + ":" + m.Source + ":" + m.Message)
 
 //        Console.log( m.Source, m.Category, m.Message)
 
@@ -137,6 +138,8 @@ let createWith logm (source : string) =
                 logm source "Warning" (fmt arg0 argsN) null
             member _.info( arg0, argsN ) =
                 logm source "Info" (fmt arg0 argsN) null
+            member _.console( arg0, argsN ) =
+                Fable.Core.JS.console.log( source, argsN |> Array.append [| arg0 :> obj |] )
     }
     
 let create (source : string) =

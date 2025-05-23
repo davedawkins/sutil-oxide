@@ -39,12 +39,12 @@ type Transform2D =
         member __.Transform( x : float, y : float ) =
             let (Transform2D ts) = __
             let tx,ty = (x,y) |> Array.foldBack (fun t xy -> Transform2D.Transform(t,xy)) ts
-            Fable.Core.JS.console.log(sprintf "transform: %f,%f -> %f,%f" x y tx ty)
+            // Fable.Core.JS.console.log(sprintf "transform: %f,%f -> %f,%f" x y tx ty)
             tx, ty
         member __.TransformInverse( x : float, y : float ) =
             let (Transform2D ts) = __
             let tx,ty = ts |> Array.fold(fun xy t -> Transform2D.TransformInverse(t,xy)) (x,y)
-            Fable.Core.JS.console.log(sprintf "transform inverse: %f,%f -> %f,%f" x y tx ty)
+            // Fable.Core.JS.console.log(sprintf "transform inverse: %f,%f -> %f,%f" x y tx ty)
             tx,ty
             
 type Rect = 

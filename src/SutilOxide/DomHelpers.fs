@@ -38,7 +38,7 @@ module DomHelpers =
         el.style.width <- $"{w}px"
 
     let getPaneHeight (el : HTMLElement) =
-        console.log((window.getComputedStyle el).height)
+        // console.log((window.getComputedStyle el).height)
         (window.getComputedStyle el).height[..(-3)] |> System.Double.Parse |> int
 
     let setPaneHeight (el : HTMLElement) (h : int) =

@@ -486,7 +486,7 @@ module Updates =
         |> Rect.Create
 
     let update options (portxys : PortXYs) (msg : Message) model =
-        Fable.Core.JS.console.log( sprintf "Flow: Update: %A" msg)
+        // Fable.Core.JS.console.log( sprintf "Flow: Update: %A" msg)
         match msg with
 
         | CalculateBounds ->

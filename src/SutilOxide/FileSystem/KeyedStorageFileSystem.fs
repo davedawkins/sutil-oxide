@@ -23,7 +23,7 @@ type KeyedStorageFileSystem( keyStorage : IKeyedStorage ) =
         match Thoth.Json.Decode.Auto.fromString<FileEntry>( keyStorage.Get (uidKey uid) ) with
         | Ok r -> Some r
         | Error msg ->
-            Fable.Core.JS.console.log(sprintf "Error: getEntry %A: %A" uid msg)
+            // Fable.Core.JS.console.log(sprintf "Error: getEntry %A: %A" uid msg)
             None
 
     let entryExists uid =
@@ -144,7 +144,7 @@ type KeyedStorageFileSystem( keyStorage : IKeyedStorage ) =
                 match Thoth.Json.Decode.Auto.fromString<Root>(s) with
                 | Ok r -> root <- r
                 | Error msg ->
-                    Fable.Core.JS.console.log("Root entry corrupted: " + msg)
+                    Fable.Core.JS.console.error("Root entry corrupted: " + msg)
             |_ -> ()
 
         putRoot()

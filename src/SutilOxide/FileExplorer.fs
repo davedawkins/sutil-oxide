@@ -430,6 +430,6 @@ type FileExplorer( fs : IFileSystemAsyncP ) =
         member __.IsFile( path : string ) = 
             exists (__.Files) path
         member __.IsFolder( path : string ) = 
-            Fable.Core.JS.console.log("IsFolder: ", path, __.Folders)
+            // Fable.Core.JS.console.log("IsFolder: ", path, __.Folders)
             path = "/" || exists (__.Folders) path
 
