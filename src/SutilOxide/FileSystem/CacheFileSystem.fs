@@ -47,6 +47,12 @@ type CacheFileSystem( files : string[], folders : string[], ?contents : Map<stri
                 | None -> failwith "Cache was not populated with file content"
             run |> mkSyncThrowable
 
+        member this.GetCreatedAt(path: string) = 
+            failwith "Not implemented for cache"
+            
+        member this.GetModifiedAt(path: string) = 
+            failwith "Not implemented for cache"
+            
         member this.IsFile(path: string) = 
             let run () =
                 fileSet.Contains path

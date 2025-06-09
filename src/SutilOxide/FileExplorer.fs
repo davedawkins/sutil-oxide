@@ -366,7 +366,13 @@ let fileExplorer (classifier : string -> string) iconselector dispatch (m : Mode
                             Attr.draggable true
 
                             Html.ic (icon path "fa-file-o") []
-                            text name
+                            Html.spanc "file-name" [ text name ]
+                            // Html.spanc "file-created" 
+                            //     [ Bind.promise(
+                            //         fs.GetCreatedAt(path), (fun dt -> text (dt.ToString())), text "", fun s -> text (s.ToString())
+                            //     ) ]
+
+                            // Html.spanc "file-modified" [ text (fs.GetCreatedAt(path).ToString())  ]
 
                             Ev.onClick (fun e ->
                                 DomHelpers.timeout (fun _ -> path |> SetSelected |> dispatch) 10
@@ -376,6 +382,8 @@ let fileExplorer (classifier : string -> string) iconselector dispatch (m : Mode
                             Ev.onDblClick (fun e ->
                                 name |> Edit |> dispatch
                             )
+
+
 
                             // Ev.onDragStart (fun e ->
                             //     (e.target :?> HTMLElement).classList.add "dragging"

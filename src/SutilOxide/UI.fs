@@ -508,6 +508,7 @@ module Controller =
 
     type IDockController =
         abstract CreatePane: paneKey:string * PaneOption list -> unit
+        abstract ShowPane: paneKey:string -> unit
 
 module Forms =
 

@@ -16,6 +16,35 @@ module Internal =
         | File
         | Folder
 
+    [<RequireQualifiedAccess>]
+    type FileEncoding =
+        | Text
+        | Blob
+    with static member TryParse (s : string) : FileEncoding option =
+            match s.ToLower() with
+            | "text" -> Some FileEncoding.Text
+            | "blob" -> Some FileEncoding.Blob
+            | _ -> None
+
+    // type GitMode = 
+    //     | RegularFile = 0o100644
+    //     | ExecutableFile = 0o100755
+    //     | SymLink = 0o120000
+    //     | SubModule = 0o160000
+
+    type FileMetaData = {
+        CreatedAt: System.DateTime
+        ModifiedAt: System.DateTime
+        Encoding : FileEncoding
+    }
+    with   
+        static member Create() = 
+            let now = System.DateTime.UtcNow
+            { 
+                CreatedAt = now
+                ModifiedAt = now
+                Encoding = FileEncoding.Text
+            }
 
     type FileEntry = {
         Type : FileEntryType
@@ -23,7 +52,73 @@ module Internal =
         Uid : Uid
         Content : string
         Children : (string * Uid)[]
+        Meta : FileMetaData
     }
+    with 
+        static member Create() : FileEntry = 
+            {
+                Type = FileEntryType.File
+                Name = ""
+                Uid = -1
+                Content = ""
+                Children = Array.empty
+                Meta = FileMetaData.Create()
+            }
+
+    type FileEntryDto = {
+        Type : FileEntryType
+        Name : string
+        Uid : Uid
+        Content : string
+        Children : (string * Uid)[]
+        Meta : (string * string) [] option
+    }
+    with
+        member __.ToFileEntry() : FileEntry = 
+            let getKey key = __.Meta 
+                            |> Option.bind (fun items -> items |> Array.tryFind (fun (k,_) -> k = key))
+            {
+                Type = __.Type; Name = __.Name; Uid = __.Uid; Content = __.Content; Children = __.Children;
+                Meta =
+                    {
+                        Encoding =
+                            getKey "Encoding"
+                            |> Option.bind (fun (k,v) -> FileEncoding.TryParse v)
+                            |> Option.defaultValue (FileEncoding.Text)
+                        CreatedAt = 
+                            getKey "CreatedAt"
+                            |> Option.bind (fun (k,v) -> try System.DateTime.Parse v |> Some with x -> None)
+                            |> Option.defaultValue (System.DateTime(2020,1,1,0,0,0,DateTimeKind.Utc))
+                        ModifiedAt = 
+                            getKey "ModifiedAt"
+                            |> Option.bind (fun (k,v) -> try System.DateTime.Parse v |> Some with x -> None)
+                            |> Option.defaultValue (System.DateTime(2020,1,1,0,0,0,DateTimeKind.Utc))
+                    }
+            }
+        static member ToDto( fe : FileEntry ) : FileEntryDto = 
+            {
+                Type = fe.Type; Name = fe.Name; Uid = fe.Uid; Content = fe.Content; Children = fe.Children;
+                Meta = Some 
+                        [| 
+                            "Encoding", fe.Meta.Encoding.ToString()
+                            "CreatedAt", (fe.Meta.CreatedAt.ToString("o"))
+                            "ModifiedAt", (fe.Meta.ModifiedAt.ToString("o"))
+                        |]
+            }
+
+    let fileEntryToJSON( fe : FileEntry ) : string =
+        FileEntryDto.ToDto(fe) |> Thoth.Json.Encode.Auto.toString
+
+    let fileEntryFromJSON (js : string) =
+        match Thoth.Json.Decode.Auto.fromString<FileEntryDto>( js ) with
+        | Ok dto -> 
+            try
+                Ok (dto.ToFileEntry())
+            with
+            | x -> 
+                Error( "Deserializing FileEntryDto: " + dto.Name + ": " + x.Message + "\nJSON:" + js)                
+        | Error msg ->
+            Error msg
 
     type FileContent =
         | Text of string
@@ -161,6 +256,8 @@ type SyncResult<'T> = Result<'T,string>
 type AsyncResult<'T> = PromiseResult<'T, string>
 type AsyncPromise<'T> = Promise<'T>
 
+type FsDateTime = System.DateTime
+
 [<RequireQualifiedAccess>]
 module Path =
     open Internal
@@ -174,7 +271,7 @@ module Path =
         let p = fileName.LastIndexOf('.')
         if p < 0 then "" else fileName.Substring(p)
 
-type IReadOnlyFileSystemOf<'StringArray,'String,'Bool,'Unit,'Disposable> =
+type IReadOnlyFileSystemOf<'Date,'StringArray,'String,'Bool,'Unit,'Disposable> =
     abstract member Files : path : string -> 'StringArray
     abstract member Folders : path :string -> 'StringArray
     abstract member Exists : path : string -> 'Bool
@@ -182,6 +279,9 @@ type IReadOnlyFileSystemOf<'StringArray,'String,'Bool,'Unit,'Disposable> =
     abstract member IsFolder : path : string -> 'Bool
     abstract member GetFileContent : path : string  -> 'String
     abstract member OnChange : (string -> unit) -> 'Disposable
+    abstract member GetCreatedAt : path : string  -> 'Date
+    abstract member GetModifiedAt : path : string  -> 'Date
+
 
 type IWriteOnlyFileSystemOf<'StringArray,'String,'Bool,'Unit> =
     abstract member SetFileContent : string * string -> 'Unit
@@ -193,7 +293,7 @@ type IWriteOnlyFileSystemOf<'StringArray,'String,'Bool,'Unit> =
 /// Synchronous read-only interface. Errors will be raised as exceptions
 /// 
 type IReadOnlyFileSystem = 
-    inherit IReadOnlyFileSystemOf<SyncThrowable<string[]>, SyncThrowable<string>, SyncThrowable<bool>, SyncThrowable<unit>, SyncThrowable<IDisposable>>
+    inherit IReadOnlyFileSystemOf<SyncThrowable<FsDateTime>, SyncThrowable<string[]>, SyncThrowable<string>, SyncThrowable<bool>, SyncThrowable<unit>, SyncThrowable<IDisposable>>
 
 /// Synchronous interface. Errors will be raised as exceptions
 /// 
@@ -204,7 +304,7 @@ type IFileSystem =
 /// Promise-based interface where all results are expressed as AsyncResult<'T>
 /// 
 type IReadOnlyFileSystemAsyncR = 
-    inherit IReadOnlyFileSystemOf<AsyncResult<string[]>, AsyncResult<string>, AsyncResult<bool>, AsyncResult<unit>, AsyncResult<IDisposable>>
+    inherit IReadOnlyFileSystemOf<AsyncResult<FsDateTime>, AsyncResult<string[]>, AsyncResult<string>, AsyncResult<bool>, AsyncResult<unit>, AsyncResult<IDisposable>>
 
 /// Promise-based read-only interface where all results are expressed as AsyncResult<'T>
 /// 
@@ -215,7 +315,7 @@ type IFileSystemAsyncR =
 /// Promise-based read-only interface where all results are expressed as AsyncPromise<'T> (Promise<'T>)
 /// 
 type IReadOnlyFileSystemAsyncP = 
-    inherit IReadOnlyFileSystemOf<AsyncPromise<string[]>, AsyncPromise<string>, AsyncPromise<bool>, AsyncPromise<unit>, AsyncPromise<IDisposable>>
+    inherit IReadOnlyFileSystemOf<AsyncPromise<FsDateTime>, AsyncPromise<string[]>, AsyncPromise<string>, AsyncPromise<bool>, AsyncPromise<unit>, AsyncPromise<IDisposable>>
 
 /// Promise-based interface where all results are expressed as AsyncResult<'T> (Promise<'T>)
 /// 

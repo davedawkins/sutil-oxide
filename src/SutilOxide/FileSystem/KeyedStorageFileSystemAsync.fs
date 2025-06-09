@@ -41,7 +41,7 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
     let putEntryUnsafe (e : FileEntry) =
         entryCache.[e.Uid] <- Some e
         trimCache()
-        keyStorage.Put( uidKey e.Uid, encode e )
+        keyStorage.Put( uidKey e.Uid, fileEntryToJSON e )
 
     let putRoot() =
         keyStorage.Put( RootKeyName,  encode root)        
@@ -51,7 +51,9 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
             let! exists = keyStorage.Exists(uidKey 0)
             if not exists then
                 do! 
-                    { Type = Folder; Name = RootName; Uid = RootUid; Content = ""; Children = Array.empty }
+                    let rootE : FileEntry =
+                        { Type = Folder; Name = RootName; Uid = RootUid; Content = ""; Children = Array.empty; Meta = FileMetaData.Create() }
+                    rootE
                     |> putEntryUnsafe
 
             let! rootEntry = keyStorage.Get(RootKeyName)
@@ -91,10 +93,10 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
             do! putEntryUnsafe e
         }
 
-    let getEntry (uid : Uid) = 
+    let getEntry (uid : Uid) : PromiseResult<FileEntry,string> = 
         // Check cache first
         if entryCache.ContainsKey(uid) then
-            entryCache.[uid] |> Promise.lift
+            entryCache.[uid] |> (function Some x -> Ok x | None -> Error "Missing") |> Promise.lift
         else
             promise {
                 do! init()
@@ -102,17 +104,17 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
                 let! entry = keyStorage.Get (uidKey uid)
 
                 if entry = null then
-                    return None
+                    return (Error ("Not entry for UID: " + string uid))
                 else
-                    match Thoth.Json.Decode.Auto.fromString<FileEntry>( entry ) with
+                    match fileEntryFromJSON entry with
                     | Ok r -> 
                         // Cache the result
                         entryCache.[uid] <- Some r
                         trimCache()
-                        return Some r
+                        return Ok r
                     | Error msg ->
                         entryCache.[uid] <- None
-                        return None
+                        return Error msg
             }
 
     let entryExists uid =
@@ -133,9 +135,9 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
             let! entry = getEntry uid
 
             match entry with
-            | None -> return failwith ("Non-existent UID " + string uid)
-            | Some e when e.Type <> FileEntryType.Folder -> return failwith (sprintf "Not a folder: %d" uid)
-            | Some e -> 
+            | Error s -> return failwith s // ("Non-existent UID " + string uid)
+            | Ok e when e.Type <> FileEntryType.Folder -> return failwith (sprintf "Not a folder: %d" uid)
+            | Ok e -> 
                 // Batch operation for multiple get operations
                 beginBatch()
                 try
@@ -145,7 +147,7 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
                         |> Promise.all
                     
                     do! commitBatch()
-                    return entries |> Array.choose id
+                    return entries |> Array.map Result.toOption |> Array.choose id
                 with ex ->
                     do! commitBatch()
                     return raise ex
@@ -157,48 +159,48 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
             let! entry = getEntry uid
             let result = 
                 match entry with
-                | None -> failwith ("Non-existent UID " + string uid)
-                | Some e when e.Type <> FileEntryType.Folder -> failwith (sprintf "Not a folder: %d" uid)
-                | Some e -> e.Children.Length > 0
+                | Error s -> failwith s //("Non-existent UID " + string uid)
+                | Ok e when e.Type <> FileEntryType.Folder -> failwith (sprintf "Not a folder: %d" uid)
+                | Ok e -> e.Children.Length > 0
             return result
         }
 
     let entryName uid =
-        getEntry uid |> Promise.map (Option.map (fun e -> e.Name))
+        getEntry uid |> Promise.map (Result.map (fun e -> e.Name))
 
     let entryNameWithDefault defaultName uid =
         getEntry uid 
         |> Promise.map (fun e ->
             e
-            |> Option.map (fun e -> e.Name) 
-            |> Option.defaultValue defaultName
+            |> Result.map (fun e -> e.Name) 
+            |> Result.defaultValue defaultName
         )
 
     let entryChildren uid =
         getEntry uid
-            |> Promise.map (Option.map (fun e -> e.Children))
+            |> Promise.map (Result.map (fun e -> e.Children))
 
     let entryChildNames uid =
-        entryChildren uid |> Promise.map(Option.map (Array.map fst))
+        entryChildren uid |> Promise.map(Result.map (Array.map fst))
 
     let entryChildUids uid =
-        entryChildren uid |> Promise.map(Option.map (Array.map snd))
+        entryChildren uid |> Promise.map(Result.map (Array.map snd))
 
     let rec uidOf path =
         let parts = path |> Internal.parsePath
 
-        let rec findUid (parent : Uid) (parts : string[]) i : Promise<Uid option> =
+        let rec findUid (parent : Uid) (parts : string[]) i : PromiseResult<Uid,string> =
             match i with
-            | n when n >= parts.Length -> (Some parent) |> Promise.lift
+            | n when n >= parts.Length -> (Ok parent) |> Promise.lift
             | _ ->
                 promise {
                     let! entry = getEntry parent
                     match entry with
-                    | None ->
-                        return failwith ("No entry found for part of path " + path + " at " + string i + ": '" + (parts[i]) + "'")
-                    | Some e ->
+                    | Error e ->
+                        return Error ("No entry found for part of path " + path + " at " + string i + ": '" + (parts[i]) + "': " + e)
+                    | Ok e ->
                         match e.Children |> Array.tryFind (fun (name,_) -> name = parts[i]) with
-                        | None -> return None
+                        | None -> return (Error ("Child not found: " + parts[i]))
                         | Some (_,uid) -> return! findUid uid parts (i+1)
                 }
 
@@ -209,19 +211,19 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
             let! uid = uidOf path
 
             match uid with
-            | None -> return None
-            | Some id ->
+            | Error e -> return (Error e)
+            | Ok id ->
                 return! getEntry id
         }
 
     let isEntry (path:string) =
-        path |> getEntryByPath |> Promise.map (_.IsSome)
+        path |> getEntryByPath |> Promise.map (function Ok _ -> true | Error _ -> false)
 
     let isFile (path:string) =
-        path |> getEntryByPath |> Promise.map (fun e -> e |> Option.map (fun e -> e.Type = File) |> Option.defaultValue false)
+        path |> getEntryByPath |> Promise.map (fun e -> e |> Result.map (fun e -> e.Type = File) |> Result.defaultValue false)
 
     let isFolder (path:string) =
-        path |> getEntryByPath |> Promise.map (fun e -> e |> Option.map (fun e -> e.Type = Folder) |> Option.defaultValue false)
+        path |> getEntryByPath |> Promise.map (fun e -> e |> Result.map (fun e -> e.Type = Folder) |> Result.defaultValue false)
 
     let makeKey (path:string) =
         "fs:" + path
@@ -237,8 +239,8 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
                 |> Internal.canonical
                 |> uidOf
             match uid with
-            | Some uid -> return! hasEntries uid
-            | None -> return false
+            | Ok uid -> return! hasEntries uid
+            | Error _ -> return false
         }
 
     let getEntriesWhere (filter: FileEntry -> bool) (path : string) =
@@ -249,13 +251,13 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
                 |> uidOf
 
             match uid with
-            | Some uid ->
+            | Ok uid ->
                 let! entries = getEntries uid 
                 return entries 
                     |> Array.filter filter
                     |> Array.map (fun f -> f.Name)
 
-            | None -> return Array.empty
+            | Error _ -> return Array.empty
         }
 
 
@@ -282,6 +284,9 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
     let assertNotIsEntry (fname : string) (message : string) =
         assertFalse (isEntry fname) message
 
+    let assertExists (fname : string) =
+        assertTrue (isEntry fname) ("Not found: " + fname)
+
     let assertIsFolder (fname : string)  =
         assertTrue (isFolder fname)  ("Not a folder: " + fname)
 
@@ -303,7 +308,7 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
                 let! entryOpt = getEntryByPath cpath
 
                 match entryOpt with
-                | Some entry ->
+                | Ok entry ->
                     let! uid = newUid()
 
                     let parentEntry =
@@ -313,17 +318,18 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
 
                     let childEntry =
                         {
-                            Type = entryType
-                            Content = ""
-                            Children = Array.empty
-                            Uid = uid
-                            Name = name
+                            FileEntry.Create() with
+                                Type = entryType
+                                Content = ""
+                                Children = Array.empty
+                                Uid = uid
+                                Name = name
                         }
 
                     do! putEntry childEntry
                 
-                | None -> 
-                    failwith "Parent folder does not exist"
+                | Error s -> 
+                    failwith ("Parent folder does not exist: " + s)
                 
                 do! commitBatch()
                 
@@ -350,8 +356,21 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
             return!
                 getEntryByPath cpath 
                 |> Promise.map (fun entry ->
-                    entry |> Option.map (fun e -> e.Content) |> Option.defaultValue "")
+                    entry |> Result.map (fun e -> e.Content) |> Result.defaultValue "")
         }
+
+    let getMeta(path:string) =
+        let cpath = path |> Internal.canonical
+
+        promise {
+            do! assertExists cpath 
+
+            return!
+                getEntryByPath cpath 
+                |> Promise.map (fun entry ->
+                    entry |> Result.map (fun e -> e.Meta) |> Result.defaultWith (fun x -> failwithf "Not found: %s: %s" path x))
+        }
+
 
     // Optimized with batch operations
     let setFileContent(path:string, content:string) =
@@ -369,9 +388,10 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
                 let! entryOpt = getEntryByPath cpath
 
                 match entryOpt with
-                | Some e ->
-                    do! { e with Content = content } |> putEntry
-                | None -> ()
+                | Ok e ->
+                    do! { e with Content = content; Meta.ModifiedAt = System.DateTime.UtcNow } |> putEntry
+                | Error s -> 
+                    failwith ("setFileContent failed: " + s)
 
                 do! commitBatch()
                 notifyOnChange path
@@ -397,7 +417,9 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
         p 
         |> Promise.bind (function Some t -> map t | _ -> Promise.lift None)
         
-    let (>>=) a b = opt_pr_bind b a
+    let (>>=) a b = 
+        PromiseResult.bind b a
+        // opt_pr_bind b a
 
     // Optimized with batch operations
     let removeFile (path : string) =
@@ -426,13 +448,13 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
                                 promise {
                                     do! delEntry entry
                                     do! putEntry newParentEntry
-                                    return Some ()
+                                    return (Ok ())
                                 }
 
                 match remove with
-                | Some _ -> ()
-                | None -> 
-                    failwith ("Remove failed: " + path)
+                | Ok _ -> ()
+                | Error s -> 
+                    failwith ("Remove failed: " + path + ": " + s)
 
                 do! commitBatch()
                 notifyOnChange path
@@ -481,7 +503,7 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
                                         |> putEntry
 
                                     do! { entry with Name = nname } |> putEntry
-                                    return Some ()
+                                    return Ok ()
                                 }
                             else
                                 nparent
@@ -497,7 +519,7 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
                                         do! { entry with Name = nname }
                                             |> putEntry
 
-                                        return Some ()
+                                        return Ok ()
                                     }
                 
                 do! commitBatch()
@@ -582,6 +604,12 @@ with
 
         member _.GetFileContent( path : string ) =
             mkResult "GetFileContent" <| fun () -> getFileContent path
+
+        member _.GetModifiedAt( path : string ) =
+            mkResult "GetModifiedAt" <| fun () -> path |> getMeta |> Promise.map _.ModifiedAt
+
+        member _.GetCreatedAt (path: string): AsyncPromise<FsDateTime> = 
+            mkResult "GetCreatedAt" <| fun () -> path |> getMeta |> Promise.map _.CreatedAt
 
         member __.SetFileContent( path : string, content : string ) =
             mkResult "SetFileContent" <| fun () -> setFileContent(path, content)

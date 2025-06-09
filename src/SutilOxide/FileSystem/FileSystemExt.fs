@@ -30,6 +30,12 @@ let private mkAsyncPFromSync( fs : IFileSystem ) : IFileSystemAsyncP =
           member _.GetFileContent(path: string)  = 
             mkAsyncP (fun () -> fs.GetFileContent(path))
 
+          member _.GetCreatedAt (path: string): AsyncPromise<FsDateTime> = 
+            mkAsyncP (fun () -> fs.GetCreatedAt(path))
+
+          member _.GetModifiedAt (path: string): AsyncPromise<FsDateTime> = 
+            mkAsyncP (fun () -> fs.GetModifiedAt(path))
+
           member _.IsFile(path: string) = 
             mkAsyncP (fun () -> fs.IsFile(path))
 

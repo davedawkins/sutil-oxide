@@ -112,6 +112,19 @@ let presult = promiseResult
 [<RequireQualifiedAccess>]
 module PromiseResult =
 
+    let map (f : 'a -> 'b) (pr : PromiseResult<'a,string>) : PromiseResult<'b,string> =
+        pr |> Promise.map (Result.map f)
+
+    let bind (f : 'a -> PromiseResult<'b,string>) (pr : PromiseResult<'a,string>) : PromiseResult<'b,string> =
+        promise {
+            let! pa = pr
+
+            return!
+                match pa with
+                | Ok a -> f a
+                | Error s -> Promise.lift (Error s)
+        }
+
     let fromPromise<'T> ( p : Promise<'T> ) : PromiseResult<'T,string> =
         p |> Promise.map (Ok) |> Promise.catch (fun x -> Error x.Message)
 

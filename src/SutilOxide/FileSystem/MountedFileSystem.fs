@@ -6,11 +6,17 @@ type MountedFileSystem( fs : IFileSystem, mountPoint : string) =
     let makePath( path : string ) = Path.combine mountPoint path
 
     let fixPath ( path :string ) = 
-        path.Substring( mountPoint.Length )
+        let start = path.IndexOf mountPoint
+        path.Substring( start + mountPoint.Length )
 
     let fixFiles ( files :string[] ) = files
 
     let fixFolders ( folders :string[] ) = folders 
+
+    let trimSlash (path : string) = path.TrimStart( [| '/' |] )
+
+    let belongs (path : string) =
+        (trimSlash path).StartsWith( trimSlash mountPoint )
 
     interface IFileSystem with
         member this.CreateFile(path: string, name: string) = 
@@ -31,6 +37,12 @@ type MountedFileSystem( fs : IFileSystem, mountPoint : string) =
         member this.GetFileContent(path: string) = 
             fs.GetFileContent(makePath path)
             
+        member this.GetCreatedAt(path: string) = 
+            fs.GetCreatedAt(makePath path)
+            
+        member this.GetModifiedAt(path: string) = 
+            fs.GetModifiedAt(makePath path)
+            
         member this.IsFile(path: string) = 
             fs.IsFile( makePath path )
             
@@ -38,7 +50,8 @@ type MountedFileSystem( fs : IFileSystem, mountPoint : string) =
             fs.IsFolder( makePath path )
 
         member this.OnChange(callback: string -> unit) = 
-            fs.OnChange( fun path -> if path.StartsWith(mountPoint) then callback(fixPath path))
+            fs.OnChange( fun path -> 
+                if belongs path then callback(fixPath path))
 
         member this.RemoveFile(path: string) = 
             fs.RemoveFile( makePath path )
@@ -54,11 +67,17 @@ type MountedFileSystemAsyncP( fs : IFileSystemAsyncP, mountPoint : string) =
     let makePath( path : string ) = Path.combine mountPoint path
 
     let fixPath ( path :string ) = 
-        path.Substring( mountPoint.Length )
+        let start = path.IndexOf mountPoint
+        path.Substring( start + mountPoint.Length )
 
     let fixFiles ( files :string[] ) = files
 
     let fixFolders ( folders :string[] ) = folders 
+
+    let trimSlash (path : string) = path.TrimStart( [| '/' |] )
+
+    let belongs (path : string) =
+        (trimSlash path).StartsWith( trimSlash mountPoint )
 
     interface IFileSystemAsyncP with
 
@@ -86,6 +105,12 @@ type MountedFileSystemAsyncP( fs : IFileSystemAsyncP, mountPoint : string) =
         member this.GetFileContent(path: string)  = 
             fs.GetFileContent(makePath path)
             
+        member this.GetCreatedAt(path: string) = 
+            fs.GetCreatedAt(makePath path)
+            
+        member this.GetModifiedAt(path: string) = 
+            fs.GetModifiedAt(makePath path)
+            
         member this.IsFile(path: string) = 
             fs.IsFile( makePath path )
             
@@ -93,7 +118,8 @@ type MountedFileSystemAsyncP( fs : IFileSystemAsyncP, mountPoint : string) =
             fs.IsFolder( makePath path )
 
         member this.OnChange(callback: string -> unit)  = 
-            fs.OnChange( fun path -> if path.StartsWith(mountPoint) then callback(fixPath path))
+            fs.OnChange( fun path -> 
+                if belongs path then callback(fixPath path))
 
         member this.RemoveFile(path: string)  = 
             fs.RemoveFile( makePath path )

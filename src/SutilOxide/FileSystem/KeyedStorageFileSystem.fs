@@ -17,10 +17,10 @@ type KeyedStorageFileSystem( keyStorage : IKeyedStorage ) =
         keyStorage.Remove (uidKey e.Uid)
 
     let putEntry (e : FileEntry) =
-        keyStorage.Put( (uidKey e.Uid), (Thoth.Json.Encode.Auto.toString(e)) )
+        keyStorage.Put( (uidKey e.Uid), fileEntryToJSON e )
 
     let getEntry uid =
-        match Thoth.Json.Decode.Auto.fromString<FileEntry>( keyStorage.Get (uidKey uid) ) with
+        match fileEntryFromJSON( keyStorage.Get (uidKey uid) ) with
         | Ok r -> Some r
         | Error msg ->
             // Fable.Core.JS.console.log(sprintf "Error: getEntry %A: %A" uid msg)
@@ -135,8 +135,9 @@ type KeyedStorageFileSystem( keyStorage : IKeyedStorage ) =
     let initRoot() =
 
         if not (keyStorage.Exists(uidKey 0)) then
-            { Type = Folder; Name = "/"; Uid = 0; Content = ""; Children = Array.empty }
-            |> putEntry
+            let rootE : FileEntry =
+                { Type = Folder; Name = "/"; Uid = 0; Content = ""; Children = Array.empty; Meta = FileMetaData.Create() }
+            rootE |> putEntry
 
         keyStorage.Get("(root)")
             |> function
@@ -172,11 +173,13 @@ type KeyedStorageFileSystem( keyStorage : IKeyedStorage ) =
             let uid = newUid()
             { entry with Children = entry.Children |> Array.append [| name, uid |] } |> putEntry
             {
-                Type = File
-                Content = ""
-                Children = Array.empty
-                Uid = uid
-                Name = name
+                FileEntry.Create() with
+                    Type = File
+                    Content = ""
+                    Children = Array.empty
+                    Uid = uid
+                    Name = name
+                    Meta = FileMetaData.Create()
             } |> putEntry
         )
         |> Option.defaultWith (fun _ ->
@@ -206,11 +209,12 @@ type KeyedStorageFileSystem( keyStorage : IKeyedStorage ) =
             let uid = newUid()
             { entry with Children = entry.Children |> Array.append [| name, uid |] } |> putEntry
             {
-                Type = Folder
-                Content = ""
-                Children = Array.empty
-                Uid = uid
-                Name = name
+                FileEntry.Create() with
+                    Type = Folder
+                    Content = ""
+                    Children = Array.empty
+                    Uid = uid
+                    Name = name
             } |> putEntry
         )
         |> Option.defaultWith (fun _ ->
@@ -220,13 +224,26 @@ type KeyedStorageFileSystem( keyStorage : IKeyedStorage ) =
         if notify then
             notifyOnChange fname            
 
-    let getFileContent(path:string) =
+    let getFileEntryUnsafe(path:string) =
         let cpath = path |> Internal.canonical
 
         if not (isFile cpath) then
             failwith ("Not a file: " + cpath)
 
-        getEntryByPath cpath |> Option.map (fun e -> e.Content) |> Option.defaultValue ""
+        getEntryByPath cpath
+
+    let getFileContent(path:string) =
+        getFileEntryUnsafe path |> Option.map (fun e -> e.Content) |> Option.defaultValue ""
+
+    let getMeta(path:string) =
+        let cpath = path |> Internal.canonical
+
+        if not (entryExists cpath) then
+            failwith ("Not found: " + path)
+
+        getEntryByPath cpath 
+            |> Option.map (fun e -> e.Meta) 
+            |> Option.defaultWith (fun _ -> failwithf "Not found: %s" path)
 
     let setFileContent(path:string, content:string) =
         let cpath = path |> Internal.canonical
@@ -238,7 +255,7 @@ type KeyedStorageFileSystem( keyStorage : IKeyedStorage ) =
             createFile (cpath |> Path.getFolderName) (cpath |> Path.getFileNameWithExt) false
 
         getEntryByPath cpath
-        |> Option.iter (fun e -> { e with Content = content } |> putEntry)
+        |> Option.iter (fun e -> { e with Content = content; Meta.ModifiedAt = System.DateTime.UtcNow } |> putEntry)
 
         notifyOnChange path
 
@@ -364,6 +381,12 @@ with
 
         member _.GetFileContent( path : string ) =
             mkSyncThrowable <| fun () -> getFileContent path
+
+        member _.GetCreatedAt (path: string): SyncThrowable<FsDateTime> = 
+            mkSyncThrowable <| fun () -> path |> getMeta |> _.CreatedAt
+
+        member _.GetModifiedAt (path: string): SyncThrowable<FsDateTime> = 
+            mkSyncThrowable <| fun () -> path |> getMeta |> _.ModifiedAt
 
         member __.SetFileContent( path : string, content : string ) =
             mkSyncThrowable <| fun () -> setFileContent(path, content)
