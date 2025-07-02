@@ -115,6 +115,15 @@ module PromiseResult =
     let map (f : 'a -> 'b) (pr : PromiseResult<'a,string>) : PromiseResult<'b,string> =
         pr |> Promise.map (Result.map f)
 
+
+    let liftBind (f : 'a -> PromiseResult<'b,string>) (r : Result<'a,string>) : PromiseResult<'b,string> =
+        promise {
+            return!
+                match r with
+                | Ok a -> f a
+                | Error s -> Promise.lift (Error s)
+        }
+
     let bind (f : 'a -> PromiseResult<'b,string>) (pr : PromiseResult<'a,string>) : PromiseResult<'b,string> =
         promise {
             let! pa = pr
@@ -130,6 +139,8 @@ module PromiseResult =
 
     /// Lift a Promise into a PromiseResult
     let liftp<'T>( p : Promise<'T> ) : PromiseResult<'T,string> = fromPromise p
+
+    let liftr<'T>( r : Result<'T,string> ) : PromiseResult<'T,string> = Promise.lift r
 
     /// Lift a value into a PromiseResult
     let lift<'T>( v : 'T ) : PromiseResult<'T,string> = v |> Promise.lift |> liftp

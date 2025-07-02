@@ -286,8 +286,14 @@ type IReadOnlyFileSystemOf<'Date,'StringArray,'String,'Bool,'Unit,'Disposable> =
 type IWriteOnlyFileSystemOf<'StringArray,'String,'Bool,'Unit> =
     abstract member SetFileContent : string * string -> 'Unit
     abstract member RemoveFile     : path : string -> 'Unit
-    abstract member CreateFile     : string * string  -> 'Unit
+
+    // /// Will create all parent folders
+    // abstract member CreateFile     : string -> 'Unit
+
+    /// Will create all parent folders
+    /// Will return silently if folder already exists
     abstract member CreateFolder   : string -> 'Unit
+
     abstract member RenameFile     : string * string -> 'Unit
 
 /// Synchronous read-only interface. Errors will be raised as exceptions

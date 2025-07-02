@@ -23,6 +23,7 @@ type UI =
         Html.div [ Attr.className cls ; yield! items ]
 
 type Msg =
+    | SelectPath of string
     | SetSelected of string
     | DeleteSelected
     | NewFile
@@ -36,7 +37,7 @@ type Msg =
     | FetchListing
 //    | TestIsFolder of string
     | SetCwdForce of string
-    | SetCwd of string
+    // | SetCwd of string
     | SetListing of (string[] * string[])
 
 type SessionState = {
@@ -130,8 +131,8 @@ let update edit msg model =
     | SetCwdForce d ->
         { model with Cwd = d }, Cmd.ofMsg FetchListing
 
-    | SetCwd d ->
-        model, Cmd.OfPromise.either (model.Fs.IsFolder) d (fun isFolder -> if isFolder then SetCwdForce d else (SetError (System.Exception ("Not a folder: " + d)))) (SetError)
+    // | SetCwd d ->
+    //     model, Cmd.OfPromise.either (model.Fs.IsFolder) d (fun isFolder -> if isFolder then SetCwdForce d else (SetError (System.Exception ("Not a folder: " + d)))) (SetError)
 
     | Edit name ->
         if (name <> "") then
@@ -157,6 +158,17 @@ let update edit msg model =
 
     | SetSelected s ->
         { model with Selected = s; Renaming = false}, Cmd.none
+
+    | SelectPath path ->
+        let folder = Path.getFolderName(path)
+        if folder = model.Cwd then
+            model, Cmd.ofMsg (SetSelected path)
+        else
+            model, 
+                Cmd.batch [
+                    Cmd.ofMsg (SetSelected path)
+                    Cmd.ofMsg (SetCwdForce (Path.getFolderName path))
+                ]
 
     | DeleteSelected ->
         let tryDelete() =
@@ -194,7 +206,7 @@ let update edit msg model =
         let tryCreate() =
             promise {
                 let name = "NewFile.md"
-                do! model.Fs.CreateFile( model.Cwd, name )
+                do! model.Fs.SetFileContent( Path.combine (model.Cwd) name, "" )
                 return Path.combine model.Cwd  name
             }
 
@@ -312,7 +324,7 @@ let fileExplorer (classifier : string -> string) iconselector dispatch (m : Mode
                     )
                     Ev.onDblClick (fun e ->
                         e.preventDefault(); 
-                        dispatch (SetCwd parent)
+                        dispatch (SetCwdForce parent)
                     )
                     if m.Selected = parent then
                         Attr.className "selected"
@@ -333,7 +345,7 @@ let fileExplorer (classifier : string -> string) iconselector dispatch (m : Mode
                         )
                         Ev.onDblClick (fun e ->
                             e.preventDefault(); 
-                            dispatch (SetCwd (Path.combine cwd name))
+                            dispatch (SetCwdForce (Path.combine cwd name))
                         )
                         if m.Selected = path then
                             Attr.className "selected"
@@ -431,13 +443,17 @@ type FileExplorer( fs : IFileSystemAsyncP ) =
         member _.Dispatch = dispatch
         member _.Selected = model.Value.Selected
         member _.CurrentFolder = model.Value.Cwd
+
+        member __.SelectPath( path : string ) =
+            dispatch (SelectPath path)
+
         member _.Files = model.Value.Files
         member _.Folders = model.Value.Folders
-        member __.Exists( path : string ) = 
+        member __.ExistsInCwd( path : string ) = 
             exists (__.Files) path || exists (__.Folders) path
-        member __.IsFile( path : string ) = 
+        member __.IsFileInCwd( path : string ) = 
             exists (__.Files) path
-        member __.IsFolder( path : string ) = 
+        member __.IsFolderInCmd( path : string ) = 
             // Fable.Core.JS.console.log("IsFolder: ", path, __.Folders)
             path = "/" || exists (__.Folders) path
 

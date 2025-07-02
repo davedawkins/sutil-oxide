@@ -187,7 +187,7 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
         entryChildren uid |> Promise.map(Result.map (Array.map snd))
 
     let rec uidOf path =
-        let parts = path |> Internal.parsePath
+        let parts = path |> parsePath
 
         let rec findUid (parent : Uid) (parts : string[]) i : PromiseResult<Uid,string> =
             match i with
@@ -293,17 +293,37 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
     let assertIsFile (fname : string) =
         assertTrue (isFile fname) ("Not a file: " + fname)
 
+    let rec createFolderRecursive path notify : Promise<unit> =
+        promise {
+            let! pathIsFile = isFile path
+            if pathIsFile then
+                failwith ("File exists: " + path)
+            else 
+                let! pathIsFolder = isFolder path
+                if not pathIsFolder then
+                    match Path.getFolderName path with 
+                    | "" -> ()
+                    | parent -> 
+                        do! createFolderRecursive parent notify
+                    do! createChildEntry path notify Folder
+        }
+
     // Optimized with batch operations
-    let createChildEntry path name notify entryType =
+    and createChildEntry path notify entryType =
+        let fname = path |> Internal.canonical
+        let cpath = getFolderName fname
+        let name = getFileNameWithExt fname
         validateFileName name
-        let cpath = path |> Internal.canonical
-        let fname = Path.combine cpath name
 
         promise {
             beginBatch()
             try
                 do! assertNotIsEntry fname ("File already exists: " + fname)
-                do! assertIsFolder cpath 
+
+                let! isFolder = isFolder cpath
+                if not isFolder then
+                    do! createFolderRecursive cpath notify
+                // do! assertIsFolder cpath 
 
                 let! entryOpt = getEntryByPath cpath
 
@@ -340,12 +360,16 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
                 return raise ex
         }
 
-    let createFile path name notify = createChildEntry path name notify File
-
     let createFolder folderPath notify = 
-        let name = Path.getFileNameWithExt folderPath
-        let parent = Path.getFolderName folderPath
-        createChildEntry parent name notify Folder
+        // let name = Path.getFileNameWithExt folderPath
+        // let parent = Path.getFolderName folderPath
+        promise {
+            let! exists = isFolder folderPath
+            if not exists then 
+                do! createChildEntry folderPath notify Folder
+        }
+
+    let createFile path notify = createChildEntry path notify File
 
     let getFileContent(path:string) =
         let cpath = path |> Internal.canonical
@@ -383,7 +407,7 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
 
                 let! _isFile = isFile cpath
                 if not _isFile then            
-                    do! createFile (cpath |> Path.getFolderName) (cpath |> Path.getFileNameWithExt) false
+                    do! createFile cpath false
 
                 let! entryOpt = getEntryByPath cpath
 
@@ -621,8 +645,8 @@ with
         member _.CreateFolder( path : string ) =
             mkResult "CreateFolder" <| fun () -> createFolder path true
 
-        member __.CreateFile( path : string, name : string ) =
-            mkResult "CreateFile" <| fun () -> createFile path name true
+        // member __.CreateFile( path : string ) =
+        //     mkResult "CreateFile" <| fun () -> createFile path true
 
         member __.RenameFile( path : string, newNameOrPath : string ) =
             mkResult "RenameFile" <| fun () -> renameFile(path, newNameOrPath)

@@ -2,7 +2,7 @@ module SutilOxide.FileSystemExt
 
 open SutilOxide.FileSystem
 open SutilOxide.PromiseResult
-open SutilOxide.MountedFileSystem
+open SutilOxide.SubFolderFileSystem
 
 let private mkAsyncPFromSync( fs : IFileSystem ) : IFileSystemAsyncP =
 
@@ -12,8 +12,8 @@ let private mkAsyncPFromSync( fs : IFileSystem ) : IFileSystemAsyncP =
         }
 
     { new IFileSystemAsyncP with
-          member _.CreateFile(arg1: string, arg2: string) = 
-            mkAsyncP (fun () -> fs.CreateFile(arg1, arg2))
+        //   member _.CreateFile(arg1: string) = 
+        //     mkAsyncP (fun () -> fs.CreateFile(arg1))
 
           member _.CreateFolder(arg1: string) = 
             mkAsyncP (fun () -> fs.CreateFolder(arg1))
@@ -145,28 +145,28 @@ module Extensions =
                 do! __.RemoveFile( path )
             }
 
-        member __.CreateFolderRecursive (path : string) =
-            promise {
-                let! pathIsFile = __.IsFile path
-                if pathIsFile then
-                    failwith ("File exists: " + path)
-                else 
-                    let! pathIsFolder = __.IsFolder path
-                    if pathIsFolder then
-                        ()
-                    else
-                        match Path.getFolderName path with 
-                        | "" -> ()
-                        | parent -> 
-                            do! __.CreateFolderRecursive parent
-                        do! __.CreateFolder path
-            }
+        // member __.CreateFolderRecursive (path : string) =
+        //     promise {
+        //         let! pathIsFile = __.IsFile path
+        //         if pathIsFile then
+        //             failwith ("File exists: " + path)
+        //         else 
+        //             let! pathIsFolder = __.IsFolder path
+        //             if pathIsFolder then
+        //                 ()
+        //             else
+        //                 match Path.getFolderName path with 
+        //                 | "" -> ()
+        //                 | parent -> 
+        //                     do! __.CreateFolderRecursive parent
+        //                 do! __.CreateFolder path
+        //     }
 
         member fs.Copy( src : string, dst : string ) =
     
             let copyFileFs path (fs : IFileSystemAsyncP) (fs2 : IFileSystemAsyncP) =
                 promise {
-                    do! fs2.CreateFolderRecursive (Path.getFolderName path)
+                    // do! fs2.CreateFolderRecursive (Path.getFolderName path)
                     let! content = fs.GetFileContent path
                     do! fs2.SetFileContent( path, content )
                 }
@@ -195,8 +195,8 @@ module Extensions =
 
                     do! fs.CreateFolder dst
 
-                    let dstFs = fs.Mount(dst) // MountedFileSystem(fs, dst)
-                    let srcFs = fs.Mount(src) //MountedFileSystem(fs, src)
+                    let dstFs = fs.MakeRoot(dst) // SubFolderFileSystem(fs, dst)
+                    let srcFs = fs.MakeRoot(src) //SubFolderFileSystem(fs, src)
 
                     do! copyFolderFs "/" srcFs dstFs
                 else
@@ -225,6 +225,20 @@ module Extensions =
                         |> Promise.all
 
                     return nestedResults |> Array.collect id
+            }
+
+        member __.Entries (path : string) : Promise<string []> =
+            promise {
+                let! isFolderPath = __.IsFolder path
+                if not isFolderPath then
+                    return Array.empty
+                else
+                    let! folders = __.Folders path
+                    let! files = __.Files path
+
+                    return
+                        files
+                        |> Array.append folders
             }
 
         member __.FilesRecursive (path : string) : Promise<string []> =
@@ -289,16 +303,16 @@ module Extensions =
         member __.GetAsyncP() : IFileSystemAsyncP =
             mkAsyncPFromSync __
 
-        member __.CreateFolderRecursive (path : string) : unit =
-            if (__.IsFile path).UnsafeValue then
-                failwith ("File exists: " + path)
-            else if (__.IsFolder path).UnsafeValue then
-                ()
-            else
-                match Path.getFolderName path with 
-                | "" -> ()
-                | parent -> __.CreateFolderRecursive parent
-                __.CreateFolder path |> _.UnsafeValue
+        // member __.CreateFolderRecursive (path : string) : unit =
+        //     if (__.IsFile path).UnsafeValue then
+        //         failwith ("File exists: " + path)
+        //     else if (__.IsFolder path).UnsafeValue then
+        //         ()
+        //     else
+        //         match Path.getFolderName path with 
+        //         | "" -> ()
+        //         | parent -> __.CreateFolderRecursive parent
+        //         __.CreateFolder path |> _.UnsafeValue
                 
         member __.CopyFile( src : string, tgt : string ) : unit =
             if __.Exists src |> _.UnsafeValue then
@@ -311,7 +325,7 @@ module Extensions =
 
         member fs.Copy( src : string, dst : string ) : unit =
             let copyFileFs path (fs : IFileSystem) (fs2 : IFileSystem) : unit =
-                fs2.CreateFolderRecursive (Path.getFolderName path)
+                // fs2.CreateFolderRecursive (Path.getFolderName path)
                 fs2.SetFileContent( path, fs.GetFileContent path |> _.UnsafeValue ) |> _.UnsafeValue
 
             let copyFolderFs path (fs : IFileSystem) (fs2 : IFileSystem) =
@@ -332,8 +346,8 @@ module Extensions =
 
                 fs.CreateFolder dst |> _.UnsafeValue
 
-                let dstFs = MountedFileSystem(fs, dst)
-                let srcFs = MountedFileSystem(fs, src)
+                let dstFs = SubFolderFileSystem(fs, dst)
+                let srcFs = SubFolderFileSystem(fs, src)
 
                 copyFolderFs "/" srcFs dstFs
             else

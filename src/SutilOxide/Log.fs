@@ -6,6 +6,8 @@ open Fable.Core
 let _console_log : obj = jsNative
 
 type ILog =
+    abstract group: message:string -> unit
+    abstract groupEnd: unit -> unit
     abstract log: ?message: obj * [<System.ParamArray>] optionalParams: obj[] -> unit
     abstract trace: ?message: obj * [<System.ParamArray>] optionalParams: obj[] -> unit
     abstract error: ?message: obj * [<System.ParamArray>] optionalParams: obj[] -> unit
@@ -54,6 +56,23 @@ let private nextId() =
     let id = _idCounter + 1
     _idCounter <- id
     id
+
+let mutable private groupStack : string list = [] 
+let mutable private groupCount = 0
+
+let private startGroup( label : string ) =
+    groupStack <- label :: groupStack
+    groupCount <- groupCount + 1
+    Fable.Core.JS.console.group( label )
+
+let private endGroup() =
+    match groupStack with
+    | x :: xs ->
+        Fable.Core.JS.console.groupEnd()
+        groupStack <- xs
+        groupCount <- groupCount - 1
+    | _ -> 
+        Fable.Core.JS.console.error("Log: group stack underflow")
 
 type LogMessage = 
     {
@@ -128,6 +147,9 @@ let inline private  fmt msg args =
 let createWith logm (source : string) =
     {
         new ILog with
+            member _.group(label : string) = 
+                startGroup( source + ": " + label)
+            member _.groupEnd() = endGroup()
             member _.log( arg0, argsN ) =
                 logm source "Trace" (fmt arg0 argsN) null
             member _.trace( arg0, argsN ) =

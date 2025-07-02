@@ -156,18 +156,73 @@ type KeyedStorageFileSystem( keyStorage : IKeyedStorage ) =
         putRoot()
         uid
 
-    let createFile path name notify=
+    let rec createFolderRecursive (path : string) notify : unit =
+        if isFile path then
+            failwith ("File exists: " + path)
+        else if isFolder path then
+            ()
+        else
+            match Path.getFolderName path with 
+            | "" -> ()
+            | parent -> createFolderRecursive parent notify
+            createFolder path notify
+
+    and createFolder folderPath notify =
+        let name = Path.getFileNameWithExt folderPath
+        let parent = Path.getFolderName folderPath
+
         validateFileName name
-        let cpath = path |> Internal.canonical
-        let fname = Path.combine cpath name
+        let cpath = parent |> Internal.canonical
+        let fname = Internal.combine cpath name
 
         if isEntry fname then
             failwith ("File already exists: " + fname)
 
-        if not (isFolder cpath) then
-            failwith ("Not a folder: " + cpath)
+        createFolderRecursive cpath notify
+        // if not (isFolder cpath) then
+        //     failwith ("Not a folder: " + cpath)
 
         cpath
+        |> getEntryByPath
+        |> Option.map (fun entry ->
+            let uid = newUid()
+            { entry with Children = entry.Children |> Array.append [| name, uid |] } |> putEntry
+            {
+                FileEntry.Create() with
+                    Type = Folder
+                    Content = ""
+                    Children = Array.empty
+                    Uid = uid
+                    Name = name
+                    Meta = FileMetaData.Create()
+            } |> putEntry
+        )
+        |> Option.defaultWith (fun _ ->
+            failwith "Parent folder does not exist"
+        )
+
+        if notify then
+            notifyOnChange fname
+
+    let createFolderIdem  path notify =
+        if not (isFolder path) then
+            createFolder path notify
+
+    let createFile path notify=
+        let fname = path |> Internal.canonical
+
+        let name = getFileNameWithExt fname
+        let parent = getFolderName fname
+
+        validateFileName name
+
+        if isEntry fname then
+            failwith ("File already exists: " + fname)
+
+        if not (isFolder parent) then
+            failwith ("Not a folder: " + parent)
+
+        parent
         |> getEntryByPath
         |> Option.map (fun entry ->
             let uid = newUid()
@@ -189,40 +244,6 @@ type KeyedStorageFileSystem( keyStorage : IKeyedStorage ) =
         if notify then
             notifyOnChange fname
 
-    let createFolder folderPath notify=
-        let name = Path.getFileNameWithExt folderPath
-        let parent = Path.getFolderName folderPath
-
-        validateFileName name
-        let cpath = parent |> Internal.canonical
-        let fname = Internal.combine cpath name
-
-        if isEntry fname then
-            failwith ("File already exists: " + fname)
-
-        if not (isFolder cpath) then
-            failwith ("Not a folder: " + cpath)
-
-        cpath
-        |> getEntryByPath
-        |> Option.map (fun entry ->
-            let uid = newUid()
-            { entry with Children = entry.Children |> Array.append [| name, uid |] } |> putEntry
-            {
-                FileEntry.Create() with
-                    Type = Folder
-                    Content = ""
-                    Children = Array.empty
-                    Uid = uid
-                    Name = name
-            } |> putEntry
-        )
-        |> Option.defaultWith (fun _ ->
-            failwith "Parent folder does not exist"
-        )
-
-        if notify then
-            notifyOnChange fname            
 
     let getFileEntryUnsafe(path:string) =
         let cpath = path |> Internal.canonical
@@ -252,7 +273,7 @@ type KeyedStorageFileSystem( keyStorage : IKeyedStorage ) =
             failwith ("Not a file: " + cpath)
 
         if not (isFile cpath) then
-            createFile (cpath |> Path.getFolderName) (cpath |> Path.getFileNameWithExt) false
+            createFile cpath false
 
         getEntryByPath cpath
         |> Option.iter (fun e -> { e with Content = content; Meta.ModifiedAt = System.DateTime.UtcNow } |> putEntry)
@@ -395,10 +416,10 @@ with
             mkSyncThrowable <| fun () -> removeFile path
 
         member _.CreateFolder( path : string ) =
-            mkSyncThrowable <| fun () -> createFolder path true
+            mkSyncThrowable <| fun () -> createFolderIdem path true
 
-        member __.CreateFile( path : string, name : string ) =
-            mkSyncThrowable <| fun () -> createFile path name true
+        // member __.CreateFile( path : string ) =
+        //     mkSyncThrowable <| fun () -> createFile path true
 
         member __.RenameFile( path : string, newNameOrPath : string ) =
             mkSyncThrowable <| fun () -> renameFile(path, newNameOrPath)

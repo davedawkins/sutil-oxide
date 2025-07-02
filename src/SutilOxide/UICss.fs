@@ -56,26 +56,68 @@ let style = [
     rule ".ui-control" [
         Css.positionRelative
         Css.padding (rem 0.3)
-        Css.cursorPointer
         Css.borderRadius (px 3)
         Css.custom("transition", "background-color 100ms ease-in-out")
         Css.whiteSpaceNowrap
+        Css.custom ("pointer-events", "none")
+        Css.userSelectNone
     ]
 
     rule ".ui-toolbar .ui-control" [
         Css.padding (rem 0.2)
     ]
 
-
     rule ".ui-menu-stack > .ui-control" [
         Css.paddingLeft (rem 1)
         Css.paddingRight (rem 1.5)
     ]
 
-    rule ".ui-control:hover" [
-        // Css.backgroundColor "#f0f0f0"
-        Css.backgroundColor "#f8f8f8"
-        Css.custom("transition", "background-color 100ms ease-in-out")
+    // rule ".ui-select > .ui-menu-stack > .ui-control" [
+    //     Css.paddingLeft (rem 0)
+    //     Css.paddingRight (rem 0)
+    // ]
+
+    let enablePointerEvents (role : string) = 
+        rule (sprintf ".ui-control[role='%s']" role) [
+            Css.cursorPointer
+            Css.custom ("pointer-events", "inherit")
+        ]
+    
+    let hoverHightlight = 
+        [
+            Css.backgroundColor "#f8f8f8"
+            Css.custom("transition", "background-color 100ms ease-in-out")
+        ]
+
+    let enableHoverHighlight (role : string) = 
+        rule (sprintf ".ui-control[role='%s']:hover" role)
+            hoverHightlight
+
+    enablePointerEvents "button"
+    enableHoverHighlight "button"
+
+    enablePointerEvents "menu"
+    enableHoverHighlight "menu"
+
+    enablePointerEvents "checkbox"
+    enableHoverHighlight "checkbox"
+
+    enablePointerEvents "listbox"
+
+    enableHoverHighlight "checkbox"
+
+    rule ".ui-control[role='listbox']" [
+        Css.displayFlex
+        Css.flexDirectionRow
+        Css.alignItemsCenter
+    ]
+
+    rule ".ui-select" [
+        Css.positionRelative
+        Css.displayFlex
+        Css.flexDirectionColumn
+        Css.alignItemsCenter
+        Css.marginLeft (rem 0.2)
     ]
 
     rule ".ui-group" [
@@ -104,13 +146,44 @@ let style = [
         Css.backgroundColor "white"
         Css.opacity 0
         Css.custom ("pointer-events", "none")
-        Css.gap (px 4)
+        // Css.gap (px 4)
         Css.boxShadow "0 2px 5px 0 rgba(0,0,0,.5)"
         Css.zIndex 999
 
         Css.custom("width", "max-content")
         Css.top 0
         Css.left (percent 100)
+    ]
+
+    rule ".ui-select:hover"
+        hoverHightlight
+
+    rule ".ui-select > .ui-menu-stack" [
+        Css.top (percent 100)
+        Css.left (rem -1)
+    ]
+
+    rule ".ui-select-value > .option-list > .option" [
+        Css.visibilityHidden
+        Css.height 0
+    ]
+
+    rule ".ui-select-value > .option-list > .option.selected" [
+        Css.visibilityVisible
+        Css.custom ("height", "auto")
+    ]
+
+    rule ".ui-select-value" [
+        Css.displayFlex
+        Css.flexDirectionRow
+        Css.alignItemsCenter
+        Css.border (px 1, Feliz.borderStyle.solid, "#ddd")
+        Css.padding (rem 0, rem 0.2)
+    ]
+
+    rule ".option-list" [
+        Css.displayFlex
+        Css.flexDirectionColumn
     ]
 
     rule "*:focus-within>.ui-menu-stack" [

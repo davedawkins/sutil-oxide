@@ -50,7 +50,7 @@ module Common =
 
 module Icon =
     let private _makeFa (prefix : string) (name : string) =
-        if name.StartsWith "fa " || name.StartsWith "fa-sharp " || name.StartsWith "fa-brands " then 
+        if name.StartsWith "fa " || name.StartsWith "fa-sharp " || name.StartsWith "fa-brands " || name.StartsWith "icon-" then 
             name
         else 
             let faName = if name.StartsWith "fa-" then name else "fa-" + name
@@ -85,6 +85,7 @@ module Control =
 
     type OnClick = (unit -> unit)
     type OnCheck = (bool -> unit)
+    type OnSelect = (obj -> unit)
 
     let private idGenerator( prefix : string ) =
         let mutable n = 0
@@ -99,6 +100,7 @@ module Control =
         | ControlButton of OnClick
         | ControlCheck of OnCheck * Value<bool>
         | ControlMenu of (unit -> Control list)
+        | ControlSelect of (OnSelect * Value<obj> * (unit -> (string * obj) list))
 
     and Control = {
         Key : string
@@ -136,6 +138,12 @@ module Control =
 
     let makeLabel options = options |> makeControl
 
+    let makeSeparator() =
+        //makeLabel [ ControlOption.Text (PlainText (Value.Const "|")) ]
+        makeLabel [ 
+            ControlOption.Icon (FaIcon "pipe")
+        ]
+
     let makeButton cb options = 
         { makeControl options with Type = ControlButton cb }
         
@@ -144,6 +152,9 @@ module Control =
         
     let makeMenu items options = 
         { makeControl options with Type = ControlMenu items }
+
+    let makeSelect<'t> (onSelect : 't -> unit) (value : Value<'t>) (items : unit -> (string * 't) list) options =
+        { makeControl options with Type = ControlSelect (unbox onSelect, unbox value, unbox items) }
 
     let internal renderSeparator() = Html.divc "ui-vsep" []
 
@@ -200,6 +211,7 @@ module Control =
                         attrDataCmd (item.Key)
                         Ev.onClick (fun _ -> onClick()) 
                     ]
+
                 | ControlMenu items ->
                     let itemStore : IStore<Control list> = Store.make []
                     [ 
@@ -212,6 +224,77 @@ module Control =
                             Html.divc "ui-menu-stack scroll-shadows" (items |> List.map renderControl)
                         )
                     ]
+
+                | ControlSelect (onSelect, value, items) ->
+                    
+                    let _eq = JsHelpers.fastEquals
+
+                    let itemMap : IStore<(string*obj) list> = Store.make (items())
+
+                    let findLabel (v : obj) =
+                        itemMap.Value 
+                        |> List.tryFind (snd>>_eq v) 
+                        |> Option.map fst
+                        |> Option.defaultValue ""
+
+                    let current = 
+                        match value with
+                        | Value.Const z -> Store.make z
+                        | Value.Getter g -> Store.make (g())
+                        | Value.Observable (o,init) ->
+                            let s = Store.make init
+                            let d = o.Subscribe( Store.set s )
+                            s
+
+                    let makeSelectItem (label, value) =
+
+                        let handler () =
+                            Store.set current value
+                            onSelect value
+
+                        //let checkValue = Value.Observable (current .> _eq value, _eq value current.Value )
+
+                        [
+                            Text (PlainText (Value.Const label))
+                        ] |> makeButton handler
+
+                    let itemStore : IStore<Control list> = Store.make []
+
+                    [ 
+                        Attr.roleListBox
+                        Html.divc "ui-select" [
+                            Attr.tabIndex 0
+                            attrDataCmd (item.Key)
+                            disposeOnUnmount [ itemStore ]
+                            
+                            Html.divc "ui-select-value" [
+                                Html.divc "option-list" [
+                                    Bind.each( 
+                                        itemMap, 
+                                        (fun (label, value) -> 
+                                            Html.divc "option" [ 
+                                                Bind.toggleClass( current .> _eq value, "selected" )
+                                                text label 
+                                            ]), 
+                                        fst )
+                                ]
+                                // Bind.el( 
+                                //     current .> findLabel,
+                                //     fun label -> Html.span [ text label ]
+                                // )
+                                Html.ic ("right " + (Icon.makeFa("angle-down"))) []
+                            ]
+                            Ev.onClick (fun _ -> 
+                                let _items = items() 
+                                _items |> Store.set itemMap
+                                _items |> List.map makeSelectItem |> Store.set itemStore
+                            )
+                            Bind.el( itemStore, fun items ->
+                                Html.divc "ui-menu-stack scroll-shadows" (items |> List.map renderControl)
+                            )
+                        ]
+                    ]
+
                 | _ -> []
         ]
 
@@ -558,7 +641,7 @@ module Forms =
             Format: 'T -> string
             Set: ('T -> unit) option
             Get: unit -> 'T
-            AllowedValues: string[] option
+            AllowedValues: (unit -> string[]) option
             Step : float
             SystemTypeName : string
         }
@@ -580,20 +663,24 @@ module Forms =
             let empty = { Field.Empty<'T>() with  SystemTypeName = sysTypeName }
 
             match (shortName(empty.SystemTypeName)) with
-            | "String" -> empty.WithParse( fun s -> Ok ( (s :> obj :?> 'T)  ))
+            | "String" -> 
+                    empty.WithParse( fun s -> Ok ( (s :> obj :?> 'T)  ))
+
             | "Double" | "Float64" | "Float32" | "Float" -> 
                 empty
                     .WithBuiltIn(BuiltInEditor.Number)
                     .WithParse( parseDouble :> obj :?> Parser<'T> )
 
             | "Int32" -> empty.WithBuiltIn(BuiltInEditor.Number)
+
             | "Boolean" -> empty.WithBuiltIn(BuiltInEditor.Checkbox)
+
             | _ ->
                 if (isEnum(t)) then
                     let cases = Reflection.FSharpType.GetUnionCases(t) |> Array.filter (fun c -> c.GetFields().Length = 0)
                     { empty with
                         Editor = FieldEditor.BuiltIn BuiltInEditor.Select
-                        AllowedValues = cases |> Array.map (fun c -> c.Name) |> Array.sort |> Some
+                        AllowedValues = (fun () -> cases |> Array.map (fun c -> c.Name) |> Array.sort) |> Some
                         Parse =
                             fun s -> 
                                 match cases |> Array.tryFind (fun c -> c.Name = s) with
@@ -619,7 +706,13 @@ module Forms =
         member __.WithFormat( f : 'T -> string ) : Field<'T> = { __ with Format = f }
         member __.WithSet( s : 'T -> unit ) : Field<'T> = { __ with Set = Some s }
         member __.WithGet( g : unit -> 'T ) : Field<'T> = { __ with Get = g }
-        member __.WithAllowedValues( vals : string seq ) : Field<'T> = { __ with AllowedValues = vals |> Seq.toArray |> Some }
+
+        member __.WithAllowedValues( vals : unit -> string[] ) : Field<'T> = 
+            { __ with AllowedValues = Some vals}
+
+        member __.WithAllowedValues( vals : string seq ) : Field<'T> = 
+            let _vals = vals |> Seq.toArray
+            { __ with AllowedValues = Some (fun () -> _vals)}
 
     open Sutil.Styling
     open type Feliz.length
@@ -718,7 +811,7 @@ module Forms =
         let (setter: ('t -> unit) option) = f.Set
         let (format: 't -> string) = f.Format
         let (parse: string -> Result<'t,string>) = f.Parse
-        let (allowed : string[] option) = f.AllowedValues
+        let allowed : string[] option = f.AllowedValues |> Option.map (fun g -> g())
 
         let formatted() = getter() |> format
 
@@ -753,33 +846,20 @@ module Forms =
 
     let internal editFieldCheckbox (field : Field<bool>) (error : IStore<string>) =
 
-        let validate (e : Browser.Types.Event) =
-            let input = (e.target :?> Browser.Types.HTMLInputElement)
-            Ok (input.``checked``)
-        
         Html.input [    
             Attr.typeCheckbox
             Attr.isChecked (field.Get())   
 
-            Ev.onFocus(fun e ->
-                let input = (e.target :?> Browser.Types.HTMLInputElement)
-
-                input.``checked`` <- field.Get()
-
-                "" |> Store.set error 
-            )
-
-            Ev.onInput( fun e -> validate e |> ignore )
-
             match field.Set with 
             | Some f ->
-                Ev.onBlur (fun e -> 
-                    let input = (e.target :?> Browser.Types.HTMLInputElement)
-                    input.``checked`` |> f
-                )
+                Ev.onCheckedChange f
             | None ->
                 Attr.readOnly true
         ]
+
+    open Fable.Core
+    [<Emit("document.activeElement === $0")>]
+    let hasFocus( el : Browser.Types.EventTarget ) : bool = jsNative
 
     let internal editFieldInput (builtIn : BuiltInEditor) (f : Field<'t>) (error : IStore<string>) =
         let (typ: string) = builtIn |> string |> _.ToLower()
@@ -787,6 +867,8 @@ module Forms =
         let (setter: ('t -> unit) option) = f.Set
         let (format: 't -> string) = f.Format
         let (parse: string -> Result<'t,string>) = f.Parse
+
+        let timeout = SutilOxide.JsHelpers.createTimeout()
 
         let formatted() = getter() |> format
 
@@ -799,6 +881,11 @@ module Forms =
 
             result
         
+        let commit set (e : Browser.Types.Event)  =
+            let input = (e.target :?> Browser.Types.HTMLInputElement)
+            if input.value <> formatted() then
+                validate e |> Result.iter set
+
         Html.input [    
             Attr.custom ("type" ,typ)
 
@@ -814,17 +901,21 @@ module Forms =
             )
 
             Ev.onMount( fun e -> validate e |> ignore )
-            Ev.onInput( fun e -> validate e |> ignore )
 
             match setter with 
             | Some f ->
-                Ev.onBlur (fun e -> 
-                    let input = (e.target :?> Browser.Types.HTMLInputElement)
-                    if input.value <> formatted() then
-                        validate e |> Result.iter f
+                Ev.onBlur (commit f)
+                Ev.onChange (fun (e : Browser.Types.Event) -> 
+                    if not (hasFocus e.target) then
+                        timeout 500 (fun _ -> commit f e) 
+                )
+                Ev.onInput (fun (e : Browser.Types.Event) -> 
+                    if not (hasFocus e.target) then
+                        timeout 500 (fun _ -> commit f e) 
                 )
             | None ->
                 Attr.readOnly true
+                Ev.onInput( fun e -> validate e |> ignore)
         ]
 
 //    open FrameworkTypes
@@ -857,6 +948,9 @@ module Forms =
                         match __.Editor with
 
                         | FieldEditor.BuiltIn (BuiltInEditor.Select) ->
+                            editFieldSelect __  
+
+                        | FieldEditor.BuiltIn (BuiltInEditor.Text) when __.AllowedValues.IsSome ->
                             editFieldSelect __  
 
                         | FieldEditor.BuiltIn (BuiltInEditor.Checkbox) ->
