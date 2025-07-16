@@ -27,7 +27,7 @@ module Common =
     type Direction = Vertical | Horizontal
 
     type Icon = 
-        | FaIcon of string
+        | FaIcon of Value<string>
         | UrlIcon of string
 
     type Text =
@@ -141,7 +141,7 @@ module Control =
     let makeSeparator() =
         //makeLabel [ ControlOption.Text (PlainText (Value.Const "|")) ]
         makeLabel [ 
-            ControlOption.Icon (FaIcon "pipe")
+            ControlOption.Icon (FaIcon (Value.Const "pipe"))
         ]
 
     let makeButton cb options = 
@@ -191,7 +191,12 @@ module Control =
 
 
             match item.Icon with
-            | Some (FaIcon fa) -> Html.ic ("left " + Icon.makeFa fa) []
+            | Some (FaIcon (Value.Const fa)) -> Html.ic ("left " + Icon.makeFa fa) []
+            | Some (FaIcon (Value.Getter fa)) -> Html.ic ("left " + Icon.makeFa (fa())) []
+            | Some (FaIcon (Value.Observable (fas,init))) -> 
+                Html.i [
+                    Bind.className( fas .> Icon.makeFa .> ((+)"left ") )
+                ]
             | _ -> Sutil.CoreElements.nothing
 
             match item.Text with

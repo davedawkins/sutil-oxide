@@ -471,7 +471,9 @@ let private viewTabLabel (model : System.IObservable<Model>) dispatch dockLocati
             |> Store.map (fun m -> (m.SelectedPanes[dockLocation] |> Option.defaultValue "") = pane.Key),
             "selected")
 
-        Html.i [ Attr.className (UI.Icon.makeFa pane.Icon) ]
+        if (pane.Icon <> "") then
+            Html.i [ Attr.className (UI.Icon.makeFa pane.Icon) ]
+
         Html.span [ 
             match pane.Label with
             | LabelString s ->
