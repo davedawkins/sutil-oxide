@@ -126,9 +126,39 @@ type SubFolderFileSystemAsyncP( fs : IFileSystemAsyncP, mountPoint : string) =
 
         member this.RenameFile(src: string, tgt: string)  = 
             fs.RenameFile( makePath src, makePath tgt )
+
         member this.SetFileContent(path: string, content: string)  = 
             fs.SetFileContent( makePath path, content)
 
+        member __.FilesBatch (paths: string array): AsyncPromise<string array array> = 
+            promise {
+                let! filesArray = fs.FilesBatch (paths |> Array.map makePath)
+                return filesArray |> Array.map fixFiles
+            }
+
+        member __.FoldersBatch (paths: string array): AsyncPromise<string array array> = 
+            promise {
+                let! filesArray = fs.FoldersBatch (paths |> Array.map makePath)
+                return filesArray |> Array.map fixFiles
+            }
+
+        member __.ExistsBatch (paths: string array): AsyncPromise<bool array> = 
+            fs.ExistsBatch (paths |> Array.map makePath)
+
+        member __.IsFileBatch (paths: string array): AsyncPromise<bool array> = 
+            fs.IsFileBatch (paths |> Array.map makePath)
+
+        member __.IsFolderBatch (paths: string array): AsyncPromise<bool array> = 
+            fs.ExistsBatch (paths |> Array.map makePath)
+
+        member __.GetFileContentBatch (paths: string array): AsyncPromise<string array> = 
+            fs.GetFileContentBatch (paths |> Array.map makePath)
+
+        member __.GetModifiedAtBatch( paths : string[] ) =
+            fs.GetModifiedAtBatch (paths |> Array.map makePath)
+
+        member __.GetCreatedAtBatch( paths : string[] ) =
+            fs.GetCreatedAtBatch (paths |> Array.map makePath)
 
 type MountHostSystemAsyncP( fs : IFileSystemAsyncP, mountPoint : string, mountFs : IFileSystemAsyncP ) =
     // let makePath( path : string ) = Path.combine mountPoint path
@@ -188,7 +218,6 @@ type MountHostSystemAsyncP( fs : IFileSystemAsyncP, mountPoint : string, mountFs
             }
 
         member this.GetFileContent(path: string)  = 
-            Fable.Core.JS.console.log("GetFileContent: " + path + " -> " + getPath(path))
             (getFs path).GetFileContent(getPath path)
             
         member this.GetCreatedAt(path: string) = 
@@ -198,11 +227,9 @@ type MountHostSystemAsyncP( fs : IFileSystemAsyncP, mountPoint : string, mountFs
             (getFs path).GetModifiedAt(getPath path)
             
         member this.IsFile(path: string) = 
-            Fable.Core.JS.console.log("IsFile: " + path + " -> " + getPath(path))
             (getFs path).IsFile( getPath path )
             
         member this.IsFolder(path: string) = 
-            Fable.Core.JS.console.log("IsFolder: " + path + " -> " + getPath(path))
             (getFs path).IsFolder( getPath path )
 
         member this.OnChange(callback: string -> unit)  = 
@@ -220,6 +247,38 @@ type MountHostSystemAsyncP( fs : IFileSystemAsyncP, mountPoint : string, mountFs
 
         member this.SetFileContent(path: string, content: string)  = 
             (getFs path).SetFileContent( getPath path, content)
+
+        member __.FilesBatch (paths: string array): AsyncPromise<string array array> = 
+            let self = __ :> IFileSystemAsyncP
+            self.FilesBatchDefault paths
+
+        member __.FoldersBatch (paths: string array): AsyncPromise<string array array> = 
+            let self = __ :> IFileSystemAsyncP
+            self.FoldersBatchDefault paths
+
+        member __.ExistsBatch (paths: string array): AsyncPromise<bool array> = 
+            let self = __ :> IFileSystemAsyncP
+            self.ExistsBatchDefault paths
+
+        member __.IsFileBatch (paths: string array): AsyncPromise<bool array> = 
+            let self = __ :> IFileSystemAsyncP
+            self.IsFileBatchDefault paths
+
+        member __.IsFolderBatch (paths: string array): AsyncPromise<bool array> = 
+            let self = __ :> IFileSystemAsyncP
+            self.ExistsBatchDefault paths
+
+        member __.GetFileContentBatch (paths: string array): AsyncPromise<string array> = 
+            let self = __ :> IFileSystemAsyncP
+            self.GetFileContentBatchDefault paths
+
+        member __.GetModifiedAtBatch( paths : string[] ) =
+            let self = __ :> IFileSystemAsyncP
+            self.GetModifiedAtBatchDefault paths
+
+        member __.GetCreatedAtBatch( paths : string[] ) =
+            let self = __ :> IFileSystemAsyncP
+            self.GetCreatedAtBatchDefault paths
 
 [<AutoOpen>]
 module SubFolderFileSystemExt = 

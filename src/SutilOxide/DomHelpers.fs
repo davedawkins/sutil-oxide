@@ -68,7 +68,8 @@ module DomHelpers =
             | BottomRight -> "#dock-bottom-right"
             | TopLeft -> "#dock-top-left"
             | TopRight -> "#dock-top-right"
-            | CentreCentre -> "#dock-centre-centre"
+            | CentreLeft -> "#dock-centre-left"
+            | CentreRight -> "#dock-centre-right"
         document.querySelector (contentId) :?> HTMLElement
 
     let getWrapperNode (name : string) =

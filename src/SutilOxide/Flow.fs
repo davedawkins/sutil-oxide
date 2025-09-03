@@ -1068,7 +1068,7 @@ module Styles =
         // -- Edges -----------------------------------------------------------
 
         rule ".edge" [
-            Css.custom("stroke","#999")
+            Css.custom("stroke","#b1b1b7")
             Css.custom("stroke-width","1")
             Css.custom("fill", "none")
         ]

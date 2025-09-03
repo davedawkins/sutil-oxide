@@ -18,7 +18,7 @@ type ICell<'T> =
 
 
 type Cell<'T>(name : string, init:'T) =
-    let clients = Subscription.Subscription<'T>()
+    let clients = new Subscription.Subscription<'T>()
     let mutable value = init
     let _set v = 
         value <- v

@@ -101,7 +101,8 @@ type DockLocation =
     | LeftTop
     | LeftBottom
     | BottomLeft
-    | CentreCentre
+    | CentreLeft
+    | CentreRight
     | BottomRight
     | RightTop
     | RightBottom
@@ -110,7 +111,7 @@ type DockLocation =
 with
     static member All =
         [|
-            LeftTop; LeftBottom; BottomLeft; BottomRight; RightTop; RightBottom; CentreCentre; TopLeft; TopRight
+            LeftTop; LeftBottom; BottomLeft; BottomRight; RightTop; RightBottom; CentreLeft; CentreRight; TopLeft; TopRight
         |]
 
     static member AllNames = 
@@ -131,7 +132,7 @@ with
 
     member __.Primary =
         match __ with
-        | CentreCentre -> Centre
+        | CentreLeft | CentreRight -> Centre
         | LeftTop | LeftBottom -> Left
         | RightTop | RightBottom -> Right
         | BottomLeft | BottomRight -> Bottom
@@ -139,11 +140,10 @@ with
 
     member __.Secondary=
         match __ with
-        | CentreCentre -> Centre
         | LeftTop | RightTop -> Top
         | LeftBottom | RightBottom -> Bottom
-        | BottomLeft | TopLeft  -> Left
-        | BottomRight | TopRight -> Right
+        | CentreLeft | TopLeft | BottomLeft | TopLeft  -> Left
+        | CentreRight | TopRight | BottomRight | TopRight -> Right
 
     member __.CssName =
         __.Primary.LowerName + "-" + __.Secondary.LowerName
@@ -197,7 +197,7 @@ type DockPane =
             Key = key
             Label = LabelString key
             CanClose = false
-            Location = CentreCentre
+            Location = CentreLeft
             Header = text key
             Content = Html.div key
             IsOpen = true

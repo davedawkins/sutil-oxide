@@ -97,13 +97,13 @@ type LogMessage =
             Time = System.DateTime.Now
         }
 
-let mutable private logListeners = Subscription.Subscription<LogMessage>()
+let mutable private logListeners = new Subscription.Subscription<LogMessage>()
 
 let logMessages : Cell.ICell<_> = Cell.Cell<ResizeArray<LogMessage>>( "logmessages", ResizeArray())
 
 let [<Import("trapConsoleLog", "./loghelper.js")>] trapConsoleLog (x : obj array -> unit) : unit = jsNative
 
-let onLogClear = Subscription.Subscription<unit>()
+let onLogClear = new Subscription.Subscription<unit>()
 let onLogMessage : System.IObservable<LogMessage> = logListeners
 let messages : System.IObservable<ResizeArray<LogMessage>> = logMessages
 

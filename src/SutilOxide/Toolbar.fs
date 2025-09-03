@@ -33,6 +33,7 @@ type ButtonProperty =
     | OnClick of (Browser.Types.MouseEvent -> unit)
     | OnCheckChanged of (bool -> unit)
     | IsChecked of bool
+    | IsEnabled of bool
 
 type Button = {
     Display : DisplayMode
@@ -42,9 +43,10 @@ type Button = {
     OnClick : (Browser.Types.MouseEvent -> unit) option
     OnCheckChanged : (bool -> unit) option
     IsChecked : bool
+    IsEnabled : bool
 }
 with
-    static member Empty = { Label = None; Icon = None; OnClick = None; OnCheckChanged = None; Mode = Button; IsChecked = false; Display = LabelIcon }
+    static member Empty = { Label = None; Icon = None; OnClick = None; OnCheckChanged = None; Mode = Button; IsChecked = false; Display = LabelIcon; IsEnabled = true }
     member __.With (p : ButtonProperty) =
         match p with
         | Display s -> { __ with Display = s }
@@ -52,6 +54,7 @@ with
         | Label s -> { __ with Label = Some s }
         | Icon s -> { __ with Icon = Some s }
         | IsChecked s -> { __ with IsChecked = s }
+        | IsEnabled s -> { __ with IsEnabled = s }
         | OnClick s -> { __ with OnClick = Some s }
         | OnCheckChanged s -> { __ with OnCheckChanged = Some s }
     static member From (p : ButtonProperty seq) =
@@ -142,7 +145,11 @@ let mkButton b =
     let checkedS = Store.make b.IsChecked
     Html.a [
         disposeOnUnmount [ checkedS ]
-        Attr.className ("xd-item-button" + (if b.Mode = Checkbox then " checkbox" else ""))
+        Attr.className (
+            "xd-item-button" 
+            + (if b.Mode = Checkbox then " checkbox" else "")
+            + (if b.IsEnabled then "" else " disabled")
+            )
         Attr.href "-"
         
         if b.Mode = Checkbox then

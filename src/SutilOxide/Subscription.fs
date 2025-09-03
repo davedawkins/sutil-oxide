@@ -12,9 +12,11 @@ module Subscription =
 #if FABLE_COMPILER
 [<Mangle>]
 #endif
+
 type ISubscriptionWithResult<'T,'R> =
     abstract Subscribe : ('T -> 'R) -> System.IDisposable
     abstract Count : int
+    inherit System.IDisposable
 
 type ISubscription<'T> = 
     inherit ISubscriptionWithResult<'T,unit>
@@ -97,6 +99,7 @@ type SubscriptionWithResult<'T,'R>() =
     interface ISubscriptionWithResult<'T,'R> with
         member this.Subscribe(client) = this.Subscribe client
         member this.Count = clients.Count
+        member this.Dispose() = clients.Clear()
 
 type Subscription<'T>() =
     inherit SubscriptionWithResult<'T,unit>()

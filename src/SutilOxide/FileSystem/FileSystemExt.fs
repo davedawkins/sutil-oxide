@@ -11,9 +11,28 @@ let private mkAsyncPFromSync( fs : IFileSystem ) : IFileSystemAsyncP =
             return value().UnsafeValue
         }
 
-    { new IFileSystemAsyncP with
-        //   member _.CreateFile(arg1: string) = 
-        //     mkAsyncP (fun () -> fs.CreateFile(arg1))
+    let inline mkBatchAsyncP( value : unit -> SyncThrowable<'t>[] ) : AsyncPromise<'t[]> = 
+        promise {
+            return value() |> Array.map _.UnsafeValue
+        }
+
+    { new IFileSystemAsyncP with          
+          member _.ExistsBatch(paths: string[])  =
+              mkBatchAsyncP (fun () -> paths |> Array.map fs.Exists)
+          member this.FilesBatch(paths: string array): AsyncPromise<string array array> = 
+              mkBatchAsyncP (fun () -> paths |> Array.map fs.Files)
+          member this.FoldersBatch(paths: string array): AsyncPromise<string array array> = 
+              mkBatchAsyncP (fun () -> paths |> Array.map fs.Files)
+          member this.GetCreatedAtBatch(paths: string array): AsyncPromise<FsDateTime array> = 
+              mkBatchAsyncP (fun () -> paths |> Array.map fs.GetCreatedAt)
+          member this.GetFileContentBatch(paths: string array): AsyncPromise<string array> = 
+              mkBatchAsyncP (fun () -> paths |> Array.map fs.GetFileContent)
+          member this.GetModifiedAtBatch(paths: string array): AsyncPromise<FsDateTime array> = 
+              mkBatchAsyncP (fun () -> paths |> Array.map fs.GetModifiedAt)
+          member this.IsFileBatch(paths: string array): AsyncPromise<bool array> = 
+              mkBatchAsyncP (fun () -> paths |> Array.map fs.IsFile)
+          member this.IsFolderBatch(paths: string array): AsyncPromise<bool array> = 
+              mkBatchAsyncP (fun () -> paths |> Array.map fs.IsFolder)
 
           member _.CreateFolder(arg1: string) = 
             mkAsyncP (fun () -> fs.CreateFolder(arg1))

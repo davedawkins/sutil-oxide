@@ -283,6 +283,17 @@ type IReadOnlyFileSystemOf<'Date,'StringArray,'String,'Bool,'Unit,'Disposable> =
     abstract member GetModifiedAt : path : string  -> 'Date
 
 
+type IReadOnlyBatchingFileSystemOf<'Date,'StringArray,'String,'Bool,'Unit,'Disposable> =
+    inherit IReadOnlyFileSystemOf<AsyncPromise<'Date>,AsyncPromise<'StringArray>,AsyncPromise<'String>,AsyncPromise<'Bool>,AsyncPromise<'Unit>,AsyncPromise<'Disposable> >
+    abstract member FilesBatch : path : string[] -> AsyncPromise<'StringArray[]>
+    abstract member FoldersBatch : path :string[] -> AsyncPromise<'StringArray[]>
+    abstract member ExistsBatch : path : string[] -> AsyncPromise<'Bool[]>
+    abstract member IsFileBatch : path : string[] -> AsyncPromise<'Bool[]>
+    abstract member IsFolderBatch : path : string[] -> AsyncPromise<'Bool[]>
+    abstract member GetFileContentBatch : path : string[]  -> AsyncPromise<'String[]>
+    abstract member GetCreatedAtBatch : path : string[]  -> AsyncPromise<'Date[]>
+    abstract member GetModifiedAtBatch : path : string[]  -> AsyncPromise<'Date[]>
+
 type IWriteOnlyFileSystemOf<'StringArray,'String,'Bool,'Unit> =
     abstract member SetFileContent : string * string -> 'Unit
     abstract member RemoveFile     : path : string -> 'Unit
@@ -323,9 +334,38 @@ type IFileSystemAsyncR =
 type IReadOnlyFileSystemAsyncP = 
     inherit IReadOnlyFileSystemOf<AsyncPromise<FsDateTime>, AsyncPromise<string[]>, AsyncPromise<string>, AsyncPromise<bool>, AsyncPromise<unit>, AsyncPromise<IDisposable>>
 
+type IReadOnlyBatchingFileSystemAsyncP = 
+    inherit IReadOnlyBatchingFileSystemOf<FsDateTime, string[], string, bool, unit, IDisposable>
+
 /// Promise-based interface where all results are expressed as AsyncResult<'T> (Promise<'T>)
 /// 
 type IFileSystemAsyncP = 
     inherit IWriteOnlyFileSystemOf<AsyncPromise<string[]>, AsyncPromise<string>, AsyncPromise<bool>, AsyncPromise<unit>>
-    inherit IReadOnlyFileSystemAsyncP
+    inherit IReadOnlyBatchingFileSystemAsyncP
+
+
+type IFileSystemAsyncP with
+    member self.FilesBatchDefault (paths: string array): AsyncPromise<string array array> = 
+        paths |> Array.map self.Files |> Promise.all
+
+    member self.FoldersBatchDefault (paths: string array): AsyncPromise<string array array> = 
+        paths |> Array.map self.Folders |> Promise.all
+
+    member self.ExistsBatchDefault (paths: string array): AsyncPromise<bool array> = 
+        paths |> Array.map self.Exists |> Promise.all
+
+    member self.IsFileBatchDefault (paths: string array): AsyncPromise<bool array> = 
+        paths |> Array.map self.IsFile |> Promise.all
+
+    member self.IsFolderBatchDefault (paths: string array): AsyncPromise<bool array> = 
+        paths |> Array.map self.IsFolder |> Promise.all
+
+    member self.GetFileContentBatchDefault (paths: string array): AsyncPromise<string array> = 
+        paths |> Array.map self.GetFileContent |> Promise.all
+
+    member self.GetModifiedAtBatchDefault( paths : string[] ) =
+        paths |> Array.map self.GetModifiedAt |> Promise.all
+
+    member self.GetCreatedAtBatchDefault( paths : string[] ) =
+        paths |> Array.map self.GetCreatedAt |> Promise.all
 

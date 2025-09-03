@@ -331,6 +331,7 @@ let fileExplorer (classifier : string -> string) iconselector dispatch (m : Mode
                 ]
 
             m.Folders
+                |> Array.sortBy (fun s -> s.ToLower())
                 |> Array.map (fun name ->
                     let path = Path.combine cwd name
                     UI.divc ("fx-folder " + classifier path) [

@@ -41,7 +41,7 @@ module Common =
         | BottomLeft | BottomRight
         | LeftTop | LeftBottom
         | RightTop | RightBottom
-        | Center
+        | CenterLeft | CenterRight
 
 
     /// Pass the component's label as-is, it will be converted to a standard format. For example, "Sign Out" will
@@ -101,6 +101,7 @@ module Control =
         | ControlCheck of OnCheck * Value<bool>
         | ControlMenu of (unit -> Control list)
         | ControlSelect of (OnSelect * Value<obj> * (unit -> (string * obj) list))
+        | ControlCustom of Core.SutilElement
 
     and Control = {
         Key : string
@@ -125,6 +126,8 @@ module Control =
         | Icon of Icon
         | Shortcut of Shortcut
         //| Type of RibbonControlType
+
+    let custom( e : Core.SutilElement ) : Control = { Control.Create() with Type = ControlCustom e }
 
     let makeControl (options : ControlOption list) =
         let withOption (c : Control) (option : ControlOption) : Control =
@@ -159,6 +162,11 @@ module Control =
     let internal renderSeparator() = Html.divc "ui-vsep" []
 
     let rec internal renderControl (item : Control) =
+        match item.Type with
+        | ControlCustom el -> el
+        | _ -> renderBuiltIn item
+    
+    and renderBuiltIn(item : Control) =
         Html.divc "ui-control" [
             Attr.tabIndex 0
 
@@ -210,6 +218,8 @@ module Control =
 
             yield!
                 match item.Type with
+                | ControlCustom _ -> [ ]
+
                 | ControlButton onClick -> 
                     [
                         Attr.roleButton

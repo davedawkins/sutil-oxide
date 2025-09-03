@@ -128,13 +128,13 @@ module DockHelpers =
         |> (fun map -> { m with SelectedPanes = map } )
 
     let ensureCentreSelected (m : Model) =
-        match m.SelectedPanes[CentreCentre] with
+        match m.SelectedPanes[CentreLeft] with
         | None ->
             { m with
                 SelectedPanes =
                     m.SelectedPanes.Add(
-                        CentreCentre,
-                        m.Docks.GetPanes CentreCentre |> List.tryHead |> Option.map (fun p -> p.Key))
+                        CentreLeft,
+                        m.Docks.GetPanes CentreLeft |> List.tryHead |> Option.map (fun p -> p.Key))
             }
         | _ -> m
 
@@ -391,40 +391,41 @@ module private EventHandlers =
         if System.Math.Abs dist < 200 then Some loc else None
 
     let dragOver dispatch (e : DragEvent) =
-        try
-            e.preventDefault()
-            //let tabName = e.dataTransfer.getData("text/plain")
-            let el = e.currentTarget |> toEl
-            let r = el.getBoundingClientRect()
+        let dragEl = document.querySelector(".dragging") |> toEl
+        if dragEl <> null then
+            try
+                e.preventDefault()
+                //let tabName = e.dataTransfer.getData("text/plain")
+                let el = e.currentTarget |> toEl
+                let r = el.getBoundingClientRect()
 
-            clearPreview()
-            let dragEl = document.querySelector(".dragging") |> toEl
+                clearPreview()
 
-            let invert = function FirstHalf-> SecondHalf|_-> FirstHalf
+                let invert = function FirstHalf-> SecondHalf|_-> FirstHalf
 
-            let previewOverLoc (loc : DockLocation) =
-                previewOver dragEl $".tabs-{loc.CssName} > div"
+                let previewOverLoc (loc : DockLocation) =
+                    previewOver dragEl $".tabs-{loc.CssName} > div"
 
-            match closestDock e.clientX e.clientY r with
-            | Some loc ->
-                let i =
-                    match loc.Primary with
-                    | Left ->
-                        previewOverLoc loc (e.clientY) containsByHeight (fun a b -> whichHalfY a b |> invert)
-                    | Right ->
-                        previewOverLoc loc (e.clientY) containsByHeight whichHalfY
-                    | Bottom | Top ->
-                        previewOverLoc loc (e.clientX) containsByWidth whichHalfX
-                    | Centre ->
-                        -1
+                match closestDock e.clientX e.clientY r with
+                | Some loc ->
+                    let i =
+                        match loc.Primary with
+                        | Left ->
+                            previewOverLoc loc (e.clientY) containsByHeight (fun a b -> whichHalfY a b |> invert)
+                        | Right ->
+                            previewOverLoc loc (e.clientY) containsByHeight whichHalfY
+                        | Bottom | Top ->
+                            previewOverLoc loc (e.clientX) containsByWidth whichHalfX
+                        | Centre ->
+                            -1
 
-                if i <> -1 then
-                    (Some (loc,i)) |> PreviewDockLocation |> dispatch
+                    if i <> -1 then
+                        (Some (loc,i)) |> PreviewDockLocation |> dispatch
 
-            | _ ->
-                None|> PreviewDockLocation |> dispatch
-        with
-        | x -> console.log(x.Message)
+                | _ ->
+                    None|> PreviewDockLocation |> dispatch
+            with
+            | x -> console.log(x.Message)
 
     let drop dispatch (e : DragEvent) =
         dispatch CommitDrag
@@ -449,7 +450,7 @@ module private EventHandlers =
 
     let tabClick dockLocation (tabLabel : DockPane) dispatch (e : MouseEvent) =
         match dockLocation with
-        | CentreCentre ->
+        | CentreLeft | CentreRight ->
             ShowPaneWithNotify (tabLabel.Key,true) |>  dispatch
         | _ ->
             TogglePaneWithNotify (tabLabel.Key,true) |>  dispatch
@@ -548,6 +549,12 @@ let dockTopLeftContainer (rootElement : HTMLElement) =
 let dockTopRightContainer (rootElement : HTMLElement) =
     (rootElement.querySelector(".dock-top-right-container") :?> HTMLElement)
 
+let dockCentreLeftContainer (rootElement : HTMLElement) =
+    (rootElement.querySelector(".dock-centre-left-container") :?> HTMLElement)
+
+let dockCentreRightContainer (rootElement : HTMLElement) =
+    (rootElement.querySelector(".dock-centre-right-container") :?> HTMLElement)
+
 let dockBottomLeftContainer (rootElement : HTMLElement) =
     (rootElement.querySelector(".dock-bottom-left-container") :?> HTMLElement)
 
@@ -593,6 +600,8 @@ type DockContainer() =
 
             setOption cfg "top-left.pct" (fun v -> (dockTopLeftContainer rootElement).style.flexGrow <- v)
             setOption cfg "top-right.pct" (fun v -> (dockTopRightContainer rootElement).style.flexGrow <- v)
+            setOption cfg "centre-left.pct" (fun v -> (dockCentreLeftContainer rootElement).style.flexGrow <- v)
+            setOption cfg "centre-right.pct" (fun v -> (dockCentreRightContainer rootElement).style.flexGrow <- v)
             setOption cfg "bottom-left.pct" (fun v -> (dockBottomLeftContainer rootElement).style.flexGrow <- v)
             setOption cfg "bottom-right.pct" (fun v -> (dockBottomRightContainer rootElement).style.flexGrow <- v)
 
@@ -667,20 +676,29 @@ type DockContainer() =
                     ]
 
                     UI.divc "dock-centre-container2" [
+                        // Bind.toggleClass( model |> Store.map (fun m -> (m.SelectedPanes[CentreLeft], m.SelectedPanes[CentreRight]) = (None,None)), "hidden" )
+
+                        // dockContainer (fun _ -> options) model CentreLeft
+                        // dockContainer (fun _ -> options) model CentreRight
+
+                        // UI.divc $"dock-resize-handle bottom vertical" [
+                        //     resizeControllerNs -1 (fun _ -> options.OnConfigurationChanged())
+                        // ]
+
                         Bind.el(
-                            model |> Store.map (fun m -> m.Docks.GetPanes(CentreCentre)) |> paneDistinct,
+                            model |> Store.map (fun m -> m.Docks.GetPanes(CentreLeft)) |> paneDistinct,
                             fun tabs ->
                                 UI.divc "dock-tabs tabs-centre border border-bottom" [
                                     // match tabs with
                                     // | [] | [ _ ] -> yield! []
                                     // | _ -> yield! tabs |> List.map (viewTabLabel model dispatch CentreCentre)
-                                    yield! tabs |> List.map (viewTabLabel model dispatch CentreCentre)
+                                    yield! tabs |> List.map (viewTabLabel model dispatch CentreLeft)
                                 ]
                         )
 
 
                         UI.divc "dock-main" [
-                            dockContainer (fun _ -> options) model CentreCentre
+                            dockContainer (fun _ -> options) model CentreLeft
                         ]
                     ]
 
@@ -887,7 +905,8 @@ with
                         buttonItem [ Icon "fa-caret-square-down"; ButtonProperty.Label "Bottom Right"; OnClick (fun _ -> MoveTo (cfg.Key,BottomRight) |> dispatch) ]
                         buttonItem [ Icon "fa-caret-square-up"; ButtonProperty.Label "Top Left"; OnClick (fun _ -> MoveTo (cfg.Key,TopLeft) |> dispatch) ]
                         buttonItem [ Icon "fa-caret-square-up"; ButtonProperty.Label "Top Right"; OnClick (fun _ -> MoveTo (cfg.Key,TopRight) |> dispatch) ]
-                        buttonItem [ Icon "fa-square"; ButtonProperty.Label "Centre"; OnClick (fun _ -> MoveTo (cfg.Key,CentreCentre) |> dispatch) ]
+                        buttonItem [ Icon "fa-square"; ButtonProperty.Label "Centre Left"; OnClick (fun _ -> MoveTo (cfg.Key,CentreLeft) |> dispatch) ]
+                        buttonItem [ Icon "fa-square"; ButtonProperty.Label "Centre Right"; OnClick (fun _ -> MoveTo (cfg.Key,CentreRight) |> dispatch) ]
                     ]
                 ]
             ]
@@ -904,7 +923,7 @@ with
                     "selected")
 
                 Bind.visibility
-                    (loc |> Store.map (fun optLoc -> cfg.Location <> CentreCentre || optLoc <> Some CentreCentre))
+                    (loc |> Store.map (fun optLoc -> cfg.Location <> CentreLeft || optLoc <> Some CentreLeft))
                     (UI.divc "pane-header" [
                         Html.div [
                             cfg.Header

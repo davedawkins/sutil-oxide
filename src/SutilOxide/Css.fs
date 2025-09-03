@@ -103,7 +103,8 @@ let containerIds = [
     "bottom-right"
     "top-left"
     "top-right"
-    "centre-centre"
+    "centre-left"
+    "centre-right"
 ]
 
 let private baseStyling (theme : Theme) = [
@@ -745,6 +746,7 @@ let private toolbarStyling (theme : Theme) = [
         Css.custom("grid-template-columns", "1.2rem auto")
         Css.alignItemsCenter
         Css.borderStyleNone
+        Css.custom("width", "fit-content")
     ]
 
     rule ".item-group-right" [
@@ -841,6 +843,21 @@ let private toolbarStyling (theme : Theme) = [
         Css.custom("border-top", "1px solid rgba(0, 0, 0, 0.1)")
         Css.custom("border-bottom", "1px solid rgba(255, 255, 255, 0.3)")
     ]
+
+    rule ".xd-item-button.disabled" [
+        Css.color "#888888"
+        Css.custom( "pointer-events", "none" )
+    ]
+
+    rule ".xd-item-button.disabled:hover" [
+        Css.backgroundColor theme.ContentBackground
+    ]
+
+    rule ".menu-stack>.xd-item-button.disabled:hover" [
+        Css.backgroundColor theme.ContentBackground
+    ]
+
+
 ]
 
 let overrides (theme : Theme) = [

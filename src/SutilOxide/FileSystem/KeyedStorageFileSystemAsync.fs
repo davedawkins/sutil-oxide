@@ -620,10 +620,13 @@ with
             run |> mkResult "OnChange"
 
         member _.Files (path : string) = (fun () -> getEntriesWhere (fun e -> e.Type = File) path)  |> mkResult "Files"
+
         member _.Folders (path :string) = (fun () -> getEntriesWhere (fun e -> e.Type = Folder) path) |> mkResult "Folders"
 
         member __.Exists(path : string) = mkResult "Exists" <| fun () -> isEntry(path)
+
         member __.IsFile(path : string) = mkResult "IsFile" <| fun () -> isFile(path)
+
         member __.IsFolder(path : string) = mkResult "IsFolder" <| fun () -> isFolder(path)
 
         member _.GetFileContent( path : string ) =
@@ -635,6 +638,38 @@ with
         member _.GetCreatedAt (path: string): AsyncPromise<FsDateTime> = 
             mkResult "GetCreatedAt" <| fun () -> path |> getMeta |> Promise.map _.CreatedAt
 
+        member __.FilesBatch (paths: string array): AsyncPromise<string array array> = 
+            let self = __ :> IFileSystemAsyncP
+            self.FilesBatchDefault paths
+
+        member __.FoldersBatch (paths: string array): AsyncPromise<string array array> = 
+            let self = __ :> IFileSystemAsyncP
+            self.FoldersBatchDefault paths
+
+        member __.ExistsBatch (paths: string array): AsyncPromise<bool array> = 
+            let self = __ :> IFileSystemAsyncP
+            self.ExistsBatchDefault paths
+
+        member __.IsFileBatch (paths: string array): AsyncPromise<bool array> = 
+            let self = __ :> IFileSystemAsyncP
+            self.IsFileBatchDefault paths
+
+        member __.IsFolderBatch (paths: string array): AsyncPromise<bool array> = 
+            let self = __ :> IFileSystemAsyncP
+            self.ExistsBatchDefault paths
+
+        member __.GetFileContentBatch (paths: string array): AsyncPromise<string array> = 
+            let self = __ :> IFileSystemAsyncP
+            self.GetFileContentBatchDefault paths
+
+        member __.GetModifiedAtBatch( paths : string[] ) =
+            let self = __ :> IFileSystemAsyncP
+            self.GetModifiedAtBatchDefault paths
+
+        member __.GetCreatedAtBatch( paths : string[] ) =
+            let self = __ :> IFileSystemAsyncP
+            self.GetCreatedAtBatchDefault paths
+
         member __.SetFileContent( path : string, content : string ) =
             mkResult "SetFileContent" <| fun () -> setFileContent(path, content)
 
@@ -644,9 +679,6 @@ with
 
         member _.CreateFolder( path : string ) =
             mkResult "CreateFolder" <| fun () -> createFolder path true
-
-        // member __.CreateFile( path : string ) =
-        //     mkResult "CreateFile" <| fun () -> createFile path true
 
         member __.RenameFile( path : string, newNameOrPath : string ) =
             mkResult "RenameFile" <| fun () -> renameFile(path, newNameOrPath)
