@@ -49,7 +49,7 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
         keyStorage.Put( uidKey e.Uid, fileEntryToByteArray e)
 
     let putRoot() =
-        keyStorage.Put( RootKeyName,  encode root |> ByteArray.toByteArray)        
+        keyStorage.Put( RootKeyName,  encode root |> ByteArray.textEncode)        
 
     let getRootKeyJson() =
         promise {
@@ -61,7 +61,7 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
                 | "string" -> 
                     return rootEntry :?> string
                 | _ -> 
-                    let json = (rootEntry :?> ByteArray) |> ByteArray.fromByteArray
+                    let json = (rootEntry :?> ByteArray) |> ByteArray.textDecode
                     // Fable.Core.JS.console.log("RootObject: ", rootEntry, json)
                     return json
         }
@@ -79,9 +79,9 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
                 let data : ByteArray = unbox e
                 let nul = data.indexOf( 0uy )
                 if nul < 0 then
-                    return fileEntryFromJSON( data |> ByteArray.fromByteArray ) None
+                    return fileEntryFromJSON( data |> ByteArray.textDecode ) None
                 else
-                    let jsonPart = data.slice(0,nul) |> ByteArray.fromByteArray
+                    let jsonPart = data.slice(0,nul) |> ByteArray.textDecode
                     let dataPart = data.slice(nul+1, data.length)
                     return fileEntryFromJSON jsonPart (Some dataPart)
         }
@@ -756,7 +756,7 @@ with
             | Ok entryStorage ->
                 match entryStorage.Content with
                 | TextBlob s -> 
-                    return Some (Content.Bytes (s |> ByteArray.toByteArray))
+                    return Some (Content.Bytes (s |> ByteArray.textEncode))
                 | ByteBlob s -> 
                     return Some (Content.Bytes s)
                 | ChildEntries childEntries ->
