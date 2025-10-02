@@ -4,85 +4,8 @@ open SutilOxide.FileSystem
 open SutilOxide.PromiseResult
 open SutilOxide.SubFolderFileSystem
 
-let private mkAsyncPFromSync( fs : IFileSystem ) : IFileSystemAsyncP =
-
-    let inline mkAsyncP( value : unit -> SyncThrowable<'t> ) : AsyncPromise<'t> = 
-        promise {
-            return value().UnsafeValue
-        }
-
-    let inline mkBatchAsyncP( value : unit -> SyncThrowable<'t>[] ) : AsyncPromise<'t[]> = 
-        promise {
-            return value() |> Array.map _.UnsafeValue
-        }
-
-    { new IFileSystemAsyncP with          
-          member _.ExistsBatch(paths: string[])  =
-              mkBatchAsyncP (fun () -> paths |> Array.map fs.Exists)
-          member this.FilesBatch(paths: string array): AsyncPromise<string array array> = 
-              mkBatchAsyncP (fun () -> paths |> Array.map fs.Files)
-          member this.FoldersBatch(paths: string array): AsyncPromise<string array array> = 
-              mkBatchAsyncP (fun () -> paths |> Array.map fs.Files)
-          member this.GetCreatedAtBatch(paths: string array): AsyncPromise<FsDateTime array> = 
-              mkBatchAsyncP (fun () -> paths |> Array.map fs.GetCreatedAt)
-          member this.GetFileContentBatch(paths: string array): AsyncPromise<string array> = 
-              mkBatchAsyncP (fun () -> paths |> Array.map fs.GetFileContent)
-          member this.GetModifiedAtBatch(paths: string array): AsyncPromise<FsDateTime array> = 
-              mkBatchAsyncP (fun () -> paths |> Array.map fs.GetModifiedAt)
-          member this.IsFileBatch(paths: string array): AsyncPromise<bool array> = 
-              mkBatchAsyncP (fun () -> paths |> Array.map fs.IsFile)
-          member this.IsFolderBatch(paths: string array): AsyncPromise<bool array> = 
-              mkBatchAsyncP (fun () -> paths |> Array.map fs.IsFolder)
-
-          member _.CreateFolder(arg1: string) = 
-            mkAsyncP (fun () -> fs.CreateFolder(arg1))
-
-          member _.Exists(path: string) = 
-            mkAsyncP (fun () -> fs.Exists(path))
-
-          member _.Files(path: string) = 
-            mkAsyncP (fun () -> fs.Files(path))
-
-          member _.Folders(path: string) = 
-            mkAsyncP (fun () -> fs.Folders(path))
-
-          member _.GetFileContent(path: string)  = 
-            mkAsyncP (fun () -> fs.GetFileContent(path))
-
-          member _.GetCreatedAt (path: string): AsyncPromise<FsDateTime> = 
-            mkAsyncP (fun () -> fs.GetCreatedAt(path))
-
-          member _.GetModifiedAt (path: string): AsyncPromise<FsDateTime> = 
-            mkAsyncP (fun () -> fs.GetModifiedAt(path))
-
-          member _.IsFile(path: string) = 
-            mkAsyncP (fun () -> fs.IsFile(path))
-
-          member _.IsFolder(path: string) = 
-            mkAsyncP (fun () -> fs.IsFolder(path))
-
-          member _.OnChange(arg1: string -> unit)  = 
-            mkAsyncP (fun () -> fs.OnChange(arg1))
-
-          member _.RemoveFile(path: string) = 
-            mkAsyncP (fun () -> fs.RemoveFile(path))
-
-          member _.RenameFile(arg1: string, arg2: string) = 
-            mkAsyncP (fun () -> fs.RenameFile(arg1, arg2))
-
-          member _.SetFileContent(arg1: string, arg2: string) = 
-            mkAsyncP (fun () -> fs.SetFileContent(arg1, arg2))
-    }
-
-
-
-
 [<AutoOpen>]
 module Extensions = 
-
-    // type IFileSystemAsyncR with
-    //     member __.GetAsyncP() : IFileSystemAsyncP =
-    //         mkAsyncPFromAsync __
 
     module Promise =
 
@@ -92,7 +15,7 @@ module Extensions =
                 if c then return! action() else return defaultValue()
             }
 
-    type IFileSystemAsyncP with
+    type IFsAsync with
 
         member __.DoIfExists( path : string, action : unit -> Promise<unit> ) =
             Promise.ifThen (__.Exists path) action (fun _ -> ())
@@ -105,6 +28,9 @@ module Extensions =
 
         member __.IfNotExists( path : string, action : unit -> Promise<'T>, elseWith : unit -> 'T  ) =
             Promise.ifThen (__.Exists path |> Promise.map not) action elseWith
+
+        member __.GetFileTextIfExists( path : string, defaultValue : string ) =
+            Promise.ifThen (__.Exists path) (fun _ -> __.GetFileText(path)) (fun _ -> defaultValue)
 
         member __.FilesRecursiveWith( path : string, filter : string -> bool, content : string -> Promise<'a> ) =
             promise {
@@ -123,6 +49,16 @@ module Extensions =
 
         member __.FilesRecursiveWithContent( path : string, filter : string -> bool ) =
             __.FilesRecursiveWith( path, filter, __.GetFileContent )
+
+        member __.ResetFolder( path : string ) =
+            promise {
+                do! __.DoIfExists( 
+                        path, 
+                        fun _ -> __.Remove(path)
+                )
+                Fable.Core.JS.console.log("Creating folder: " + path )
+                do! __.CreateFolder(path)
+            }
 
         member __.EnsureFolder( path : string ) =
             promise {
@@ -164,33 +100,16 @@ module Extensions =
                 do! __.RemoveFile( path )
             }
 
-        // member __.CreateFolderRecursive (path : string) =
-        //     promise {
-        //         let! pathIsFile = __.IsFile path
-        //         if pathIsFile then
-        //             failwith ("File exists: " + path)
-        //         else 
-        //             let! pathIsFolder = __.IsFolder path
-        //             if pathIsFolder then
-        //                 ()
-        //             else
-        //                 match Path.getFolderName path with 
-        //                 | "" -> ()
-        //                 | parent -> 
-        //                     do! __.CreateFolderRecursive parent
-        //                 do! __.CreateFolder path
-        //     }
-
         member fs.Copy( src : string, dst : string ) =
     
-            let copyFileFs path (fs : IFileSystemAsyncP) (fs2 : IFileSystemAsyncP) =
+            let copyFileFs path (fs : IFsAsync) (fs2 : IFsAsync) =
                 promise {
                     // do! fs2.CreateFolderRecursive (Path.getFolderName path)
                     let! content = fs.GetFileContent path
                     do! fs2.SetFileContent( path, content )
                 }
 
-            let copyFolderFs path (fs : IFileSystemAsyncP) (fs2 : IFileSystemAsyncP) =
+            let copyFolderFs path (fs : IFsAsync) (fs2 : IFsAsync) =
                 fs.FilesRecursive path 
                     |> Promise.bind (Array.map (fun file -> copyFileFs file fs fs2)>>Promise.all )  
                     |> Promise.map ignore
@@ -267,6 +186,7 @@ module Extensions =
                     return Array.empty
                 else
                     let! folders = __.Folders path
+                    // Fable.Core.JS.console.log("Folders:path:" + path + ":", folders)
                     let! files = __.Files path
 
                     let! nestedResults =
@@ -285,110 +205,3 @@ module Extensions =
 
                     return nestedResults |> Array.collect id
             }
-
-        
-    type IReadOnlyFileSystem with
-
-        member __.FilesRecursive (path : string) : string []=            
-            if (__.IsFolder path).UnsafeValue then
-                Array.append (__.Folders path).UnsafeValue (__.Files path).UnsafeValue
-                |> Array.collect ( fun f -> 
-                    let p = Path.combine path f
-                    if (__.IsFile p).UnsafeValue then
-                        [| p |]
-                    else
-                        __.FilesRecursive p
-                )
-            else
-                Array.empty
-
-        member __.FoldersRecursive (path : string) : string [] =
-            if __.IsFolder path |> _.UnsafeValue then
-                __.Folders path |> _.UnsafeValue
-                |> Array.collect (fun name ->
-                        let p = Path.combine path name
-                        Array.append [| p |] (__.FoldersRecursive p)
-                )
-            else
-                Array.empty
-
-    type IFileSystem with
-
-        /// Wraps the non-async methods so that this instance can be passed to an 
-        /// API that wants IFileSystemAsyncR
-        // member __.GetAsyncR() : IFileSystemAsyncR =
-        //     mkAsyncFromSync __
-
-        member __.GetAsyncP() : IFileSystemAsyncP =
-            mkAsyncPFromSync __
-
-        // member __.CreateFolderRecursive (path : string) : unit =
-        //     if (__.IsFile path).UnsafeValue then
-        //         failwith ("File exists: " + path)
-        //     else if (__.IsFolder path).UnsafeValue then
-        //         ()
-        //     else
-        //         match Path.getFolderName path with 
-        //         | "" -> ()
-        //         | parent -> __.CreateFolderRecursive parent
-        //         __.CreateFolder path |> _.UnsafeValue
-                
-        member __.CopyFile( src : string, tgt : string ) : unit =
-            if __.Exists src |> _.UnsafeValue then
-                if __.Exists tgt |> _.UnsafeValue then
-                    failwith ("Cannot copy, file exists: " + tgt)
-                let item = __.GetFileContent src |> _.UnsafeValue
-                __.SetFileContent(tgt,item) |> _.UnsafeValue
-            else
-                failwith ("File does not exist: " + src)
-
-        member fs.Copy( src : string, dst : string ) : unit =
-            let copyFileFs path (fs : IFileSystem) (fs2 : IFileSystem) : unit =
-                // fs2.CreateFolderRecursive (Path.getFolderName path)
-                fs2.SetFileContent( path, fs.GetFileContent path |> _.UnsafeValue ) |> _.UnsafeValue
-
-            let copyFolderFs path (fs : IFileSystem) (fs2 : IFileSystem) =
-                let ifs : IReadOnlyFileSystem = fs
-                ifs.FilesRecursive path |> Array.iter (fun file -> copyFileFs file fs fs2)
-
-            if fs.IsFolder src |> _.UnsafeValue then
-                if fs.IsFile dst |> _.UnsafeValue then 
-                    failwith "Attempt to copy folder to file"
-
-                let dst = if (fs.IsFolder dst).UnsafeValue then Path.combine dst (Path.getFileName src) else dst
-
-                if (fs.Exists dst).UnsafeValue then   
-                    failwith ("File/folder exists: " + dst)
-
-                if src.StartsWith dst || dst.StartsWith src then
-                    failwith "Attempt to copy folder to itself"
-
-                fs.CreateFolder dst |> _.UnsafeValue
-
-                let dstFs = SubFolderFileSystem(fs, dst)
-                let srcFs = SubFolderFileSystem(fs, src)
-
-                copyFolderFs "/" srcFs dstFs
-            else
-                let dst = if (fs.IsFolder dst).UnsafeValue then Path.combine dst (Path.getFileName src) else dst
-                fs.CopyFile( src, dst )
-
-        /// Remove file/folder recursively
-        member __.Remove( path : string ): unit =
-            if (__.IsFolder path ).UnsafeValue then
-                __.Files(path) |> _.UnsafeValue
-                |> Array.iter( fun name -> __.RemoveFile( Path.combine path name ).UnsafeValue)
-                __.Folders(path) |> _.UnsafeValue
-                |> Array.iter( fun name -> __.Remove( Path.combine path name ) )
-            __.RemoveFile( path ) |> _.UnsafeValue
-
-        member __.MakeUnique( folder : string, basename : string, ?ext : string) =
-            let ext' = ext |> Option.defaultValue ""
-
-            let rec findUnique name (i : int) =
-                if __.Exists (Path.combine folder name) |> _.UnsafeValue then 
-                    findUnique (sprintf "%s%d%s" basename i ext') (i+1)
-                else
-                    name
-
-            findUnique (basename + ext') 1

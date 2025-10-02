@@ -117,3 +117,27 @@ let createTimeout() : TimeoutFn =
 
 [<Emit("performance.now()")>]
 let performanceNow() : double = jsNative
+
+type ByteArray = Fable.Core.JS.Uint8Array
+
+module ByteArray =
+
+    [<Emit("new TextEncoder().encode($0)")>]
+    let textEncode( str : string ) : ByteArray = jsNative
+
+    [<Emit("new TextDecoder().decode($0)")>]
+    let textDecode( data : ByteArray ) : string = jsNative
+
+    [<Emit("new Uint8Array($0)")>]
+    let createByteArray (size: int) : ByteArray = jsNative
+    
+    let collectByteArrays (arrays : ByteArray[]) =
+        let size = arrays |> Array.fold (fun n a -> n + a.byteLength) 0
+        let fullBytes = createByteArray(size)
+        arrays |> Array.fold (fun i a -> fullBytes.set( a, i ); i + a.byteLength) 0 |> ignore
+        fullBytes
+
+    let appendByteArray (a : ByteArray) (b : ByteArray ) =
+        collectByteArrays [| a; b |]
+
+

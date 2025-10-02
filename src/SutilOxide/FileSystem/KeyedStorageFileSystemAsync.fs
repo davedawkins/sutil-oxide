@@ -3,9 +3,14 @@ module SutilOxide.KeyedStorageFileSystemAsync
 open SutilOxide.FileSystem
 open SutilOxide.PromiseResult
 open SutilOxide.FileSystem.Internal
+open SutilOxide.FileSystem.Types
+
+open JsHelpers
 
 let inline private encode (e : 't) = Thoth.Json.Encode.Auto.toString e
 let inline private decode<'t> s : Result<'t,string> = Thoth.Json.Decode.Auto.fromString<'t> s
+
+open Fable.Core
 
 type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
 
@@ -14,7 +19,7 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
     let mutable onChange : (string -> unit) list = []
     
     // Add a cache for frequently accessed entries
-    let entryCache = System.Collections.Generic.Dictionary<int, FileEntry option>()
+    let entryCache = System.Collections.Generic.Dictionary<int, EntryStorage option>()
     let [<Literal>]  CacheLimit = 100
     let [<Literal>]  RootKeyName = "(root)"
     let [<Literal>]  RootName = "/"
@@ -38,25 +43,65 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
     // ------------------------------------------------------------------------
     // Initialization
 
-    let putEntryUnsafe (e : FileEntry) =
+    let putEntryUnsafe (e : EntryStorage) =
         entryCache.[e.Uid] <- Some e
         trimCache()
-        keyStorage.Put( uidKey e.Uid, fileEntryToJSON e )
+        keyStorage.Put( uidKey e.Uid, fileEntryToByteArray e)
 
     let putRoot() =
-        keyStorage.Put( RootKeyName,  encode root)        
+        keyStorage.Put( RootKeyName,  encode root |> ByteArray.toByteArray)        
+
+    let getRootKeyJson() =
+        promise {
+            let! rootEntry = keyStorage.Get(RootKeyName)
+            if rootEntry = null then
+                return null
+            else
+                match jsTypeOf rootEntry with
+                | "string" -> 
+                    return rootEntry :?> string
+                | _ -> 
+                    let json = (rootEntry :?> ByteArray) |> ByteArray.fromByteArray
+                    // Fable.Core.JS.console.log("RootObject: ", rootEntry, json)
+                    return json
+        }
+
+    let getDecodedEntry( key : string ) : Promise<Result<EntryStorage,string>> =
+        promise {
+            let! e = keyStorage.Get(key)
+            // Fable.Core.JS.console.log("getDecodedEntry:" + key + ":type=" + jsTypeOf(e) + ":" + sprintf "%A" e,  e)
+
+            if e = null then
+                return (Error ("No entry for key: " + key))
+            elif JsInterop.jsTypeof e = "string" then
+                return fileEntryFromJSON( unbox e )  None
+            else
+                let data : ByteArray = unbox e
+                let nul = data.indexOf( 0uy )
+                if nul < 0 then
+                    return fileEntryFromJSON( data |> ByteArray.fromByteArray ) None
+                else
+                    let jsonPart = data.slice(0,nul) |> ByteArray.fromByteArray
+                    let dataPart = data.slice(nul+1, data.length)
+                    return fileEntryFromJSON jsonPart (Some dataPart)
+        }
 
     let initRoot() =
         promise {
             let! exists = keyStorage.Exists(uidKey 0)
+
             if not exists then
                 do! 
-                    let rootE : FileEntry =
-                        { Type = Folder; Name = RootName; Uid = RootUid; Content = ""; Children = Array.empty; Meta = FileMetaData.Create() }
-                    rootE
-                    |> putEntryUnsafe
+                    let rootE : EntryStorage =
+                        { 
+                            Name = RootName
+                            Uid = RootUid
+                            Content = ChildEntries Array.empty
+                            Meta = EntryMetaData.Create(Folder) 
+                        }
+                    rootE |> putEntryUnsafe
 
-            let! rootEntry = keyStorage.Get(RootKeyName)
+            let! rootEntry = getRootKeyJson() // keyStorage.Get(RootKeyName)
             
             rootEntry
                 |> function
@@ -75,25 +120,30 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
             if not initialized then
                 initialized <- true
                 do! initRoot()
+                // let! _ = keyStorage.LogConsistencyCheck()
+                // let! _ = keyStorage.FixDanglingReferences()
+                // let! _ = keyStorage.FixOrphanedEntries()
+                ()
+            return ()
         }
 
     // ------------------------------------------------------------------------
     // Entry primitives, with caching, batch operations and initialization
 
-    let delEntry (e : FileEntry) =
+    let delEntry (e : EntryStorage) =
         promise {
             do! init()
             entryCache.Remove(e.Uid) |> ignore
             do! keyStorage.Remove (uidKey e.Uid)
         }
 
-    let putEntry (e : FileEntry) =
+    let putEntry (e : EntryStorage) =
         promise {
             do! init()
             do! putEntryUnsafe e
         }
 
-    let getEntry (uid : Uid) : PromiseResult<FileEntry,string> = 
+    let getEntry (uid : Uid) : PromiseResult<EntryStorage,string> = 
         // Check cache first
         if entryCache.ContainsKey(uid) then
             entryCache.[uid] |> (function Some x -> Ok x | None -> Error "Missing") |> Promise.lift
@@ -101,20 +151,32 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
             promise {
                 do! init()
 
-                let! entry = keyStorage.Get (uidKey uid)
+                let! entry = getDecodedEntry (uidKey uid) // keyStorage.Get (uidKey uid)
 
-                if entry = null then
-                    return (Error ("Not entry for UID: " + string uid))
-                else
-                    match fileEntryFromJSON entry with
-                    | Ok r -> 
-                        // Cache the result
-                        entryCache.[uid] <- Some r
-                        trimCache()
-                        return Ok r
-                    | Error msg ->
-                        entryCache.[uid] <- None
-                        return Error msg
+                // if entry = null then
+                //     return (Error ("Not entry for UID: " + string uid))
+                // else
+                //     match fileEntryFromJSON entry with
+                //     | Ok r -> 
+                //         // Cache the result
+                //         entryCache.[uid] <- Some r
+                //         trimCache()
+                //         return Ok r
+                //     | Error msg ->
+                //         entryCache.[uid] <- None
+                //         return Error msg
+
+
+                match entry with
+                | Ok r -> 
+                    // Cache the result
+                    entryCache.[uid] <- Some r
+                    trimCache()
+                    return Ok r
+                | Error msg ->
+                    entryCache.[uid] <- None
+                    return Error msg
+
             }
 
     let entryExists uid =
@@ -128,30 +190,33 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
 
     // ------------------------------------------------------------------------
 
-    let nameOf (e:FileEntry) = e.Name
+    let nameOf (e:EntryStorage) = e.Name
 
-    let getEntries uid =
+    let getEntries path uid =
         promise {
             let! entry = getEntry uid
 
             match entry with
             | Error s -> return failwith s // ("Non-existent UID " + string uid)
-            | Ok e when e.Type <> FileEntryType.Folder -> return failwith (sprintf "Not a folder: %d" uid)
+            // | Ok e when e.Type <> EntryType.Folder -> return failwith (sprintf "Not a folder: entry=%s: %d, path=%s" e.Name uid path)
             | Ok e -> 
-                // Batch operation for multiple get operations
-                beginBatch()
-                try
-                    let! entries = 
-                        e.Children 
-                        |> Array.map (fun (a,b) -> getEntry b) 
-                        |> Promise.all
-                    
-                    do! commitBatch()
-                    return entries |> Array.map Result.toOption |> Array.choose id
-                with ex ->
-                    do! commitBatch()
-                    return raise ex
-
+                match e.Content with
+                | ChildEntries childEntries ->
+                    // Batch operation for multiple get operations
+                    beginBatch()
+                    try
+                        let! entries = 
+                            childEntries 
+                            |> Array.map (fun (a,b) -> getEntry b) 
+                            |> Promise.all
+                        
+                        do! commitBatch()
+                        return entries |> Array.map Result.toOption |> Array.choose id
+                    with ex ->
+                        do! commitBatch()
+                        return raise ex
+                | _ ->
+                    return failwith (sprintf "Not a folder: entry=%s: %d, path=%s" e.Name uid path)
         }
 
     let hasEntries uid =
@@ -160,8 +225,11 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
             let result = 
                 match entry with
                 | Error s -> failwith s //("Non-existent UID " + string uid)
-                | Ok e when e.Type <> FileEntryType.Folder -> failwith (sprintf "Not a folder: %d" uid)
-                | Ok e -> e.Children.Length > 0
+                // | Ok e when e.Type <> EntryType.Folder -> failwith (sprintf "Not a folder: %d" uid)
+                | Ok e -> 
+                    match e.Content with
+                    | ChildEntries childEntries -> childEntries.Length > 0
+                    | _ -> failwith (sprintf "Not a folder: %d" uid)
             return result
         }
 
@@ -178,7 +246,7 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
 
     let entryChildren uid =
         getEntry uid
-            |> Promise.map (Result.map (fun e -> e.Children))
+            |> Promise.map (Result.map (fun e -> match e.Content with ChildEntries ce -> ce | _ -> Array.empty))
 
     let entryChildNames uid =
         entryChildren uid |> Promise.map(Result.map (Array.map fst))
@@ -243,7 +311,7 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
             | Error _ -> return false
         }
 
-    let getEntriesWhere (filter: FileEntry -> bool) (path : string) =
+    let getEntriesWhere (filter: EntryStorage -> bool) (path : string) =
         promise {
             let! uid = 
                 path
@@ -252,7 +320,7 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
 
             match uid with
             | Ok uid ->
-                let! entries = getEntries uid 
+                let! entries = getEntries path uid 
                 return entries 
                     |> Array.filter filter
                     |> Array.map (fun f -> f.Name)
@@ -332,31 +400,37 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
                     let! uid = newUid()
 
                     let parentEntry =
-                        { entry with Children = entry.Children |> Array.append [| name, uid |] }
+                        { entry with Content = entry.Children |> Array.append [| name, uid |] |> ChildEntries }
 
+                    // Fable.Core.JS.console.log("Put parent entry ", path, uid, sprintf "%A" entryType)
                     do! putEntry parentEntry
 
                     let childEntry =
                         {
-                            FileEntry.Create() with
-                                Type = entryType
-                                Content = ""
-                                Children = Array.empty
+                            EntryStorage.Create(match entryType with Folder -> ChildEntries [||] | _ -> TextBlob "") with
                                 Uid = uid
                                 Name = name
+                                Meta = EntryMetaData.Create(entryType)
                         }
 
+                    // Fable.Core.JS.console.log("Put child entry ", path, uid, sprintf "%A" entryType)
                     do! putEntry childEntry
+
+                    // Fable.Core.JS.console.log("Created child entry ", path, uid, sprintf "%A" entryType)
                 
                 | Error s -> 
                     failwith ("Parent folder does not exist: " + s)
                 
                 do! commitBatch()
+                // Fable.Core.JS.console.log("Batch committed ", path, sprintf "%A" entryType)
                 
+
                 if notify then
                     notifyOnChange fname
             with ex ->
-                do! commitBatch()
+                // Don't commit partial batch to avoid dangling references
+                // The batch will be automatically discarded
+                // Fable.Core.JS.console.error("Creating child entry: ", path, ex.Message)
                 return raise ex
         }
 
@@ -371,17 +445,17 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
 
     let createFile path notify = createChildEntry path notify File
 
-    let getFileContent(path:string) =
-        let cpath = path |> Internal.canonical
+    // let getFileContent(path:string) =
+    //     let cpath = path |> Internal.canonical
 
-        promise {
-            do! assertIsFile cpath 
+    //     promise {
+    //         do! assertIsFile cpath 
 
-            return!
-                getEntryByPath cpath 
-                |> Promise.map (fun entry ->
-                    entry |> Result.map (fun e -> e.Content) |> Result.defaultValue "")
-        }
+    //         return!
+    //             getEntryByPath cpath 
+    //             |> Promise.map (fun entry ->
+    //                 entry |> Result.map (fun e -> e.Content) |> Result.defaultValue "")
+    //     }
 
     let getMeta(path:string) =
         let cpath = path |> Internal.canonical
@@ -397,13 +471,13 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
 
 
     // Optimized with batch operations
-    let setFileContent(path:string, content:string) =
+    let setFileContent(path:string, content:EntryContent) =
         let cpath = path |> Internal.canonical
 
         promise {
             beginBatch()
             try
-                do! assertFalse(isFolder cpath) ("Cannot set contents of a folder")
+                do! assertFalse(isFolder cpath) ("Cannot set contents of a folder: " + cpath)
 
                 let! _isFile = isFile cpath
                 if not _isFile then            
@@ -465,9 +539,10 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
                             >>= fun children ->
                                 let newParentEntry =
                                     { parentEntry with 
-                                        Children = 
+                                        Content = 
                                         children |>
-                                        Array.filter (fun (name,uid) -> name <> fileName) }
+                                        Array.filter (fun (name,uid) -> name <> fileName) |> ChildEntries                                        
+                                    }
 
                                 promise {
                                     do! delEntry entry
@@ -485,6 +560,25 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
             with ex ->
                 do! commitBatch()
                 return raise ex
+        }
+
+    let rec removeDeep (path : string) : Promise<unit> =
+        promise {
+            let! entry = getEntryByPath path
+
+            match entry with
+            | Ok e ->
+
+                if e.Type = EntryType.Folder then
+                    let! childFolders = getEntriesWhere (fun e -> e.Type = Folder) path
+                    let! childFiles   = getEntriesWhere (fun e -> e.Type = File) path
+                    let! _ =  childFolders |> Array.map (fun name -> removeDeep (Path.combine path name)) |> Promise.all
+                    let! _ =  childFiles |> Array.map (fun name -> removeFile (Path.combine path name)) |> Promise.all
+                    ()
+                    
+                do! removeFile path
+
+            | _ -> return ()
         }
 
     // Optimized with batch operations
@@ -523,7 +617,13 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
                             if nparent = cparent then
                                 promise {
                                     do! 
-                                        { parentEntry with Children = parentEntry.Children |> Array.map (fun (name, uid) -> if name = cname then (nname, uid) else (name, uid) )}
+                                        {   
+                                            parentEntry 
+                                                with Content = 
+                                                        parentEntry.Children 
+                                                        |> Array.map (fun (name, uid) -> if name = cname then (nname, uid) else (name, uid) ) 
+                                                        |> ChildEntries
+                                        }
                                         |> putEntry
 
                                     do! { entry with Name = nname } |> putEntry
@@ -534,10 +634,10 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
                                 |> getEntryByPath
                                 >>= fun destParentEntry ->
                                     promise {
-                                        do! { parentEntry with Children = parentEntry.Children |> Array.filter (fun (name, _) -> name <> cname )}
+                                        do! { parentEntry with Content = parentEntry.Children |> Array.filter (fun (name, _) -> name <> cname ) |> ChildEntries}
                                             |> putEntry
 
-                                        do! { destParentEntry with Children = Array.append destParentEntry.Children [| nname, entry.Uid |]  }
+                                        do! { destParentEntry with Content = Array.append destParentEntry.Children [| nname, entry.Uid |] |> ChildEntries }
                                             |> putEntry
 
                                         do! { entry with Name = nname }
@@ -567,121 +667,144 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
             lockClients.RemoveAt(0)
             next( () )
 
-    let getLock() : Promise<unit> =
+    let getLock(name:string) : Promise<unit> =
+        // Fable.Core.JS.console.log("getLock: ", name)
         let p = Promise.create( fun resolve _ -> lockClients.Add(resolve) )
         nextLockClient()
         p
 
-    let releaseLock() : unit =
+    let releaseLock(name:string) : unit =
+        // Fable.Core.JS.console.log("releaseLock: ", name)
         isLocked <- false
         nextLockClient()
 
+    let mutable _lockid = 0
+
     let mkResult (name: string) (f : unit -> Promise<'t>) = 
+        let _id = _lockid
+        _lockid <- _lockid + 1
         promise {
-            do! getLock()
+            do! getLock(name + string _lockid)
+            // Fable.Core.JS.console.log(" - gained lock: ", name + string _lockid)
             try 
                 return! f()
             finally
-                releaseLock()
+                releaseLock(name + string _lockid)
         }
 
     let mutable handlerIds = 0
     let handlers = System.Collections.Generic.Dictionary<int, string -> unit>()
 
+
 with
     member this.Initialise() = initRoot()
 
-    interface IFileSystemAsyncP with
-        member _.OnChange (cb : string -> unit) = 
-            let run() =
-                // Generate a unique ID for this handler
-                let id = handlerIds
-                handlerIds <- handlerIds + 1
-                
-                // Store the handler with its ID
-                handlers.Add(id, cb)
-                
-                // Add to the onChange list
-                onChange <- onChange @ [cb]
-                
-                // Return a disposable that uses the ID to properly remove the handler
-                { new System.IDisposable with 
-                    member __.Dispose() = 
-                        if handlers.ContainsKey(id) then
-                            // Get the handler by ID
-                            let handler = handlers.[id]
-                            // Remove from the handlers dictionary
-                            handlers.Remove(id) |> ignore
-                            // Remove from the onChange list
-                            onChange <- onChange |> List.filter (fun h -> not (obj.ReferenceEquals(h, handler)))
-                } 
-                |> Promise.lift
+    // member this.LogCheckConsistency() =
+    //     keyStorage.LogConsistencyCheck()
+
+    // member this.FixDanglingReferences() = 
+    //     promise {
+    //         SutilOxide.Log.Trace.log("Starting dangling reference cleanup...")
+    //         let! fixedCount = keyStorage.FixDanglingReferences()
+    //         SutilOxide.Log.Trace.log(sprintf "Dangling reference cleanup completed. Fixed %d references." fixedCount)
+    //         return fixedCount
+    //     }
+
+    member this.GetEntry(path: string): AsyncPromise<Entry option> = 
+        promise {
+            let! e = getEntryByPath path
+            match e with
+            | Ok e -> 
+                return Some { Name = e.Name; Meta = e.Meta }
+            | Error s -> 
+                // Fable.Core.JS.console.log("GetEntry: Non-existent: ", path)
+                return None
+        }   
+
+    member _.OnChange (cb : string -> unit) = 
+        let run() =
+            // Generate a unique ID for this handler
+            let id = handlerIds
+            handlerIds <- handlerIds + 1
             
-            run |> mkResult "OnChange"
+            // Store the handler with its ID
+            handlers.Add(id, cb)
+            
+            // Add to the onChange list
+            onChange <- onChange @ [cb]
+            
+            // Return a disposable that uses the ID to properly remove the handler
+            { new System.IDisposable with 
+                member __.Dispose() = 
+                    if handlers.ContainsKey(id) then
+                        // Get the handler by ID
+                        let handler = handlers.[id]
+                        // Remove from the handlers dictionary
+                        handlers.Remove(id) |> ignore
+                        // Remove from the onChange list
+                        onChange <- onChange |> List.filter (fun h -> not (obj.ReferenceEquals(h, handler)))
+            } 
+            |> Promise.lift
+        
+        run |> mkResult "OnChange"
 
-        member _.Files (path : string) = (fun () -> getEntriesWhere (fun e -> e.Type = File) path)  |> mkResult "Files"
+    member this.GetContent(path: string): AsyncPromise<Content option> = 
+        promise {
+            let! e = getEntryByPath path
+            // Fable.Core.JS.console.log("GetContent:" + path + ":" + sprintf("%A") e, e)
+            match e with
+            | Ok entryStorage ->
+                match entryStorage.Content with
+                | TextBlob s -> 
+                    return Some (Content.Bytes (s |> ByteArray.toByteArray))
+                | ByteBlob s -> 
+                    return Some (Content.Bytes s)
+                | ChildEntries childEntries ->
+                    let! childrenResults = 
+                        childEntries 
+                        |> Array.map (fun (name, uid) -> getEntry uid) 
+                        |> Promise.all
+                    let children = childrenResults |> Array.choose (function Ok entry -> Some { Name = entry.Name; Meta = entry.Meta } | _ -> None)
+                    return Some (Content.Entries children)
+            | Error s ->
+                return None
 
-        member _.Folders (path :string) = (fun () -> getEntriesWhere (fun e -> e.Type = Folder) path) |> mkResult "Folders"
+        }
 
-        member __.Exists(path : string) = mkResult "Exists" <| fun () -> isEntry(path)
+    interface IFsAsync
+    
+    interface IFileSystemAsync with
 
-        member __.IsFile(path : string) = mkResult "IsFile" <| fun () -> isFile(path)
+        member this.GetContent(path: string): AsyncPromise<Content option> = 
+            (fun _ -> this.GetContent path) |> mkResult "GetContent"
 
-        member __.IsFolder(path : string) = mkResult "IsFolder" <| fun () -> isFolder(path)
+        member this.GetEntry(path: string): AsyncPromise<Entry option> =
+            (fun _ -> this.GetEntry path) |> mkResult "GetEntry"
 
-        member _.GetFileContent( path : string ) =
-            mkResult "GetFileContent" <| fun () -> getFileContent path
+        member this.RemoveEntry(path: string): AsyncPromise<unit> = 
+            (fun _ -> removeDeep path) |> mkResult "RemoveEntry"
 
-        member _.GetModifiedAt( path : string ) =
-            mkResult "GetModifiedAt" <| fun () -> path |> getMeta |> Promise.map _.ModifiedAt
+        member this.RenameEntry(path: string, newPath: string): AsyncPromise<unit> = 
+            (fun _ -> renameFile(path, newPath)) |> mkResult "RenameEntry"
 
-        member _.GetCreatedAt (path: string): AsyncPromise<FsDateTime> = 
-            mkResult "GetCreatedAt" <| fun () -> path |> getMeta |> Promise.map _.CreatedAt
+        member this.WriteEntry(path: string, content: Content): AsyncPromise<unit> = 
+            match content with 
+            | Content.Bytes data -> 
+                mkResult "SetFileContent" <| fun () -> setFileContent(path, (ByteBlob data))
 
-        member __.FilesBatch (paths: string array): AsyncPromise<string array array> = 
-            let self = __ :> IFileSystemAsyncP
-            self.FilesBatchDefault paths
+            | Content.Entries empty ->
+                if empty.Length <> 0 then
+                    failwithf "Entries must be an empty array for folder creation: %s" path
+                else
+                    mkResult "CreateFolder" <| fun () -> createFolder path true
 
-        member __.FoldersBatch (paths: string array): AsyncPromise<string array array> = 
-            let self = __ :> IFileSystemAsyncP
-            self.FoldersBatchDefault paths
+        member this.GetEntryBatch(path: string array): AsyncPromise<Entry option array> = 
+            (fun _ -> path |> Array.map this.GetEntry |> Promise.all) |> mkResult "GetEntryBatch"
 
-        member __.ExistsBatch (paths: string array): AsyncPromise<bool array> = 
-            let self = __ :> IFileSystemAsyncP
-            self.ExistsBatchDefault paths
+        member this.GetContentBatch(path: string array): AsyncPromise<Content option array> = 
+            (fun _ -> path |> Array.map this.GetContent |> Promise.all) |> mkResult "GetContentBatch"
 
-        member __.IsFileBatch (paths: string array): AsyncPromise<bool array> = 
-            let self = __ :> IFileSystemAsyncP
-            self.IsFileBatchDefault paths
-
-        member __.IsFolderBatch (paths: string array): AsyncPromise<bool array> = 
-            let self = __ :> IFileSystemAsyncP
-            self.ExistsBatchDefault paths
-
-        member __.GetFileContentBatch (paths: string array): AsyncPromise<string array> = 
-            let self = __ :> IFileSystemAsyncP
-            self.GetFileContentBatchDefault paths
-
-        member __.GetModifiedAtBatch( paths : string[] ) =
-            let self = __ :> IFileSystemAsyncP
-            self.GetModifiedAtBatchDefault paths
-
-        member __.GetCreatedAtBatch( paths : string[] ) =
-            let self = __ :> IFileSystemAsyncP
-            self.GetCreatedAtBatchDefault paths
-
-        member __.SetFileContent( path : string, content : string ) =
-            mkResult "SetFileContent" <| fun () -> setFileContent(path, content)
-
-        member __.RemoveFile( path : string ) =
-            mkResult (sprintf "RemoveFile('%s')" path) <| 
-            fun () ->  removeFile path
-
-        member _.CreateFolder( path : string ) =
-            mkResult "CreateFolder" <| fun () -> createFolder path true
-
-        member __.RenameFile( path : string, newNameOrPath : string ) =
-            mkResult "RenameFile" <| fun () -> renameFile(path, newNameOrPath)
+        member __.OnChanged (cb : string -> unit) = __.OnChange(cb)
 
     interface System.IDisposable with
         member __.Dispose() =

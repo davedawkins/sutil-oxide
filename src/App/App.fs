@@ -60,7 +60,7 @@ let fetchSource url  =
         return! res.text()
     }
 
-let uploadFile (url : string) (targetFileName : string) (fs : IFileSystemAsyncP)  =
+let uploadFile (url : string) (targetFileName : string) (fs : IFileSystemAsync  =
     promise {
         let! content = fetchSource url
         do! fs.SetFileContent( targetFileName, content )
@@ -333,7 +333,7 @@ let view () =
 
     let app = 
         let fs : IFileSystem = LocalStorageFileSystem("oxide-demo")
-        { Fs = fs |> _.GetAsyncP() }
+        { Fs = fs |> _.GetAsync) }
 
     // Text editor control
     let textEditor = TextEditor.Editor( app.Fs )

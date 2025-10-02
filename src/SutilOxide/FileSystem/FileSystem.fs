@@ -7,84 +7,100 @@ module SutilOxide.FileSystem
 open System
 open Browser
 open PromiseResult
+open JsHelpers
 
+[<AutoOpen>]
+module Types =
+
+    type EntryType =
+        | File 
+        | Folder 
+
+    type EntryMetaData = {
+        EntryType: EntryType
+        CreatedAt: System.DateTime
+        ModifiedAt: System.DateTime
+    }
+    with   
+        static member Create(t : EntryType) = 
+            let now = System.DateTime.UtcNow
+            {
+                EntryType = t
+                CreatedAt = now
+                ModifiedAt = now
+            }
+
+    type Entry = {
+        Name : string
+        Meta : EntryMetaData
+    }
+    with    member __.IsFile = __.Meta.EntryType = EntryType.File
+            member __.IsFolder = __.Meta.EntryType = EntryType.Folder
+    
+    type Content =
+        // | TextUtf8 of string
+        | Bytes of ByteArray
+        | Entries of Entry[]
+        
 module Internal =
 
     type Uid = int
 
-    type FileEntryType =
-        | File
-        | Folder
+    open Types
 
-    [<RequireQualifiedAccess>]
-    type FileEncoding =
-        | Text
-        | Blob
-    with static member TryParse (s : string) : FileEncoding option =
-            match s.ToLower() with
-            | "text" -> Some FileEncoding.Text
-            | "blob" -> Some FileEncoding.Blob
-            | _ -> None
+    type EntryContent =
+        | ChildEntries of (string * Uid) []
+        | TextBlob of string
+        | ByteBlob of ByteArray 
+    with
+        member __.EntryType = match __ with ChildEntries _ -> Folder | _ -> File
 
-    // type GitMode = 
-    //     | RegularFile = 0o100644
-    //     | ExecutableFile = 0o100755
-    //     | SymLink = 0o120000
-    //     | SubModule = 0o160000
-
-    type FileMetaData = {
-        CreatedAt: System.DateTime
-        ModifiedAt: System.DateTime
-        Encoding : FileEncoding
-    }
-    with   
-        static member Create() = 
-            let now = System.DateTime.UtcNow
-            { 
-                CreatedAt = now
-                ModifiedAt = now
-                Encoding = FileEncoding.Text
-            }
-
-    type FileEntry = {
-        Type : FileEntryType
+    type EntryStorage = {
+        Content : EntryContent
         Name : string
         Uid : Uid
-        Content : string
-        Children : (string * Uid)[]
-        Meta : FileMetaData
+        Meta : EntryMetaData
     }
     with 
-        static member Create() : FileEntry = 
+        member __.Type = __.Content.EntryType
+        member __.Children = 
+            match __.Content with
+            | ChildEntries ce -> ce 
+            | _ -> Array.empty
+
+        static member Create( entryContent) : EntryStorage = 
             {
-                Type = FileEntryType.File
+                Content = entryContent
                 Name = ""
                 Uid = -1
-                Content = ""
-                Children = Array.empty
-                Meta = FileMetaData.Create()
+                Meta = EntryMetaData.Create(match entryContent with ChildEntries _ -> Folder | _ -> File)
             }
 
-    type FileEntryDto = {
-        Type : FileEntryType
+    type EntryStorageDto = {
+        Type : EntryType
         Name : string
         Uid : Uid
-        Content : string
+        Content : string option
         Children : (string * Uid)[]
         Meta : (string * string) [] option
     }
     with
-        member __.ToFileEntry() : FileEntry = 
+        member __.ToEntryStorage( data : ByteArray option ) : EntryStorage = 
             let getKey key = __.Meta 
                             |> Option.bind (fun items -> items |> Array.tryFind (fun (k,_) -> k = key))
             {
-                Type = __.Type; Name = __.Name; Uid = __.Uid; Content = __.Content; Children = __.Children;
+                Content = 
+                    match __.Type with
+                    | Folder -> ChildEntries __.Children
+                    | File ->
+                        match data with
+                        | Some bytes -> ByteBlob bytes 
+                        | None -> TextBlob (__.Content |> Option.defaultValue "")
+                Name = __.Name
+                Uid = __.Uid
                 Meta =
                     {
-                        Encoding =
-                            getKey "Encoding"
-                            |> Option.bind (fun (k,v) -> FileEncoding.TryParse v)
-                            |> Option.defaultValue (FileEncoding.Text)
+                        EntryType = __.Type
                         CreatedAt = 
                             getKey "CreatedAt"
                             |> Option.bind (fun (k,v) -> try System.DateTime.Parse v |> Some with x -> None)
@@ -95,28 +111,47 @@ module Internal =
                             |> Option.defaultValue (System.DateTime(2020,1,1,0,0,0,DateTimeKind.Utc))
                     }
             }
-        static member ToDto( fe : FileEntry ) : FileEntryDto = 
+        static member ToDto( fe : EntryStorage ) : EntryStorageDto = 
             {
-                Type = fe.Type; Name = fe.Name; Uid = fe.Uid; Content = fe.Content; Children = fe.Children;
+                Type = fe.Type
+                Name = fe.Name
+                Uid = fe.Uid
+                Content = None
+                    // match fe.Content with
+                    // | TextBlob s -> Some s
+                    // | _ -> None
+                Children = 
+                    match fe.Content with
+                    | ChildEntries entries -> entries
+                    | _ -> [||]
                 Meta = Some 
                         [| 
-                            "Encoding", fe.Meta.Encoding.ToString()
                             "CreatedAt", (fe.Meta.CreatedAt.ToString("o"))
                             "ModifiedAt", (fe.Meta.ModifiedAt.ToString("o"))
                         |]
             }
 
-    let fileEntryToJSON( fe : FileEntry ) : string =
-        FileEntryDto.ToDto(fe) |> Thoth.Json.Encode.Auto.toString
+    // let fileEntryToJSON( fe : EntryStorage ) : string =
+    //     EntryStorageDto.ToDto(fe) |> Thoth.Json.Encode.Auto.toString
 
-    let fileEntryFromJSON (js : string) =
-        match Thoth.Json.Decode.Auto.fromString<FileEntryDto>( js ) with
+    let fileEntryToByteArray( fe : EntryStorage ) : ByteArray =
+        let dtoBytes = EntryStorageDto.ToDto(fe) |> Thoth.Json.Encode.Auto.toString |> ByteArray.textEncode
+        match fe.Content with
+        | ByteBlob data ->
+            ByteArray.collectByteArrays [| dtoBytes; "\000" |> ByteArray.textEncode; data |]
+        | TextBlob text ->
+            ByteArray.collectByteArrays [| dtoBytes; "\000" |> ByteArray.textEncode; text |> ByteArray.textEncode |]
+        | _ -> 
+            dtoBytes
+
+    let fileEntryFromJSON (js : string) (data : ByteArray option) =
+        match Thoth.Json.Decode.Auto.fromString<EntryStorageDto>( js ) with
         | Ok dto -> 
             try
-                Ok (dto.ToFileEntry())
+                Ok (dto.ToEntryStorage(data))
             with
             | x -> 
-                Error( "Deserializing FileEntryDto: " + dto.Name + ": " + x.Message + "\nJSON:" + js)                
+                Error( "Deserializing EntryStorageDto: " + dto.Name + ": " + x.Message + "\nJSON:" + js)                
         | Error msg ->
             Error msg
 
@@ -162,14 +197,17 @@ module Internal =
         path.Split([|'/'|], StringSplitOptions.RemoveEmptyEntries)
 
     let buildPath (parts : seq<string>) =
-        "/" + String.Join( "/", parts )
+        String.Join( "/", parts )
+
+    let buildPathRooted (parts : seq<string>) =
+        "/" + buildPath(parts)
 
     let canonical (path : string ) =
         path |> parsePath |> buildPath
 
-    let getFolderName path =
-        match path with
-        | "/" -> "/"
+    let getFolderName (path : string) =
+        match path.Trim() with
+        | "/" | "" -> ""
         | _ ->
             let items = path |> parsePath
             if (items.Length = 0) then failwith ("Invalid path for getFolderName: " + path)
@@ -190,23 +228,34 @@ module Internal =
     let cleanSlash (f:string) =
         f.Replace("\\", "/").Replace("//", "/")
 
-    let combine (path:string) file =
-        sprintf "%s/%s" (path.TrimEnd([|'/'|])) file |> canonical
+    let combine (path:string) (file:string) =
+        (path.TrimEnd([|'/'|]), file.TrimStart([|'/'|]))
+        |> fun (p,f) ->
+            if p = "" then f
+            else sprintf "%s/%s" p f 
+        |> canonical
 
-type IKeyedStorage =
-    abstract Exists: string -> bool
-    abstract Get: string -> string
-    abstract Put: string * string -> unit
-    abstract Remove: string -> unit
+open JsHelpers
+
+// type IKeyedStorage =
+//     abstract Exists: string -> bool
+//     abstract Get: string -> string
+//     abstract Put: string * string -> unit
+//     abstract Remove: string -> unit
 
 type IKeyedStorageAsync =
     abstract Exists: string -> Promise<bool>
-    abstract Get: string -> Promise<string>
-    abstract Put: string * string -> Promise<unit>
+    abstract Get: string -> Promise<obj>
+    abstract GetAll: unit -> Promise<obj[]>
+    abstract Put: string * ByteArray -> Promise<unit>
     abstract Remove: string -> Promise<unit>
     abstract BeginBatch: unit -> unit
     abstract CommitBatch: unit -> Promise<unit>
     abstract Close: unit -> Promise<unit>
+    abstract CheckConsistency: unit -> Promise<obj>
+    abstract LogConsistencyCheck: unit -> Promise<bool>
+    abstract FixDanglingReferences: unit -> Promise<int>
+    abstract FixOrphanedEntries: unit -> Promise<int>
 
 module private BrowserStorage =
     let mk rootKey key = sprintf "%s/%s" rootKey key
@@ -223,15 +272,15 @@ module private BrowserStorage =
     let remove rootKey key =
         window.localStorage.removeItem (mk rootKey key)
 
-type LocalStorage(rootKey : string) =
-    interface IKeyedStorage with
-        member __.Exists (key: string): bool = 
-            BrowserStorage.exists rootKey key
-        member __.Get (key: string): string = 
-            BrowserStorage.getContents rootKey key
-        member __.Put(key, content) = BrowserStorage.setContents rootKey key content
-        member __.Remove (key: string): unit = 
-            BrowserStorage.remove rootKey key
+// type LocalStorage(rootKey : string) =
+//     interface IKeyedStorage with
+//         member __.Exists (key: string): bool = 
+//             BrowserStorage.exists rootKey key
+//         member __.Get (key: string): string = 
+//             BrowserStorage.getContents rootKey key
+//         member __.Put(key, content) = BrowserStorage.setContents rootKey key content
+//         member __.Remove (key: string): unit = 
+//             BrowserStorage.remove rootKey key
 
 module KeyedStorageIndexedDB =
     open Fable.Core
@@ -271,101 +320,146 @@ module Path =
         let p = fileName.LastIndexOf('.')
         if p < 0 then "" else fileName.Substring(p)
 
-type IReadOnlyFileSystemOf<'Date,'StringArray,'String,'Bool,'Unit,'Disposable> =
-    abstract member Files : path : string -> 'StringArray
-    abstract member Folders : path :string -> 'StringArray
-    abstract member Exists : path : string -> 'Bool
-    abstract member IsFile : path : string -> 'Bool
-    abstract member IsFolder : path : string -> 'Bool
-    abstract member GetFileContent : path : string  -> 'String
-    abstract member OnChange : (string -> unit) -> 'Disposable
-    abstract member GetCreatedAt : path : string  -> 'Date
-    abstract member GetModifiedAt : path : string  -> 'Date
+type IReadOnlyFileSystemOf<'EntryOption,'ContentOption,'Disposable> =
+    abstract member GetEntry : path :string -> 'EntryOption
+    abstract member GetContent : path : string  -> 'ContentOption
+    abstract member OnChanged : (string -> unit) -> 'Disposable
 
+type IReadOnlyBatchingFileSystemOf<'EntryOption, 'ContentOption, 'Disposable> =
+    inherit IReadOnlyFileSystemOf<AsyncPromise<'EntryOption>,AsyncPromise<'ContentOption>,AsyncPromise<'Disposable> >
+    abstract member GetEntryBatch : path :string[] -> AsyncPromise<'EntryOption[]>
+    abstract member GetContentBatch : path : string[]  -> AsyncPromise<'ContentOption[]>
 
-type IReadOnlyBatchingFileSystemOf<'Date,'StringArray,'String,'Bool,'Unit,'Disposable> =
-    inherit IReadOnlyFileSystemOf<AsyncPromise<'Date>,AsyncPromise<'StringArray>,AsyncPromise<'String>,AsyncPromise<'Bool>,AsyncPromise<'Unit>,AsyncPromise<'Disposable> >
-    abstract member FilesBatch : path : string[] -> AsyncPromise<'StringArray[]>
-    abstract member FoldersBatch : path :string[] -> AsyncPromise<'StringArray[]>
-    abstract member ExistsBatch : path : string[] -> AsyncPromise<'Bool[]>
-    abstract member IsFileBatch : path : string[] -> AsyncPromise<'Bool[]>
-    abstract member IsFolderBatch : path : string[] -> AsyncPromise<'Bool[]>
-    abstract member GetFileContentBatch : path : string[]  -> AsyncPromise<'String[]>
-    abstract member GetCreatedAtBatch : path : string[]  -> AsyncPromise<'Date[]>
-    abstract member GetModifiedAtBatch : path : string[]  -> AsyncPromise<'Date[]>
+type IWriteOnlyFileSystemOf<'Unit> =
+    abstract member WriteEntry  : string * Content -> 'Unit
+    abstract member RemoveEntry : path : string -> 'Unit
+    abstract member RenameEntry : string * string -> 'Unit
 
-type IWriteOnlyFileSystemOf<'StringArray,'String,'Bool,'Unit> =
-    abstract member SetFileContent : string * string -> 'Unit
-    abstract member RemoveFile     : path : string -> 'Unit
-
-    // /// Will create all parent folders
-    // abstract member CreateFile     : string -> 'Unit
-
-    /// Will create all parent folders
-    /// Will return silently if folder already exists
-    abstract member CreateFolder   : string -> 'Unit
-
-    abstract member RenameFile     : string * string -> 'Unit
-
-/// Synchronous read-only interface. Errors will be raised as exceptions
-/// 
 type IReadOnlyFileSystem = 
-    inherit IReadOnlyFileSystemOf<SyncThrowable<FsDateTime>, SyncThrowable<string[]>, SyncThrowable<string>, SyncThrowable<bool>, SyncThrowable<unit>, SyncThrowable<IDisposable>>
+    inherit IReadOnlyFileSystemOf<SyncThrowable<Entry option>, SyncThrowable<Content option>, SyncThrowable<IDisposable>>
 
-/// Synchronous interface. Errors will be raised as exceptions
-/// 
 type IFileSystem = 
-    inherit IWriteOnlyFileSystemOf<SyncThrowable<string[]>, SyncThrowable<string>, SyncThrowable<bool>, SyncThrowable<unit>>
+    inherit IWriteOnlyFileSystemOf<SyncThrowable<unit>>
     inherit IReadOnlyFileSystem
 
-/// Promise-based interface where all results are expressed as AsyncResult<'T>
-/// 
-type IReadOnlyFileSystemAsyncR = 
-    inherit IReadOnlyFileSystemOf<AsyncResult<FsDateTime>, AsyncResult<string[]>, AsyncResult<string>, AsyncResult<bool>, AsyncResult<unit>, AsyncResult<IDisposable>>
+type IReadOnlyFileSystemAsync= 
+    inherit IReadOnlyFileSystemOf<AsyncPromise<Entry option>, AsyncPromise<Content option>, AsyncPromise<IDisposable>>
 
-/// Promise-based read-only interface where all results are expressed as AsyncResult<'T>
-/// 
-type IFileSystemAsyncR = 
-    inherit IWriteOnlyFileSystemOf<AsyncResult<string[]>, AsyncResult<string>, AsyncResult<bool>, AsyncResult<unit>>
-    inherit IReadOnlyFileSystemAsyncR
+type IReadOnlyBatchingFileSystemAsync= 
+    inherit IReadOnlyBatchingFileSystemOf<Entry option, Content option, IDisposable>
 
-/// Promise-based read-only interface where all results are expressed as AsyncPromise<'T> (Promise<'T>)
-/// 
-type IReadOnlyFileSystemAsyncP = 
-    inherit IReadOnlyFileSystemOf<AsyncPromise<FsDateTime>, AsyncPromise<string[]>, AsyncPromise<string>, AsyncPromise<bool>, AsyncPromise<unit>, AsyncPromise<IDisposable>>
+type IFileSystemAsync= 
+    inherit IWriteOnlyFileSystemOf<AsyncPromise<unit>>
+    inherit IReadOnlyBatchingFileSystemAsync
 
-type IReadOnlyBatchingFileSystemAsyncP = 
-    inherit IReadOnlyBatchingFileSystemOf<FsDateTime, string[], string, bool, unit, IDisposable>
+type IFileSystemAsync with
+    member self.GetEntryBatchDefault (paths: string array): AsyncPromise<Entry option array> = 
+        paths |> Array.map self.GetEntry |> Promise.all
 
-/// Promise-based interface where all results are expressed as AsyncResult<'T> (Promise<'T>)
-/// 
-type IFileSystemAsyncP = 
-    inherit IWriteOnlyFileSystemOf<AsyncPromise<string[]>, AsyncPromise<string>, AsyncPromise<bool>, AsyncPromise<unit>>
-    inherit IReadOnlyBatchingFileSystemAsyncP
+    member self.GetContentBatchDefault (paths: string array): AsyncPromise<Content option array> = 
+        paths |> Array.map self.GetContent |> Promise.all
 
+[<AutoOpen>]
+module FileSystemExt =
 
-type IFileSystemAsyncP with
-    member self.FilesBatchDefault (paths: string array): AsyncPromise<string array array> = 
-        paths |> Array.map self.Files |> Promise.all
+    type IFileSystemAsync with
 
-    member self.FoldersBatchDefault (paths: string array): AsyncPromise<string array array> = 
-        paths |> Array.map self.Folders |> Promise.all
+        member __.Exists( path : string ) : AsyncPromise<bool> =
+            promise {
+                let! e = __.GetEntry(path)
+                return e.IsSome
+            }
 
-    member self.ExistsBatchDefault (paths: string array): AsyncPromise<bool array> = 
-        paths |> Array.map self.Exists |> Promise.all
+        member __.IsFile( path : string ) : AsyncPromise<bool> =
+            promise {
+                let! e = __.GetEntry(path)
+                return e |> Option.map (fun e -> e.Meta.EntryType = EntryType.File) |> Option.defaultValue false
+            }
 
-    member self.IsFileBatchDefault (paths: string array): AsyncPromise<bool array> = 
-        paths |> Array.map self.IsFile |> Promise.all
+        member __.IsFolder( path : string ) : AsyncPromise<bool> =
+            promise {
+                let! e = __.GetEntry(path)
+                return e |> Option.map (fun e -> e.Meta.EntryType = EntryType.Folder) |> Option.defaultValue false
+            }
 
-    member self.IsFolderBatchDefault (paths: string array): AsyncPromise<bool array> = 
-        paths |> Array.map self.IsFolder |> Promise.all
+        member private __.EntryNamesWhere( path : string, pred : Entry -> bool ) : AsyncPromise<string[]> =
+            let _path = path
+            promise {
+                let! e = __.GetEntry(path)
+                match e with
+                | Some entry when entry.Meta.EntryType = EntryType.Folder ->
+                    let! c = __.GetContent(path)
+                    match c with
+                    | Some (Content.Entries entries) ->
+                        return entries |> Array.filter pred |> Array.map _.Name
+                    | _ -> 
+                        return failwithf "Internal error: Not a folder: %s" path
+                | x ->
+                    return failwithf "Not a folder: '%s' '%s' (%A)" _path path x
+            }
 
-    member self.GetFileContentBatchDefault (paths: string array): AsyncPromise<string array> = 
-        paths |> Array.map self.GetFileContent |> Promise.all
+        member __.EntryNames( path : string ) : AsyncPromise<string[]> =
+            promise {
+               let! names = __.EntryNamesWhere(path, fun _ -> true )
+               Fable.Core.JS.console.log("EntryNames:path=" + path + ":", names)
+               return names
+            }
 
-    member self.GetModifiedAtBatchDefault( paths : string[] ) =
-        paths |> Array.map self.GetModifiedAt |> Promise.all
+        member __.Files( path : string ) : AsyncPromise<string[]> =
+            __.EntryNamesWhere(path, _.IsFile )
 
-    member self.GetCreatedAtBatchDefault( paths : string[] ) =
-        paths |> Array.map self.GetCreatedAt |> Promise.all
+        member __.Folders( path : string ) : AsyncPromise<string[]> =
+            __.EntryNamesWhere(path, _.IsFolder )
 
+        member __.GetFileText(path : string) =
+            promise {
+                let! c = __.GetContent( path )
+                match c with 
+                // | Some (Content.TextUtf8 text) -> return text
+                | Some (Content.Bytes data) -> return data |> JsHelpers.ByteArray.textDecode
+                | None -> return failwithf "File not found: %s" path
+                | _ -> return failwithf "Not a file: %s" path
+            }
+
+        member __.GetFileBytes(path : string) =
+            promise {
+                let! c = __.GetContent( path )
+                match c with 
+                // | Some (Content.TextUtf8 text) -> return text |> ByteArray.textEncode
+                | Some (Content.Bytes data) -> return data 
+                | None -> return failwithf "File not found: %s" path
+                | _ -> return failwithf "Not a file: %s" path
+            }
+
+        member __.GetFileContent(path : string) =
+            __.GetFileText path
+
+        member __.GetCreatedAt(path : string) =
+            promise {
+                let! e = __.GetEntry(path)
+                return e |> Option.map (fun e -> e.Meta.CreatedAt) |> Option.defaultWith (fun _ -> failwithf "Not a file: %s" path)
+            }
+
+        member __.GetModifiedAt(path : string) =
+            promise {
+                let! e = __.GetEntry(path)
+                return e |> Option.map (fun e -> e.Meta.ModifiedAt) |> Option.defaultWith (fun _ -> failwithf "Not a file: %s" path)
+            }
+
+        member __.SetFileContent(path : string, content : string) = 
+            __.WriteEntry( path, Content.Bytes (content |> ByteArray.textEncode))
+
+        member __.CreateFolder(path : string ) = 
+            __.WriteEntry( path, Content.Entries [||] )
+
+        member __.RenameFile(path : string, newPath : string) = 
+            __.RenameEntry( path, newPath )
+
+        member __.RemoveFile(path : string) = 
+            __.RemoveEntry(path)
+
+        member __.GetFileContentBatch( paths : string[] ) =
+            paths |> Array.map __.GetFileContent |> Promise.all
+
+type IFsAsync = 
+    inherit IFileSystemAsync

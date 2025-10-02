@@ -19,7 +19,7 @@ let initAce hostElement onChange =
     editor.on_change( fun _ -> onChange() )
     editor
 
-type Editor(fs : IFileSystemAsyncP ) =
+type Editor(fs : IFileSystemAsync) =
     let mutable editor : Ace.Editor = Unchecked.defaultof<_>
 
     let mutable editing = ""
@@ -52,7 +52,7 @@ type Editor(fs : IFileSystemAsyncP ) =
             //     )
         ]
 
-    let startEdit (e : SutilOxide.AceEditor.Ace.Editor) (fs : IFileSystemAsyncP) (path:string) =
+    let startEdit (e : SutilOxide.AceEditor.Ace.Editor) (fs : IFileSystemAsync (path:string) =
 
         fs.GetFileContent(path) 
         |> Promise.iter (fun content -> 

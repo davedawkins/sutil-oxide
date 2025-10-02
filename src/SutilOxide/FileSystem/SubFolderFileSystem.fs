@@ -1,8 +1,9 @@
 module SutilOxide.SubFolderFileSystem
 
+open System
 open SutilOxide.FileSystem
 
-type SubFolderFileSystem( fs : IFileSystem, mountPoint : string) =
+type SubFolderFileSystemAsync( fs : IFsAsync, mountPoint : string) =
     let makePath( path : string ) = Path.combine mountPoint path
 
     let fixPath ( path :string ) = 
@@ -18,275 +19,40 @@ type SubFolderFileSystem( fs : IFileSystem, mountPoint : string) =
     let belongs (path : string) =
         (trimSlash path).StartsWith( trimSlash mountPoint )
 
-    interface IFileSystem with
-        // member this.CreateFile(path: string ) = 
-        //     fs.CreateFile(makePath path )
+    interface IFsAsync with
+        // IWriteOnlyFileSystemOf<AsyncPromise<unit>> members
+        member this.WriteEntry(path: string, content: Content): AsyncPromise<unit> =
+            fs.WriteEntry(makePath path, content)
 
-        member this.CreateFolder(path: string)= 
-            fs.CreateFolder(makePath path)
+        member this.RemoveEntry(path: string): AsyncPromise<unit> =
+            fs.RemoveEntry(makePath path)
 
-        member this.Exists(path: string) = 
-            fs.Exists(makePath path)
+        member this.RenameEntry(src: string, tgt: string): AsyncPromise<unit> =
+            fs.RenameEntry(makePath src, makePath tgt)
 
-        member this.Files(path: string) = 
-            fs.Files( makePath path )
-            
-        member this.Folders(path: string) = 
-            fs.Folders( makePath path )
+        // IReadOnlyFileSystemOf members  
+        member this.GetEntry(path: string): AsyncPromise<Entry option> =
+            fs.GetEntry(makePath path)
 
-        member this.GetFileContent(path: string) = 
-            fs.GetFileContent(makePath path)
-            
-        member this.GetCreatedAt(path: string) = 
-            fs.GetCreatedAt(makePath path)
-            
-        member this.GetModifiedAt(path: string) = 
-            fs.GetModifiedAt(makePath path)
-            
-        member this.IsFile(path: string) = 
-            fs.IsFile( makePath path )
-            
-        member this.IsFolder(path: string) = 
-            fs.IsFolder( makePath path )
+        member this.GetContent(path: string): AsyncPromise<Content option> =
+            fs.GetContent(makePath path)
 
-        member this.OnChange(callback: string -> unit) = 
-            fs.OnChange( fun path -> 
+        member this.OnChanged(callback: string -> unit): AsyncPromise<IDisposable> =
+            fs.OnChanged(fun path -> 
                 if belongs path then callback(fixPath path))
 
-        member this.RemoveFile(path: string) = 
-            fs.RemoveFile( makePath path )
+        // IReadOnlyBatchingFileSystemOf members
+        member this.GetEntryBatch(paths: string array): AsyncPromise<Entry option array> =
+            fs.GetEntryBatch(paths |> Array.map makePath)
 
-        member this.RenameFile(src: string, tgt: string) = 
-            fs.RenameFile( makePath src, makePath tgt )
+        member this.GetContentBatch(paths: string array): AsyncPromise<Content option array> =
+            fs.GetContentBatch(paths |> Array.map makePath)
 
-        member this.SetFileContent(path: string, content: string) = 
-            fs.SetFileContent( makePath path, content)
-
-
-type SubFolderFileSystemAsyncP( fs : IFileSystemAsyncP, mountPoint : string) =
-    let makePath( path : string ) = Path.combine mountPoint path
-
-    let fixPath ( path :string ) = 
-        let start = path.IndexOf mountPoint
-        path.Substring( start + mountPoint.Length )
-
-    let fixFiles ( files :string[] ) = files
-
-    let fixFolders ( folders :string[] ) = folders 
-
-    let trimSlash (path : string) = path.TrimStart( [| '/' |] )
-
-    let belongs (path : string) =
-        (trimSlash path).StartsWith( trimSlash mountPoint )
-
-    interface IFileSystemAsyncP with
-
-        // member this.CreateFile(path: string) = 
-        //     fs.CreateFile(makePath path )
-
-        member this.CreateFolder(path: string)  = 
-            fs.CreateFolder(makePath path)
-
-        member this.Exists(path: string) = 
-            fs.Exists(makePath path)
-
-        member this.Files(path: string)  = 
-            promise {
-                let! files = fs.Files( makePath path ) 
-                return files |> fixFiles
-            }
-
-        member this.Folders(path: string) = 
-            promise {
-                let! folders = fs.Folders( makePath path ) 
-                return folders |> fixFolders
-            }
-
-        member this.GetFileContent(path: string)  = 
-            fs.GetFileContent(makePath path)
-            
-        member this.GetCreatedAt(path: string) = 
-            fs.GetCreatedAt(makePath path)
-            
-        member this.GetModifiedAt(path: string) = 
-            fs.GetModifiedAt(makePath path)
-            
-        member this.IsFile(path: string) = 
-            fs.IsFile( makePath path )
-            
-        member this.IsFolder(path: string) = 
-            fs.IsFolder( makePath path )
-
-        member this.OnChange(callback: string -> unit)  = 
-            fs.OnChange( fun path -> 
-                if belongs path then callback(fixPath path))
-
-        member this.RemoveFile(path: string)  = 
-            fs.RemoveFile( makePath path )
-
-        member this.RenameFile(src: string, tgt: string)  = 
-            fs.RenameFile( makePath src, makePath tgt )
-
-        member this.SetFileContent(path: string, content: string)  = 
-            fs.SetFileContent( makePath path, content)
-
-        member __.FilesBatch (paths: string array): AsyncPromise<string array array> = 
-            promise {
-                let! filesArray = fs.FilesBatch (paths |> Array.map makePath)
-                return filesArray |> Array.map fixFiles
-            }
-
-        member __.FoldersBatch (paths: string array): AsyncPromise<string array array> = 
-            promise {
-                let! filesArray = fs.FoldersBatch (paths |> Array.map makePath)
-                return filesArray |> Array.map fixFiles
-            }
-
-        member __.ExistsBatch (paths: string array): AsyncPromise<bool array> = 
-            fs.ExistsBatch (paths |> Array.map makePath)
-
-        member __.IsFileBatch (paths: string array): AsyncPromise<bool array> = 
-            fs.IsFileBatch (paths |> Array.map makePath)
-
-        member __.IsFolderBatch (paths: string array): AsyncPromise<bool array> = 
-            fs.ExistsBatch (paths |> Array.map makePath)
-
-        member __.GetFileContentBatch (paths: string array): AsyncPromise<string array> = 
-            fs.GetFileContentBatch (paths |> Array.map makePath)
-
-        member __.GetModifiedAtBatch( paths : string[] ) =
-            fs.GetModifiedAtBatch (paths |> Array.map makePath)
-
-        member __.GetCreatedAtBatch( paths : string[] ) =
-            fs.GetCreatedAtBatch (paths |> Array.map makePath)
-
-type MountHostSystemAsyncP( fs : IFileSystemAsyncP, mountPoint : string, mountFs : IFileSystemAsyncP ) =
-    // let makePath( path : string ) = Path.combine mountPoint path
-
-    // let fixPath ( path :string ) = 
-    //     let start = path.IndexOf mountPoint
-    //     path.Substring( start + mountPoint.Length )
-
-    // let fixFolders ( folders :string[] ) = folders 
-
-    // let trimSlash (path : string) = path.TrimStart( [| '/' |] )
-
-    // let belongs (path : string) =
-    //     (trimSlash path).StartsWith( trimSlash mountPoint )
-
-
-    let _p (path : string) = Path.combine "" path
-
-    let isMount (path : string) = 
-        let path = _p path
-        path.StartsWith mountPoint
-
-    // let fixFiles path ( files :string[] ) = 
-    //     if isMount path then files |> Array.map (Path.combine mountPoint) else files
-
-    let getPath (path : string) = 
-        let path = _p path
-        if isMount path then path.Substring(mountPoint.Length) else path
-
-    let getFs (path : string) = 
-        let path = _p path
-        if isMount path then mountFs else fs
-
-
-    interface IFileSystemAsyncP with
-
-        // member this.CreateFile(path: string) = 
-        //     fs.CreateFile(makePath path )
-
-        member this.CreateFolder(path: string)  = 
-            (getFs path).CreateFolder(getPath path)
-
-        member this.Exists(path: string) = 
-            Fable.Core.JS.console.log("Exists: " + path + " -> " + getPath(path))
-            (getFs path).Exists(getPath path)
-
-        member this.Files(path: string)  = 
-            promise {
-                let! files = (getFs path).Files( getPath path ) 
-                return files //|> fixFiles path
-            }
-
-        member this.Folders(path: string) = 
-            promise {
-                let! folders = (getFs path).Folders( getPath path ) 
-                return folders //|> fixFiles path
-            }
-
-        member this.GetFileContent(path: string)  = 
-            (getFs path).GetFileContent(getPath path)
-            
-        member this.GetCreatedAt(path: string) = 
-            (getFs path).GetCreatedAt(getPath path)
-            
-        member this.GetModifiedAt(path: string) = 
-            (getFs path).GetModifiedAt(getPath path)
-            
-        member this.IsFile(path: string) = 
-            (getFs path).IsFile( getPath path )
-            
-        member this.IsFolder(path: string) = 
-            (getFs path).IsFolder( getPath path )
-
-        member this.OnChange(callback: string -> unit)  = 
-            promise {
-                let! d1 = fs.OnChange( fun path -> callback(path) )
-                let! d2 = mountFs.OnChange( fun path -> callback( Path.combine mountPoint path) )
-                return { new System.IDisposable with member __.Dispose() = d1.Dispose(); d2.Dispose() }
-            }
-
-        member this.RemoveFile(path: string)  = 
-            (getFs path).RemoveFile( getPath path )
-
-        member this.RenameFile(src: string, tgt: string)  = 
-            (getFs src).RenameFile( getPath src, getPath tgt )
-
-        member this.SetFileContent(path: string, content: string)  = 
-            (getFs path).SetFileContent( getPath path, content)
-
-        member __.FilesBatch (paths: string array): AsyncPromise<string array array> = 
-            let self = __ :> IFileSystemAsyncP
-            self.FilesBatchDefault paths
-
-        member __.FoldersBatch (paths: string array): AsyncPromise<string array array> = 
-            let self = __ :> IFileSystemAsyncP
-            self.FoldersBatchDefault paths
-
-        member __.ExistsBatch (paths: string array): AsyncPromise<bool array> = 
-            let self = __ :> IFileSystemAsyncP
-            self.ExistsBatchDefault paths
-
-        member __.IsFileBatch (paths: string array): AsyncPromise<bool array> = 
-            let self = __ :> IFileSystemAsyncP
-            self.IsFileBatchDefault paths
-
-        member __.IsFolderBatch (paths: string array): AsyncPromise<bool array> = 
-            let self = __ :> IFileSystemAsyncP
-            self.ExistsBatchDefault paths
-
-        member __.GetFileContentBatch (paths: string array): AsyncPromise<string array> = 
-            let self = __ :> IFileSystemAsyncP
-            self.GetFileContentBatchDefault paths
-
-        member __.GetModifiedAtBatch( paths : string[] ) =
-            let self = __ :> IFileSystemAsyncP
-            self.GetModifiedAtBatchDefault paths
-
-        member __.GetCreatedAtBatch( paths : string[] ) =
-            let self = __ :> IFileSystemAsyncP
-            self.GetCreatedAtBatchDefault paths
 
 [<AutoOpen>]
 module SubFolderFileSystemExt = 
+            
+    type IFsAsync with
 
-    type IFileSystemAsyncP with
-
-        member __.MakeRoot( path : string ) : IFileSystemAsyncP =
-            SubFolderFileSystemAsyncP( __, path )
-
-        member __.Mount( path : string, mountFs : IFileSystemAsyncP ) =
-            new MountHostSystemAsyncP( __, path, mountFs )
+        member __.MakeRoot( path : string ) : IFsAsync =
+            SubFolderFileSystemAsync( __, path ) :> IFsAsync

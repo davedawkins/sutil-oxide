@@ -632,6 +632,12 @@ module Forms =
         with
         | x -> Error (x.Message) 
 
+    let parseInt ( s : string ) : Result<int, string> =
+        try
+            System.Int32.Parse s |> Ok
+        with
+        | x -> Error (x.Message)
+        
     type Parser<'T> = string -> Result<'T,string>
 
     [<RequireQualifiedAccess>]
@@ -686,7 +692,10 @@ module Forms =
                     .WithBuiltIn(BuiltInEditor.Number)
                     .WithParse( parseDouble :> obj :?> Parser<'T> )
 
-            | "Int32" -> empty.WithBuiltIn(BuiltInEditor.Number)
+            | "Int32" -> 
+                empty
+                    .WithBuiltIn(BuiltInEditor.Number)
+                    .WithParse( parseInt :> obj :?> Parser<'T> )
 
             | "Boolean" -> empty.WithBuiltIn(BuiltInEditor.Checkbox)
 

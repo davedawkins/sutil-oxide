@@ -49,7 +49,7 @@ type SessionState = {
 type Model = {
     RefreshId : int // Change this to force a redraw
     Cwd : string
-    Fs : IFileSystemAsyncP
+    Fs : IFsAsync
     Selected : string
     Renaming : bool
     Error : Exception option
@@ -75,7 +75,7 @@ let defaultSessionState() = {
     Editing = ""
 }
 
-let init (fs : IFileSystemAsyncP, s : SessionState) =
+let init (fs : IFsAsync, s : SessionState) =
     {
         RefreshId = 0
         Fs = fs
@@ -92,7 +92,7 @@ let init (fs : IFileSystemAsyncP, s : SessionState) =
             if s.Editing <> "" then Cmd.ofMsg (Edit s.Editing) else Cmd.none
         ]
 
-let fetchListing (fs : IFileSystemAsyncP) (path : string) : Promise<string[]*string[]> =
+let fetchListing (fs : IFsAsync) (path : string) : Promise<string[]*string[]> =
     promise {
         let! exists =
             fs.IsFolder path
@@ -419,7 +419,7 @@ let fileExplorer (classifier : string -> string) iconselector dispatch (m : Mode
 ///
 /// Show files and folders, with ability to create, rename, remove
 /// 
-type FileExplorer( fs : IFileSystemAsyncP ) =
+type FileExplorer( fs : IFsAsync ) =
 
     let mutable onEdit : string -> unit = ignore
 
@@ -436,7 +436,7 @@ type FileExplorer( fs : IFileSystemAsyncP ) =
         items |> Array.exists (fun f -> path = Path.combine (model.Value.Cwd) f)
 
     do
-        fs.OnChange( fun _ -> dispatch FetchListing ) |> Promise.start
+        fs.OnChanged( fun _ -> dispatch FetchListing ) |> Promise.start
 
     with
         member _.View( classifier : string -> string, iconselector : string -> string ) = view classifier iconselector 
