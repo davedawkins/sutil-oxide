@@ -320,6 +320,9 @@ module Path =
         let p = fileName.LastIndexOf('.')
         if p < 0 then "" else fileName.Substring(p)
 
+module PathOperators =
+    let (/+) a b = Path.combine a b
+    
 type IReadOnlyFileSystemOf<'EntryOption,'ContentOption,'Disposable> =
     abstract member GetEntry : path :string -> 'EntryOption
     abstract member GetContent : path : string  -> 'ContentOption
