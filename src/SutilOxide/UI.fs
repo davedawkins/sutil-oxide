@@ -187,7 +187,7 @@ module Control =
                         Bind.attr( "aria-checked", checkedS .>> string )
                         disposeOnUnmount [ checkedS ]
                         Bind.el( checkedS,
-                            fun ch -> Html.i [ Attr.className ("left " + (Icon.makeFa("check")) + " " + (if ch then "checked" else "")) ]
+                            fun ch -> Html.i [ Attr.className ("left " + (Icon.makeFa(if ch then "check" else "square")) + " " + (if ch then "checked" else "")) ]
                         )
                         Ev.onClick (fun e ->
                             e.preventDefault()

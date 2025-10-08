@@ -166,7 +166,8 @@ let mkButton b =
         | Checkbox, _, _ ->
 
             Bind.el( checkedS,
-                fun ch -> Html.i [ Attr.className ( (UI.Icon.makeFa "fa-check") + (if ch then " checked" else "")) ]
+                // fun ch -> Html.i [ Attr.className ( (UI.Icon.makeFa "fa-check") + (if ch then " checked" else "")) ]
+                fun ch -> Html.i [ Attr.className ( (UI.Icon.makeFa (if ch then "check" else "square")) + (if ch then " checked" else "")) ]
             )
 
         | _, Some icon, LabelIcon | _, Some icon, IconOnly ->
