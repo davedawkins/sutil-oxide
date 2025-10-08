@@ -303,7 +303,7 @@ let private dockStyling (theme : Theme) = [
     rule ".tabs-left-bottom" [
 
         Css.gridRow ("3","3")
-        Css.gridColumn ("", "1")
+        Css.gridColumn ("1", "1")
         //Css.minWidth (rem 1)
 
         yield! sidewaysLr
