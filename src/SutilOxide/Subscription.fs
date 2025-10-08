@@ -20,6 +20,11 @@ type ISubscriptionWithResult<'T,'R> =
 
 type ISubscription<'T> = 
     inherit ISubscriptionWithResult<'T,unit>
+    inherit System.IObservable<'T>
+
+type ISignal<'T> =
+    inherit ISubscription<'T>
+    abstract Value : 'T with get
 
 type ISubscriptionAsync<'T> = 
     inherit ISubscriptionWithResult<'T,JS.Promise<unit>>
@@ -124,6 +129,9 @@ type Signal<'T>( init : 'T ) =
     override _.Notify(value: 'T) =
         _value <- value
         base.Notify(value)
+
+    interface ISignal<'T> with
+        member this.Value = _value
 
     interface System.IObservable<'T> with 
         member this.Subscribe( ob ) = this.Subscribe( fun v -> ob.OnNext(v) )
