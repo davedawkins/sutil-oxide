@@ -145,8 +145,8 @@ let private dockStyling (theme : Theme) = [
         Css.height (percent 100)
         Css.backgroundColor theme.ControlBackground
         Css.displayGrid
-        Css.custom("grid-template-columns", "max-content 1fr 1fr max-content")
-        Css.custom("grid-template-rows", "max-content 1fr 1fr max-content")
+        Css.custom("grid-template-columns", "max-content minmax(0,50%) minmax(0,50%) max-content")
+        Css.custom("grid-template-rows", "max-content minmax(0,50%) minmax(0,50%) max-content")
     ]
 
     rule ".tab-label .close-button" [
