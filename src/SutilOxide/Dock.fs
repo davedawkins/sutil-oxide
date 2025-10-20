@@ -492,12 +492,10 @@ let private viewTabLabel (model : System.IObservable<Model>) dispatch dockLocati
         Ev.onClick (EventHandlers.tabClick dockLocation pane dispatch)
     ]
 
-
 let dragOverlay model (loc:DockLocation) =
     UI.divc $"drag-overlay {loc.Primary.LowerName} {loc.CssName}" [
         Bind.toggleClass(showOverlay model loc, "visible")
     ]
-
 
 let dockContainer (options : unit -> Options) model (loc : DockLocation) =
 

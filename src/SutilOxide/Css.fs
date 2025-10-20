@@ -8,7 +8,6 @@ open Sutil
 open Sutil.Styling
 open type Feliz.length
 
-
 let inline private asVar name = sprintf "var(--%s)" name
 let inline private cssVar name value = Css.custom( name, asVar value )    
 
@@ -16,8 +15,7 @@ type CssVar =
     static member fontWeight (varName: string) = cssVar "font-weight" varName
         
 type CssThm =
-    static member fontWeightBold =
-        CssVar.fontWeight "bold"
+    static member fontWeightBold = CssVar.fontWeight "bold"
 
 type Theme = {
     ControlTextColor : string        // text
@@ -90,7 +88,6 @@ let DarkTheme =
         Highlight = highlight
         Overlay = highlight
     }
-
 
 
 let primaryIds = [ "left"; "right"; "top"; "bottom" ]
@@ -189,6 +186,7 @@ let private dockStyling (theme : Theme) = [
     rule ".dock-left-container" [
         Css.positionRelative
         Css.width (px 400)
+        Css.minHeight (percent 0)
         Css.height (percent 100)
         Css.minWidth (rem 2)
         Css.gridRow ("1","1")
@@ -211,6 +209,7 @@ let private dockStyling (theme : Theme) = [
     rule ".dock-right-container" [
         Css.positionRelative
         Css.width (px 400)
+        Css.minHeight 0
         Css.height (percent 100)
         Css.minWidth (rem 2)
         Css.gridRow ("1","1")
@@ -218,6 +217,7 @@ let private dockStyling (theme : Theme) = [
         Css.gridColumn ("3", "3")
         Css.displayFlex
         Css.flexDirectionColumn
+
     ]
 
     rule ".dock-top-container" [
@@ -228,6 +228,8 @@ let private dockStyling (theme : Theme) = [
         //Css.gridColumn ("1", "4")
         Css.displayFlex
         Css.flexDirectionRow
+        Css.minWidth 0
+        Css.width (percent 100)
     ]
 
     rule ".dock-bottom-container" [
@@ -238,6 +240,8 @@ let private dockStyling (theme : Theme) = [
         //Css.gridColumn ("1", "4")
         Css.displayFlex
         Css.flexDirectionRow
+        Css.minWidth 0
+        Css.width (percent 100)
     ]
 
     yield! containerIds |> List.map (fun id ->
@@ -248,6 +252,7 @@ let private dockStyling (theme : Theme) = [
             Css.positionRelative // For the drag overlay
             Css.maxHeight (percent 100)
             Css.minHeight (percent 0)
+            Css.minWidth (percent 0)
             Css.flexBasis 0
             Css.flexShrink 1
             Css.flexGrow 1
