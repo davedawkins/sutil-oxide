@@ -156,8 +156,8 @@ let update edit msg model =
     | SetError x ->
         { model with Error = Some x }, Cmd.none
 
-    | SetSelected s ->
-        { model with Selected = s; Renaming = false}, Cmd.none
+    | SetSelected (s : string) ->
+        { model with Selected = s.TrimStart( [| '/' |] ) ; Renaming = false}, Cmd.none
 
     | SelectPath path ->
         let folder = Path.getFolderName(path)
@@ -405,6 +405,7 @@ let fileExplorer (classifier : string -> string) iconselector dispatch (m : Mode
                             // Ev.onDragEnd( fun e ->
                             //     (e.target :?> HTMLElement).classList.remove "dragging"
                             // )
+
                             if m.Selected = path then
                                 Attr.className "selected"
                 ])
