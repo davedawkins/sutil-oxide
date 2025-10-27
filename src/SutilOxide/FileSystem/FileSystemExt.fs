@@ -128,8 +128,8 @@ module Extensions =
                     if dstExists then   
                         failwith ("File/folder exists: " + dst)
 
-                    if src.StartsWith dst || dst.StartsWith src then
-                        failwith "Attempt to copy folder to itself"
+                    // if src.StartsWith dst || dst.StartsWith src then
+                    //     failwith "Attempt to copy folder to itself"
 
                     do! fs.CreateFolder dst
 
