@@ -142,8 +142,9 @@ let update edit msg model =
     | RenameTo name ->
         let tryRename () =
             promise {
+                if name.Contains("/") then failwithf "Invalid file name: %s" name
                 if (model.Selected <> "") then
-                    do! model.Fs.RenameFile( model.Selected, name )
+                    do! model.Fs.RenameFile( model.Selected, Path.combine model.Cwd name )
             }
         { model with Renaming = false }, Cmd.OfPromise.either tryRename () (fun _ -> SetSelected model.Selected) SetError
 

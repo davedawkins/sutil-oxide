@@ -588,12 +588,12 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
             try
                 let cpath = path |> Internal.canonical
 
-                let npath =
-                    if newNameOrPath.StartsWith("/") then
-                        newNameOrPath |> Internal.canonical
-                    else
-                        validateFileName newNameOrPath
-                        Path.combine (Path.getFolderName cpath) newNameOrPath
+                let npath = newNameOrPath |> Internal.canonical
+                    // if newNameOrPath.StartsWith("/") then
+                    //     newNameOrPath |> Internal.canonical
+                    // else
+                    //     validateFileName newNameOrPath
+                    //     Path.combine (Path.getFolderName cpath) newNameOrPath
 
                 if cpath = "/" || npath = "/" then
                     failwith "Cannot rename to/from '/'"
