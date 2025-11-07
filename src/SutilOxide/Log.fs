@@ -1,6 +1,7 @@
 module SutilOxide.Log
 
 open Fable.Core
+open SutilOxide.Reactive
 
 [<Emit("window.console.log")>]
 let _console_log : obj = jsNative
@@ -97,13 +98,13 @@ type LogMessage =
             Time = System.DateTime.Now
         }
 
-let mutable private logListeners = new Subscription.Subscription<LogMessage>()
+let mutable private logListeners : IEventSource<LogMessage> = EventSource.make()
 
-let logMessages : Cell.ICell<_> = Cell.Cell<ResizeArray<LogMessage>>( "logmessages", ResizeArray())
+let logMessages : Reactive.ICell<ResizeArray<LogMessage>> = Reactive.Cell.make(ResizeArray())
 
 let [<Import("trapConsoleLog", "./loghelper.js")>] trapConsoleLog (x : obj array -> unit) : unit = jsNative
 
-let onLogClear = new Subscription.Subscription<unit>()
+let onLogClear : IEventSource<unit> = EventSource.make()
 let onLogMessage : System.IObservable<LogMessage> = logListeners
 let messages : System.IObservable<ResizeArray<LogMessage>> = logMessages
 

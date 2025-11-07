@@ -6,8 +6,8 @@
   <ItemGroup>
     <Compile Include="JsHelpers.fs" />
     <Compile Include="Types.fs" />
+    <Compile Include="Reactive.fs" />
     <Compile Include="Subscription.fs" />
-    <Compile Include="Cell.fs" />
     <Compile Include="Log.fs" />
     <Compile Include="Css.fs" />
     <Compile Include="UICss.fs" />
