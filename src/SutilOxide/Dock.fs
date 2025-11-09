@@ -634,17 +634,19 @@ type DockContainer() =
                 ]
             )
 
-            Bind.el( model |> Store.map (fun m -> m.Docks.GetPanes(LeftTop)) |> paneDistinct, fun tabs ->
-                UI.divc "dock-tabs tabs-left tabs-left-top border border-right" [
-                    yield! tabs |> List.map (viewTabLabel model dispatch LeftTop)
-                ]
-            )
+            Html.divc "tabs-left-container" [
+                Bind.el( model |> Store.map (fun m -> m.Docks.GetPanes(LeftTop)) |> paneDistinct, fun tabs ->
+                    UI.divc "dock-tabs tabs-left tabs-left-top border border-right" [
+                        yield! tabs |> List.map (viewTabLabel model dispatch LeftTop)
+                    ]
+                )
 
-            Bind.el( model |> Store.map (fun m -> m.Docks.GetPanes(LeftBottom)) |> paneDistinct, fun tabs ->
-                UI.divc "dock-tabs tabs-left tabs-left-bottom border border-right" [
-                    yield! tabs |> List.map (viewTabLabel model dispatch LeftBottom)
-                ]
-            )
+                Bind.el( model |> Store.map (fun m -> m.Docks.GetPanes(LeftBottom)) |> paneDistinct, fun tabs ->
+                    UI.divc "dock-tabs tabs-left tabs-left-bottom border border-right" [
+                        yield! tabs |> List.map (viewTabLabel model dispatch LeftBottom)
+                    ]
+                )
+            ]
 
             UI.divc "dock-main-grid" [
 
@@ -736,17 +738,19 @@ type DockContainer() =
                 ]
             ]
 
-            Bind.el( model |> Store.map (fun m -> m.Docks.GetPanes(RightTop)) |> paneDistinct, fun tabs ->
-                UI.divc "dock-tabs tabs-right tabs-right-top border border-left" [
-                    yield! tabs |> List.map (viewTabLabel model dispatch RightTop)
-                ]
-            )
+            Html.divc "tabs-right-container" [
+                Bind.el( model |> Store.map (fun m -> m.Docks.GetPanes(RightTop)) |> paneDistinct, fun tabs ->
+                    UI.divc "dock-tabs tabs-right tabs-right-top border border-left" [
+                        yield! tabs |> List.map (viewTabLabel model dispatch RightTop)
+                    ]
+                )
 
-            Bind.el( model |> Store.map (fun m -> m.Docks.GetPanes(RightBottom)) |> paneDistinct, fun tabs ->
-                UI.divc "dock-tabs tabs-right tabs-right-bottom border border-left" [
-                    yield! tabs |> List.map (viewTabLabel model dispatch RightBottom)
-                ]
-            )
+                Bind.el( model |> Store.map (fun m -> m.Docks.GetPanes(RightBottom)) |> paneDistinct, fun tabs ->
+                    UI.divc "dock-tabs tabs-right tabs-right-bottom border border-left" [
+                        yield! tabs |> List.map (viewTabLabel model dispatch RightBottom)
+                    ]
+                )
+            ]
 
             // Bottom left corner, so we can place a border on top
             UI.divc "dock-tabs box-left border border-top" []

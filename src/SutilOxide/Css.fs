@@ -290,6 +290,22 @@ let private dockStyling (theme : Theme) = [
         //Css.gap (rem 1)
     ]
 
+    rule ".tabs-left-container" [
+        Css.gridColumn ("1","1")
+        Css.gridRow ("2", "4")
+        Css.displayFlex
+        Css.flexDirectionColumn
+        Css.justifyContentSpaceBetween
+    ]
+
+    rule ".tabs-right-container" [
+        Css.gridColumn ("4","4")
+        Css.gridRow ("2", "4")
+        Css.displayFlex
+        Css.flexDirectionColumn
+        Css.justifyContentSpaceBetween
+    ]
+
     // rule ".tabs-centre" [
     //     yield! sidewaysLr
     //     Css.custom ("justify-content", "end")
