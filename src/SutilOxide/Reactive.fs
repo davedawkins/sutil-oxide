@@ -80,6 +80,7 @@ module Internal =
             member this.Notify(v) = this.Notify(v)
 
     type Cell<'T>(init:'T) =
+        let disposeListeners = new ResizeArray<unit -> unit>()
         let clients = new EventSourceWithResult<'T,unit>()
         let mutable value = init
         let _set v = 
@@ -91,10 +92,19 @@ module Internal =
             handler(value)
             unsub
 
+        member _.Set(v) = _set(v)
+        member _.Value with get() = value
+
+        member _.OnDispose( f : unit -> unit ) =
+            disposeListeners.Add(f)
+
         interface ICell<'T> with
             member _.Value with get() = value 
             member _.Set(v) = _set(v)
-            member _.Dispose() = clients.Dispose()
+            member _.Dispose() = 
+                clients.Dispose()
+                disposeListeners |> Seq.iter (fun f -> f())
+                disposeListeners.Clear()
 
         interface System.IObservable<'T> with
             member _.Subscribe( observer : System.IObserver<'T> ) =
@@ -120,6 +130,7 @@ module Internal =
 [<RequireQualifiedAccess>]
 
 module Cell =
+    let set (cell : ICell<'a>) (v : 'a) = cell.Set v
     let make<'a> (init : 'a) : ICell<'a> = new Internal.Cell<'a>(init)
 
 [<RequireQualifiedAccess>]
@@ -128,6 +139,9 @@ module EventSource =
 
 [<RequireQualifiedAccess>]
 module Signal =
+
+    let make (init : 'T) : ISignal<'T> = new Internal.Cell<_>(init)
+
     let fromObservable<'T> (init : 'T) (source:IObservable<'T>) : ISignal<'T> =
         let mutable value = init
         { new ISignal<'T> with
@@ -141,6 +155,40 @@ module Signal =
                 h.OnNext value
                 dispose
         }
+
+    let fromStore<'T> (source:Sutil.IStore<'T>) : ISignal<'T> =
+        let mutable value = source.Value
+        { new ISignal<'T> with
+            member _.Value = value
+            member _.Dispose() = ()
+            member _.Subscribe( h : IObserver<'T> ) =
+                let dispose = source.Subscribe( fun next ->
+                    value <- next
+                    h.OnNext next
+                )
+                h.OnNext value
+                dispose
+        }
+
+    let map (f : 'T -> 'U) (source : ISignal<'T>) : ISignal<'U> =
+        let cell = new Internal.Cell<'U>( f(source.Value) )
+        let unsub = source.Subscribe( fun v -> cell.Set(f v ) )
+        cell.OnDispose(fun _ -> unsub.Dispose()) 
+        cell
+
+    let mapDistinct<'T,'U when 'U : equality> (f : 'T -> 'U) (source : ISignal<'T>) : ISignal<'U> =
+        let cell = new Internal.Cell<'U>( f(source.Value) )
+
+        let unsub = source.Subscribe( fun v -> 
+            let u = f v
+            if cell.Value <> u then cell.Set(u) )
+
+        cell.OnDispose(fun _ -> unsub.Dispose()) 
+        cell
+
+    let filter (f : 'T -> bool) (source : ISignal<'T>) : ISignal<'T option> =
+        let fopt v = if f v then Some v else None
+        source |> map fopt
 
 [<AutoOpen>]
 module ReactiveEx =
