@@ -23,9 +23,9 @@ let style = [
         Css.fontSize (percent 70)
         Css.height (px 104)
         Css.maxHeight (px 104)
-        Css.borderRadius (px 8)
-        Css.backgroundColor "white"
-        Css.custom("filter", "drop-shadow(2px 2px 2px rgb(220,220,220))")
+        // Css.borderRadius (px 8)
+        // Css.backgroundColor "white"
+        // Css.custom("filter", "drop-shadow(2px 2px 2px rgb(220,220,220))")
         Css.displayFlex
         Css.flexDirectionRow
         Css.gap (rem 0.5)
@@ -37,11 +37,11 @@ let style = [
         Css.custom("height", sprintf "calc(100%% - %dpx)" (2 * margin))
         Css.margin( px margin, px 0 )
         Css.width (px 0)
-        Css.custom ("border-left", "1px solid #cccccc")
+        Css.custom ("border-left", "1px solid var(--color-border)")
     ]
 
     rule ".ui-ribbon i" [
-        Css.color SutilOxide.Css.LightTheme.Icon
+        // Css.color SutilOxide.Css.LightTheme.Icon
         Css.textAlignCenter
     ]
 
@@ -55,12 +55,19 @@ let style = [
 
     rule ".ui-control" [
         Css.positionRelative
+        Css.displayFlex
+        Css.alignItemsCenter
+        Css.custom( "justify-content", "space-evenly" )
         Css.padding (rem 0.3)
         Css.borderRadius (px 3)
         Css.custom("transition", "background-color 100ms ease-in-out")
         Css.whiteSpaceNowrap
         Css.custom ("pointer-events", "none")
         Css.userSelectNone
+    ]
+
+    rule ".ui-control[role='button']" [
+        Css.minWidth (px 21)
     ]
 
     rule ".ui-toolbar .ui-control" [
@@ -70,6 +77,7 @@ let style = [
     rule ".ui-menu-stack > .ui-control" [
         Css.paddingLeft (rem 1)
         Css.paddingRight (rem 1.5)
+        Css.borderRadius (px 0)
     ]
 
     // rule ".ui-select > .ui-menu-stack > .ui-control" [
@@ -85,7 +93,7 @@ let style = [
     
     let hoverHightlight = 
         [
-            Css.backgroundColor "#f8f8f8"
+            // Css.backgroundColor "#f8f8f8"
             Css.custom("transition", "background-color 100ms ease-in-out")
         ]
 
@@ -143,7 +151,7 @@ let style = [
 //        Css.overflowScroll
 
         Css.positionAbsolute
-        Css.backgroundColor "white"
+        // Css.backgroundColor "white"
         Css.opacity 0
         Css.custom ("pointer-events", "none")
         // Css.gap (px 4)
@@ -177,7 +185,7 @@ let style = [
         Css.displayFlex
         Css.flexDirectionRow
         Css.alignItemsCenter
-        Css.border (px 1, Feliz.borderStyle.solid, "#ddd")
+        Css.border (px 1, Feliz.borderStyle.solid, "var(--color-border)")
         Css.padding (rem 0, rem 0.2)
     ]
 
@@ -262,7 +270,7 @@ let styleRibbonMenu = [
         Css.marginTop (rem 0.1)
         // Css.marginLeft (rem 0.5)
         // Css.marginRight (rem 0.5)
-        Css.marginBottom (rem 0.5)
+        // Css.marginBottom (rem 0.5)
     ]
 
     rule ".ui-rm-ribboncontainer" [
@@ -296,7 +304,8 @@ let styleRibbonMenu = [
         Css.bottom 0
         Css.custom("content","''") 
         Css.displayNone
-        Css.custom("border-bottom", sprintf "2px solid %s" SutilOxide.Css.LightTheme.BackgroundMuted)
+        // Css.custom("border-bottom", sprintf "2px solid %s" SutilOxide.Css.LightTheme.BackgroundMuted)
+        Css.custom("border-bottom", "2px solid var(--color-muted)" )
     ]
 
     rule ".ui-rm-label:hover::after" [
@@ -305,7 +314,8 @@ let styleRibbonMenu = [
 
     rule ".ui-rm-label.selected::after" [
         Css.displayBlock
-        Css.custom("border-bottom", sprintf "2px solid %s" SutilOxide.Css.LightTheme.Icon)
+        // Css.custom("border-bottom", sprintf "2px solid %s" SutilOxide.Css.LightTheme.Icon)
+        Css.custom("border-bottom", "2px solid var(--color-icon)")
         Css.transitionDurationMilliseconds (200)
     ]
 
