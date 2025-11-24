@@ -23,6 +23,7 @@ type UI =
         Html.div [ Attr.className cls ; yield! items ]
 
 type Msg =
+    | DropFiles of FileList
     | SelectPath of string
     | SetSelected of string
     | DeleteSelected
@@ -102,9 +103,12 @@ let fetchListing (fs : IFsAsync) (path : string) : Promise<string[]*string[]> =
         return files, folders
     }
 
-let update edit msg model =
+let update edit drop msg (model : Model) =
 //    Fable.Core.JS.console.log(sprintf "FileExplorer: %A" msg)
     match msg with
+
+    | DropFiles fileList ->
+        model, Cmd.OfFunc.perform ((drop()) fileList model.Fs) model.Cwd (fun _ -> Refresh)
 
     | SetListing (files, folders) ->
         let selected = 
@@ -213,8 +217,8 @@ let update edit msg model =
 
         model, Cmd.OfPromise.either tryCreate () Created SetError
 
-let updateWithSaveSession edit msg model =
-    let result = update edit msg model
+let updateWithSaveSession edit drop msg model =
+    let result = update edit drop msg model
     //saveSessionState (fst result)
     result
 
@@ -239,20 +243,18 @@ let css = [
         Css.fontSize (px 12)
     ]
 
-    rule ".fx-folder" [
+    rule ".fx-entry" [
         Css.cursorPointer
         Css.padding (px 2)
         Css.paddingLeft (rem 0.5)
     ]
 
-    rule ".fx-file" [
-        Css.cursorPointer
-        Css.padding (px 2)
-        Css.paddingLeft (rem 0.5)
-    ]
+    // rule ".file-explorer-entries .selected" [
+    //     Css.backgroundColor "#DDDDDD"
+    // ]
 
-    rule ".file-explorer-entries .selected" [
-        Css.backgroundColor "#DDDDDD"
+    rule ".fx-entry.selected" [
+        Css.backgroundColor "var(--xfs-button-active)"
     ]
 
     rule ".file-explorer i" [
@@ -298,6 +300,49 @@ let isRoot f = f = "/" || f = ""
 
 let fileExplorer (classifier : string -> string) iconselector dispatch (m : Model) =
 
+
+    let handleDragOver dispatch (e : Browser.Types.DragEvent) =
+        // Fable.Core.JS.console.log( e.dataTransfer.types )
+        let types : string[] = unbox e.dataTransfer.types
+        let contains (s : string) (a : string[]) = a |> Array.contains s
+        if (types |> contains("Files")) || (types |> contains("application/x-moz-file")) then
+            e.preventDefault()
+
+    let handleDrop dispatch (e : Browser.Types.DragEvent) =
+        e.preventDefault();
+        let files = e.dataTransfer.files;
+        dispatch (DropFiles files)
+        // Fable.Core.JS.console.log(files); // FileList object        ()
+
+        // if debugLevel >=5 then console.log("handleDrop")
+
+        // let containerEl = e.target :?> HTMLElement
+        // let graphId = getGraphIdFromEl containerEl
+
+        // let vts =    
+        //     Transform2D.GetTransformStack( containerEl )
+
+        // let screenToLocal (x,y) = Transform2D.ScaleStackInverse( vts,(x,y))
+
+        // let x,y = clientXY e
+        // // let nodeName = e.dataTransfer.getData("x/name")
+        // let nodeType = e.dataTransfer.getData("x/type")
+
+        // let offsetX, offsetY : float*float = 
+        //     match e.dataTransfer.getData("x/offset") with
+        //     | s when System.String.IsNullOrEmpty s -> 0.0, 0.0
+        //     | s -> s |> NodeHelpers.fromJsonString
+
+        // let nodeX, nodeY = (x - offsetX, y - offsetY) |> screenToLocal
+
+        // if not (System.String.IsNullOrEmpty nodeType) then 
+        //     // match  options.OnDrop( nodeType, (nodeX, nodeY) ) with
+        //     match  options.OnDrop( nodeType, (nodeX, nodeY) ) with
+        //     | DropAccepted ->
+        //         e.preventDefault()
+        //         e.stopPropagation()
+        //     | _ -> ()
+
     let cwd = m.Cwd
     let fs = m.Fs
 
@@ -308,12 +353,15 @@ let fileExplorer (classifier : string -> string) iconselector dispatch (m : Mode
         |> UI.Icon.makeFa
         
     UI.divc "file-explorer" [
+        Ev.onDragOver (handleDragOver dispatch)
+        Ev.onDrop (handleDrop dispatch)
+
         //buttons m dispatch
         UI.divc "file-explorer-entries" [
 
             if (not (isRoot cwd)) then
                 let parent = Path.getFolderName(cwd)
-                UI.divc ("fx-folder " + classifier "[parent]") [
+                UI.divc ("fx-entry fx-folder " + classifier "[parent]") [
                     Html.ic (icon "[parent]" "fa-arrow-up") []
                     text "[parent]"
                     Ev.onMouseDown( fun e ->
@@ -335,7 +383,7 @@ let fileExplorer (classifier : string -> string) iconselector dispatch (m : Mode
                 |> Array.sortBy (fun s -> s.ToLower())
                 |> Array.map (fun name ->
                     let path = Path.combine cwd name
-                    UI.divc ("fx-folder " + classifier path) [
+                    UI.divc ("fx-entry fx-folder " + classifier path) [
                         Html.ic (icon path "fa-folder") []
                         text name
                         Ev.onMouseDown( fun e ->
@@ -376,7 +424,7 @@ let fileExplorer (classifier : string -> string) iconselector dispatch (m : Mode
                             )
                         ]
                     else
-                        UI.divc ("fx-file " + classifier path) [
+                        UI.divc ("fx-entry fx-file " + classifier path) [
                             Attr.draggable true
 
                             Html.ic (icon path "fa-file-o") []
@@ -424,10 +472,11 @@ let fileExplorer (classifier : string -> string) iconselector dispatch (m : Mode
 type FileExplorer( fs : IFsAsync ) =
 
     let mutable onEdit : string -> unit = ignore
+    let mutable onDrop : FileList -> IFsAsync -> string -> bool = fun _ _ _ -> false
 
     let create fs =
         //let sessionState = loadSessionState() |> Option.defaultWith defaultSessionState
-        (fs,defaultSessionState()) |> Sutil.Store.makeElmish init (updateWithSaveSession (fun f -> onEdit f)) ignore
+        (fs,defaultSessionState()) |> Sutil.Store.makeElmish init (updateWithSaveSession (fun f -> onEdit f) (fun _ -> onDrop)) ignore
 
     let model, dispatch = create fs
 
@@ -443,6 +492,7 @@ type FileExplorer( fs : IFsAsync ) =
     with
         member _.View( classifier : string -> string, iconselector : string -> string ) = view classifier iconselector 
         member _.OnEdit( h : string -> unit) = onEdit <- h
+        member _.OnDrop( h : FileList -> IFsAsync -> string -> bool ) = onDrop <- h
         member _.Dispatch = dispatch
         member _.Selected = model.Value.Selected
         member _.CurrentFolder = model.Value.Cwd
