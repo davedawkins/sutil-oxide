@@ -104,6 +104,9 @@ let objectToNameValues ( d : obj ) =
     jsObjectKeys d
     |> Array.map (fun k -> k, jsGet( d, k ) )
 
+let createObject (fields : (string * 'a)[]) : obj =
+    unbox fields |> JsInterop.createObj
+
 type TimeoutFn = int -> (unit -> unit) -> unit
 
 let createTimeout() : TimeoutFn =
