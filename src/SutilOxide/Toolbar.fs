@@ -136,7 +136,7 @@ let buttonGroup items =
     UI.divc "button-group" items
 
 let menuStack items =
-    UI.divc "menu-stack" [
+    UI.divc "theme-menu menu-stack" [
         host MenuMonitor.monitorMenu
         yield! items
     ]
@@ -146,7 +146,7 @@ let mkButton b =
     Html.a [
         disposeOnUnmount [ checkedS ]
         Attr.className (
-            "xd-item-button" 
+            "theme-tool-button xd-item-button" 
             + (if b.Mode = Checkbox then " checkbox" else "")
             + (if b.IsEnabled then "" else " disabled")
             )
@@ -252,8 +252,7 @@ let rec findMenuLevel (e : Browser.Types.HTMLElement ) =
 let menuItem props items =
     let b = Button.From props
 
-    Html.a [
-        Attr.className "xd-item-button item-menu"
+    Html.ac "theme-tool-button xd-item-button item-menu" [
 
         CoreElements.hookElement (fun e ->
             e.setAttribute("data-menu-level", (e.parentElement) |> findMenuLevel |> string )
@@ -279,8 +278,7 @@ let menuItem props items =
     ]
 
 let dropDownItem props items =
-    Html.a [
-        Attr.className "xd-item-button xd-dropdown"
+    Html.ac "theme-tool-button xd-item-button xd-dropdown" [
         Attr.href "-"
         Attr.custom("data-menu-level", "0")
 

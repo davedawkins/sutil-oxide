@@ -1,6 +1,7 @@
 module SutilOxide.UI
 
 open Sutil
+open SutilOxide.Reactive
 
 module Helpers =
     open Fable.Core
@@ -14,15 +15,36 @@ module Helpers =
             input.setSelectionRange(v.Length, v.Length))
 
 module Common = 
+    open Reactive
 
     type Orientation = Horizontal | Vertical
 
     [<RequireQualifiedAccess>]
     type Value<'T> =   
         | Const of 'T
-        | Getter of (unit -> 'T)
-        | Observable of (System.IObservable<'T> * 'T)
-//        | Store of Sutil.IStore<'T>
+        | Getter of (unit -> 'T option)
+        | Signal of (ISignal<'T option>)
+        
+        member __.AsSignal() =
+            match __ with
+            | Value.Const v  -> Signal.make (Some v)
+            | Value.Getter g -> Signal.make (g())
+            | Value.Signal o -> o
+
+        static member FromStoreOpt<'T>( src : IStore<'T option> ) : Value<'T> =
+            src |> Signal.fromStore |> Signal
+
+        static member FromStore<'T>( src : IStore<'T> ) : Value<'T> =
+            Value<'T>.FromObservable (src, src.Value)
+
+        static member FromSignalOpt<'T>( src : ISignal<'T option> ) : Value<'T> =
+            src |> Signal
+
+        static member FromSignal<'T>( src : ISignal<'T> ) : Value<'T> =
+            src |> Signal.map Some |> Signal
+
+        static member FromObservable<'T>( src : System.IObservable<'T>, init : 'T ) : Value<'T> =
+            Signal.fromObservable (Some init) (src .> Some) |> Signal
 
     type Direction = Vertical | Horizontal
 
@@ -47,6 +69,7 @@ module Common =
     /// Pass the component's label as-is, it will be converted to a standard format. For example, "Sign Out" will
     /// produce the attribute "data-cmd='sign-out'"
     let attrDataCmd (cmd : string ) = Attr.custom( "data-cmd", (cmd.ToLower().Replace(" ", "-").Replace(".", "")) )
+open Common
 
 module Icon =
     let private _makeFa (prefix : string) (name : string) =
@@ -76,6 +99,28 @@ module Icon =
         makeFaSharpLight name
 //        _makeFa "fa" name
 
+
+module Tool =
+    type ToolOption =
+    | Classes of string list
+    | Class of string
+    | Attrs of Core.SutilElement list
+
+module ToolInternal =
+
+    open Tool
+
+    let getClassList (options : ToolOption seq) : string list =
+        options |> Seq.fold (fun acc o -> match o with Class s -> s :: acc | Classes xs -> xs @ acc | _ -> acc) [] 
+
+    let makeClass (cls : string seq) = cls |> String.concat " "
+
+module ToolHtml =
+    open Tool 
+    open ToolInternal
+
+    let icon iconName (options : ToolOption seq) = 
+        Html.ic (makeClass [ Icon.makeFa iconName;  "theme-tool-icon"; yield! getClassList options ]) []
 
 module Control =
     open Common
@@ -125,6 +170,9 @@ module Control =
         | Text of Text
         | Icon of Icon
         | Shortcut of Shortcut
+        static member icon( name : string ) = Icon (Icon.FaIcon (Value.Const name))
+        static member text( name : string ) = Text (Text.PlainText (Value.Const name))
+
         //| Type of RibbonControlType
 
     let custom( e : Core.SutilElement ) : Control = { Control.Create() with Type = ControlCustom e }
@@ -161,49 +209,56 @@ module Control =
 
     let internal renderSeparator() = Html.divc "ui-vsep" []
 
-    let rec internal renderControl (item : Control) =
+    let [<Literal>] NOTSETVALUE = "----"
+
+    let rec renderControl (item : Control) =
         match item.Type with
         | ControlCustom el -> el
         | _ -> renderBuiltIn item
     
     and renderBuiltIn(item : Control) =
-        Html.divc "ui-control" [
+        Html.divc "theme-tool-control ui-control" [
             Attr.tabIndex 0
 
             yield!
                 match item.Type with
                 | ControlCheck (onCheck, value) ->
-                    let checkedS = 
+                    let checkedS : IStore<bool option> = 
                         match value with
-                        | Value.Const z -> Store.make z
+                        | Value.Const z -> Store.make (Some z)
                         | Value.Getter g -> Store.make (g())
-                        | Value.Observable (o,init) ->
-                            let s = Store.make init
+                        | Value.Signal o ->
+                            let s = Store.make o.Value
                             let d = o.Subscribe( Store.set s )
                             s
-                        // | Store s -> s 
                     [
                         Attr.roleCheckbox
                         Bind.attr( "aria-checked", checkedS .>> string )
                         disposeOnUnmount [ checkedS ]
                         Bind.el( checkedS,
-                            fun ch -> Html.i [ Attr.className ("left " + (Icon.makeFa(if ch then "check" else "square")) + " " + (if ch then "checked" else "")) ]
+                            fun ch -> 
+                                let iconName = ch |> Option.map (fun f -> if f then "check" else "square") |> Option.defaultValue "x"
+                                let isChecked = ch |> Option.defaultValue false 
+                                ToolHtml.icon iconName [ if isChecked then Tool.Class "checked" ] 
                         )
                         Ev.onClick (fun e ->
                             e.preventDefault()
-                            checkedS |> Store.modify (not)
-                            onCheck (checkedS.Value)
+                            checkedS |> Store.modify (fun v -> match v with Some true -> Some false | _ -> Some true)
+                            checkedS.Value |> Option.iter onCheck
                         )
                     ]
                 | _ -> []
 
 
             match item.Icon with
-            | Some (FaIcon (Value.Const fa)) -> Html.ic ("left " + Icon.makeFa fa) []
-            | Some (FaIcon (Value.Getter fa)) -> Html.ic ("left " + Icon.makeFa (fa())) []
-            | Some (FaIcon (Value.Observable (fas,init))) -> 
+            | Some (FaIcon (Value.Const fa)) -> 
+                ToolHtml.icon fa [ Tool.Class "left" ] //  Html.ic ("left " + Icon.makeFa fa) []
+            | Some (FaIcon (Value.Getter fa)) -> 
+                ToolHtml.icon (fa() |> Option.defaultValue "") [ Tool.Class "left" ] //  Html.ic ("left " + Icon.makeFa fa) []
+                // Html.ic ("left " + Icon.makeFa (fa() |> Option.defaultValue "")) []
+            | Some (FaIcon (Value.Signal fas)) -> 
                 Html.i [
-                    Bind.className( fas .> Icon.makeFa .> ((+)"left ") )
+                    Bind.className( fas .> (fun optIcon -> "theme-tool-icon left " + match optIcon with Some ic -> Icon.makeFa(ic) | None -> Icon.makeFa("x")))
                 ]
             | _ -> Sutil.CoreElements.nothing
 
@@ -211,9 +266,9 @@ module Control =
             | Some (PlainText textValue) -> 
                 match textValue with
                 | Value.Const s -> text s
-                | Value.Getter g -> text (g())
-                | Value.Observable (o,_) ->
-                    Bind.el( o, text )
+                | Value.Getter g -> text (g() |> Option.defaultValue NOTSETVALUE)
+                | Value.Signal o ->
+                    Bind.el( o, fun optS -> text (optS |> Option.defaultValue NOTSETVALUE ))
             | _ -> Sutil.CoreElements.nothing
 
             yield!
@@ -233,10 +288,11 @@ module Control =
                         Attr.roleMenu
                         attrDataCmd (item.Key)
                         disposeOnUnmount [ itemStore ]
-                        Html.ic ("right " + (Icon.makeFa("angle-down"))) []
+                        ToolHtml.icon "angle-down" [ Tool.Class "right" ]
+                        // Html.ic ("right " + (Icon.makeFa("angle-down"))) []
                         Ev.onClick (fun _ -> items() |> Store.set itemStore)
                         Bind.el( itemStore, fun items ->
-                            Html.divc "ui-menu-stack scroll-shadows" (items |> List.map renderControl)
+                            Html.divc "theme-menu ui-menu-stack scroll-shadows" (items |> List.map renderControl)
                         )
                     ]
 
@@ -252,20 +308,21 @@ module Control =
                         |> Option.map fst
                         |> Option.defaultValue ""
 
-                    let current = 
+                    let current : IStore<obj option> = 
                         match value with
-                        | Value.Const z -> Store.make z
+                        | Value.Const z -> Store.make (Some z)
                         | Value.Getter g -> Store.make (g())
-                        | Value.Observable (o,init) ->
-                            let s = Store.make init
+                        | Value.Signal o ->
+                            let s = Store.make o.Value
                             let d = o.Subscribe( Store.set s )
                             s
 
                     let makeSelectItem (label, value) =
 
                         let handler () =
-                            Store.set current value
-                            onSelect value
+                            if label <> NOTSETVALUE then
+                                Store.set current (Some value)
+                                onSelect value
 
                         //let checkValue = Value.Observable (current .> _eq value, _eq value current.Value )
 
@@ -288,7 +345,7 @@ module Control =
                                         itemMap, 
                                         (fun (label, value) -> 
                                             Html.divc "option" [ 
-                                                Bind.toggleClass( current .> _eq value, "selected" )
+                                                Bind.toggleClass( current .> (fun cv -> match cv with Some v -> _eq value v | None -> label = NOTSETVALUE), "selected" )
                                                 text label 
                                             ]), 
                                         fst )
@@ -297,15 +354,19 @@ module Control =
                                 //     current .> findLabel,
                                 //     fun label -> Html.span [ text label ]
                                 // )
-                                Html.ic ("right " + (Icon.makeFa("angle-down"))) []
+                                // Html.ic ("right " + (Icon.makeFa("angle-down"))) []
+                                ToolHtml.icon "angle-down" [ Tool.Class "right" ]
                             ]
                             Ev.onClick (fun _ -> 
-                                let _items = items() 
+                                let _items = 
+                                    match current.Value with
+                                    | None -> items() @ [ NOTSETVALUE, null ]
+                                    | Some _ -> items()
                                 _items |> Store.set itemMap
                                 _items |> List.map makeSelectItem |> Store.set itemStore
                             )
                             Bind.el( itemStore, fun items ->
-                                Html.divc "ui-menu-stack scroll-shadows" (items |> List.map renderControl)
+                                Html.divc "theme-menu ui-menu-stack scroll-shadows" (items |> List.map renderControl)
                             )
                         ]
                     ]
@@ -322,11 +383,7 @@ module Toolbar =
         Html.divc "ui-toolbar" (controls |> Seq.map Control.renderControl)
 
 module Ribbon =
-    open Common
     open Control
-    open Sutil.Core
-    open Sutil
-    open Sutil.CoreElements
         
     // type Stack = 
     //     Stack of Control list
@@ -507,7 +564,7 @@ module Input =
                             Attr.value s 
                         ]
 
-                    | Value.Observable (o,i) ->
+                    | Value.Signal o ->
                         [ Bind.attr( "value", o, ignore) ]
 
                     | _ -> 
@@ -567,7 +624,7 @@ module Input =
                             Attr.value s 
                         ]
 
-                    | Value.Observable (o,i) ->
+                    | Value.Signal o ->
                         [ Bind.attr( "value", o, ignore) ]
 
                     | _ -> 
@@ -603,10 +660,13 @@ module Controller =
         | HeaderElement of SutilElement
         | ControlElement of SutilElement
         | IsShowing of bool
+        | CanClose of bool
+        | OnClose of (unit -> unit)
 
     type IDockController =
         abstract CreatePane: paneKey:string * PaneOption list -> unit
         abstract ShowPane: paneKey:string -> unit
+        abstract RemovePane: paneKey: string -> unit
 
 module Forms =
 
@@ -616,6 +676,24 @@ module Forms =
             member __.Render() =
                 let (FieldElement f) = __
                 f()
+
+    let allEqual<'T when 'T : equality> (xs : 'T[]) : bool = 
+        if xs.Length = 0 then
+            false
+        else if xs.Length = 1 then
+            true
+        else
+            let v = xs[0]
+            xs |> Array.forall (fun x -> x = v) 
+
+    let valueIfAllEqual<'T when 'T : equality> (xs : 'T[]) : 'T option =
+        xs |> allEqual |> fun all -> if all then Some xs[0] else None
+
+    let valueIfAllEqualWith<'T,'V when 'V : equality> (f : 'T -> 'V) (xs : 'T[]) : 'V option =
+        xs |> Array.map f |> valueIfAllEqual
+
+    let applyAllIfSet (xs : 'T[]) (apply : 'T -> 'V -> unit) (v : 'V option) =
+        v |> Option.iter (fun somev -> xs |> Array.iter (fun x -> apply x somev))
 
     let shortName (tname : string) =
         let p = tname.LastIndexOf('.')
@@ -661,7 +739,7 @@ module Forms =
             Parse: Parser<'T>
             Format: 'T -> string
             Set: ('T -> unit) option
-            Get: unit -> 'T
+            Value: Value<'T>
             AllowedValues: (unit -> string[]) option
             Step : float
             SystemTypeName : string
@@ -676,7 +754,7 @@ module Forms =
                     AllowedValues = None
                     Set = None
                     Step = 1.0
-                    Get = fun () -> Unchecked.defaultof<'T> } : Field<'T>
+                    Value = Value.Const Unchecked.defaultof<'T> } : Field<'T>
 
         /// Map system types to input type
         static member Init<'T>( t : System.Type, sysTypeName : string ) : Field<'T> = 
@@ -729,7 +807,8 @@ module Forms =
         member __.WithParse( p : Parser<'T> ) : Field<'T> = { __ with Parse = p }
         member __.WithFormat( f : 'T -> string ) : Field<'T> = { __ with Format = f }
         member __.WithSet( s : 'T -> unit ) : Field<'T> = { __ with Set = Some s }
-        member __.WithGet( g : unit -> 'T ) : Field<'T> = { __ with Get = g }
+        member __.WithValue( v : Value<'T> ) : Field<'T> = { __ with Value = v }
+        member __.WithGet( g : unit -> 'T ) : Field<'T> = { __ with Value = Value.Getter (g>>Some) }
 
         member __.WithAllowedValues( vals : unit -> string[] ) : Field<'T> = 
             { __ with AllowedValues = Some vals}
@@ -742,10 +821,17 @@ module Forms =
     open type Feliz.length
 
     let private style = [
+        
+        rule ".ui-field-group" [
+            Css.displayFlex
+            Css.flexDirectionColumn
+            Css.gap (rem 0.25)
+        ]
+
         rule ".ui-field" [
             Css.displayFlex
             Css.flexDirectionRow
-            Css.flexBasis (percent 100)
+            // Css.flexBasis (percent 100)
             Css.paddingRight (px 10)
         ]
 
@@ -753,11 +839,13 @@ module Forms =
             Css.displayFlex
             Css.flexDirectionColumn
             Css.width (percent 100)
+            Css.custom( "justify-content", "space-evenly" )
         ]
 
         rule ".ui-field label" [
             Css.flexBasis (px 115)
-            Css.fontWeightBold
+            Css.flexShrink 0
+            // Css.fontWeightBold
         ]
 
         rule ".ui-field input" [
@@ -772,18 +860,18 @@ module Forms =
 
         rule ".ui-field input:focus" [
             Css.outlineStyleNone
-            Css.borderColor "#eeeeee"
+            Css.borderColor "var(--color-ring)"
         ]
 
         rule ".ui-field select" [
             Css.borderStyleNone
             Css.borderBottom (px 1, Feliz.borderStyle.solid, "transparent")
             Css.width (percent 100)
-            Css.backgroundColor "white"
+            Css.backgroundColor "var(--color-control)"
         ]
 
         rule ".ui-field select *" [
-            Css.backgroundColor "white"
+            Css.backgroundColor "var(--color-control)"
         ]
 
         rule ".ui-field select:focus" [
@@ -793,7 +881,7 @@ module Forms =
 
         rule ".ui-field .error" [
             Css.fontSize (percent 80)
-            Css.color "red"
+            Css.color "var(--color-destructive-foreground)"
         ]
 
         // Maybe try this height transition at some point
@@ -813,7 +901,7 @@ module Forms =
 
     let viewFields (fields : FieldElement seq) =
         installCss()
-        fields |> Seq.map _.Render() |> Html.div
+        fields |> Seq.map _.Render() |> Html.divc "ui-field-group"
 
 
     let internal withLabelError (label: string) (editor: IStore<string> -> Core.SutilElement) =
@@ -831,13 +919,15 @@ module Forms =
         ]    
 
     let internal editFieldSelect (f : Field<'t>) (error : IStore<string>) =
-        let (getter: unit -> 't) = f.Get
+        // let (getter: unit -> 't) = f.Get
         let (setter: ('t -> unit) option) = f.Set
         let (format: 't -> string) = f.Format
         let (parse: string -> Result<'t,string>) = f.Parse
         let allowed : string[] option = f.AllowedValues |> Option.map (fun g -> g())
 
-        let formatted() = getter() |> format
+        let value : ISignal<'t option> = f.Value.AsSignal()
+
+        let formatted = value |> Signal.map (fun o -> o |> Option.map format |> Option.defaultValue Control.NOTSETVALUE)
 
         let validateSelect (e : Browser.Types.Event) =
             let input = (e.target :?> Browser.Types.HTMLSelectElement)
@@ -850,10 +940,10 @@ module Forms =
             result
 
         Html.select [
-            Attr.value (formatted())
+            Bind.attr( "value", formatted )
             Ev.onMount (fun e ->
                 let selE = (e.target :?> Browser.Types.HTMLSelectElement)
-                selE.selectedIndex <- allowed |> Option.bind ( Array.tryFindIndex ((=) (formatted()))) |> Option.defaultValue -1
+                selE.selectedIndex <- allowed |> Option.bind ( Array.tryFindIndex ((=) (formatted.Value))) |> Option.defaultValue -1
             )
             yield! 
                 allowed 
@@ -870,9 +960,12 @@ module Forms =
 
     let internal editFieldCheckbox (field : Field<bool>) (error : IStore<string>) =
 
+        let value = field.Value.AsSignal()
+
         Html.input [    
             Attr.typeCheckbox
-            Attr.isChecked (field.Get())   
+            Bind.attr( "checked", value )
+            // Attr.isChecked (field.Get())   
 
             match field.Set with 
             | Some f ->
@@ -887,18 +980,23 @@ module Forms =
 
     let internal editFieldInput (builtIn : BuiltInEditor) (f : Field<'t>) (error : IStore<string>) =
         let (typ: string) = builtIn |> string |> _.ToLower()
-        let (getter: unit -> 't) = f.Get
+        // let (getter: unit -> 't) = f.Get
         let (setter: ('t -> unit) option) = f.Set
         let (format: 't -> string) = f.Format
         let (parse: string -> Result<'t,string>) = f.Parse
 
         let timeout = SutilOxide.JsHelpers.createTimeout()
 
-        let formatted() = getter() |> format
+        let value = f.Value.AsSignal()
+
+        let formatted = value |> Signal.map (fun o -> o |> Option.map format |> Option.defaultValue Control.NOTSETVALUE)
 
         let validate (e : Browser.Types.Event) =
             let input = (e.target :?> Browser.Types.HTMLInputElement)
-            let result = input.value |> parse 
+            let result = 
+                match input.value with
+                | Control.NOTSETVALUE -> Error "Value is not set"
+                | v -> v |> parse 
 
             match result with Error s -> s | _ -> "" 
                 |> Store.set error
@@ -907,21 +1005,22 @@ module Forms =
         
         let commit set (e : Browser.Types.Event)  =
             let input = (e.target :?> Browser.Types.HTMLInputElement)
-            if input.value <> formatted() then
+            if input.value <> formatted.Value && input.value <> Control.NOTSETVALUE then
                 validate e |> Result.iter set
 
         Html.input [    
             Attr.custom ("type" ,typ)
 
-            Attr.value (formatted())
+            Bind.attr("value", formatted)
 
             Ev.onFocus(fun e ->
                 let input = (e.target :?> Browser.Types.HTMLInputElement)
 
-                input.value <- formatted()
+                input.value <- formatted.Value
 
                 "" |> Store.set error 
-                validate e |> ignore            
+                if input.value <> Control.NOTSETVALUE then
+                    validate e |> ignore
             )
 
             Ev.onMount( fun e -> validate e |> ignore )
@@ -945,14 +1044,17 @@ module Forms =
 //    open FrameworkTypes
 
     let editMultiLineText( field : Field<Types.MultiLineText> ) (_ : IStore<string>) =
+        let value = field.Value.AsSignal()
+        let textValue = value |> Signal.map (fun o -> o |> Option.map _.Text |> Option.defaultValue Control.NOTSETVALUE)
         Html.textarea [
-            Attr.value (field.Get().Text)
+            Bind.attr( "value",  textValue )
             match field.Set with
             | Some f ->
                 Ev.onBlur (fun e -> 
                     let input = (e.target :?> Browser.Types.HTMLTextAreaElement)
                     let text = input.value
-                    f(Types.MultiLineText.Of(text))
+                    if text <> Control.NOTSETVALUE then
+                        f(Types.MultiLineText.Of(text))
                 )
             | None -> Attr.readOnly true
         ]

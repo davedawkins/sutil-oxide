@@ -17,20 +17,8 @@ type CssVar =
 type CssThm =
     static member fontWeightBold = CssVar.fontWeight "bold"
 
-type Theme = {
-    ControlTextColor : string        // text
-    TextColor : string               // text
-    Border : string                  // muted
-    ControlBackground  : string;     // primary
-    ContentBackground  : string;     // background
-    BackgroundMuted    : string;     // accent / highlight
-    BackgroundHover    : string;     // accent / highlight
-    BackgroundSelected : string;     // highlight
-    Handle    :string;               // muted
-    Icon      :string;               // secondary
-    Highlight :string;               // highlight
-    Overlay   :string;               // muted
-}
+let overlay_color = "#B7DAFA"
+let icon_color = "#b36c10" 
 
 module FontSizes =
     let NormalPx = 14
@@ -45,49 +33,6 @@ module FontSizes =
     
     let Control = Normal
     let MenuBar = Control
-
-let LightTheme =
-    // https://theme-ui.com/theming
-    // https://mycolor.space/?hex=%23F4FFEF&sub=1
-    let text = "black"
-    let background = "white"
-    let primary = ""
-    let secondary = ""
-    let accent = ""
-    let highlight = "#B7DAFA"
-    let muted = "#DBDBDB"
-    {
-        ControlTextColor = "#46494f"
-        TextColor = "black"
-        Border = muted
-        ControlBackground = "#EBEBEB"
-        ContentBackground = "#F4F4F4"
-        BackgroundMuted    = "#dbdbdc"
-        BackgroundHover    = "#ebebec"
-        BackgroundSelected = "#e2e3e6"
-        Handle = muted
-        Icon = "#b36c10" //"#7a3e00" //"#50719B"  // hsl(214,31%,46%)
-        Highlight = highlight
-        Overlay = highlight
-    }
-
-let DarkTheme =
-    let border = "rgb(40,40,40)"
-    let highlight = "#495764" //"#6D8296"
-    {
-        ControlTextColor = "rgb(207,207,207)"
-        TextColor = "rgb(207,207,207)"
-        Border = border
-        ControlBackground = "rgb(85,85,85)"
-        ContentBackground = "rgb(105,105,105)"
-        BackgroundMuted = "rgb(60,60,60)"
-        BackgroundHover = "rgb(60,60,60)"
-        BackgroundSelected = "rgb(50,50,50)"
-        Handle = border
-        Icon = "#769fff"
-        Highlight = highlight
-        Overlay = highlight
-    }
 
 
 let primaryIds = [ "left"; "right"; "top"; "bottom" ]
@@ -104,14 +49,12 @@ let containerIds = [
     "centre-right"
 ]
 
-let private baseStyling (theme : Theme) = [
+//let private baseStyling (theme : Theme) = [
+let private baseStyling () = [
 
-    rule "body" [
-        Css.color theme.TextColor
-    ]
-
+ 
     rule "a" [
-        Css.custom("color", "inherit")
+        // Css.custom("color", "inherit")
         Css.textDecorationNone
         Css.whiteSpaceNowrap
     ]
@@ -122,25 +65,25 @@ let private baseStyling (theme : Theme) = [
         Css.justifyContentCenter
     ]
 
-    rule ".theme-control-bg" [
-        Css.backgroundColor theme.ControlBackground
-    ]
+    // rule ".theme-control-bg" [
+    //     Css.backgroundColor theme.ControlBackground
+    // ]
 
-    rule ".theme-content-bg" [
-        Css.backgroundColor theme.ContentBackground
-    ]
+    // rule ".theme-content-bg" [
+    //     Css.backgroundColor theme.ContentBackground
+    // ]
 
-    rule ".theme-border" [
-        Css.borderColor theme.Border
-    ]
+    // rule ".theme-border" [
+    //     Css.borderColor theme.Border
+    // ]
 ]
 
-let private dockStyling (theme : Theme) = [
+let private dockStyling () = [
 
     rule ".dock-container" [
         Css.width (percent 100)
         Css.height (percent 100)
-        Css.backgroundColor theme.ControlBackground
+        // Css.backgroundColor theme.ControlBackground
         Css.displayGrid
         Css.custom("grid-template-columns", "max-content minmax(0,50%) minmax(0,50%) max-content")
         Css.custom("grid-template-rows", "max-content minmax(0,50%) minmax(0,50%) max-content")
@@ -151,7 +94,7 @@ let private dockStyling (theme : Theme) = [
     ]
     
     rule ".tab-label .close-button i:hover" [
-        Css.color "black"
+        // Css.color "black"
     ]
     
     rule ".dock-main-grid" [
@@ -287,6 +230,7 @@ let private dockStyling (theme : Theme) = [
         Css.displayGrid
         Css.custom("grid-template-columns", "repeat(10,max-content)")
         Css.userSelectNone
+        Css.overflowHidden
         //Css.gap (rem 1)
     ]
 
@@ -402,20 +346,20 @@ let private dockStyling (theme : Theme) = [
         Css.gap (rem 0.2)
     ]
 
-    rule ".tab-label i" [
-        Css.color theme.Icon
-    ]
+    // rule ".tab-label i" [
+    //     Css.color theme.Icon
+    // ]
 
     rule ".dragging.tab-label i" [
-        Css.color theme.Overlay
+        Css.color overlay_color
     ]
 
     rule ".tab-label:hover" [
-        Css.backgroundColor theme.BackgroundHover
+        // Css.backgroundColor theme.BackgroundHover
     ]
 
     rule ".tab-label.selected" [
-        Css.backgroundColor theme.BackgroundSelected
+        // Css.backgroundColor theme.BackgroundSelected
     ]
 
     rule ".tabs-top .tab-label" [
@@ -477,7 +421,7 @@ let private dockStyling (theme : Theme) = [
 
     rule ".dock-resize-handle" [
         Css.positionAbsolute
-        Css.backgroundColor theme.Handle
+        // Css.backgroundColor theme.Handle
         Css.custom( "--resize-handle-thickness", "1px" )
         Css.zIndex (99)
     ]
@@ -543,7 +487,7 @@ let private dockStyling (theme : Theme) = [
 
     rule ".border" [
         Css.borderStyleSolid
-        Css.borderColor theme.Border
+        Css.borderColor "var(--color-border)"
         Css.borderWidth (px 0)
     ]
 
@@ -576,11 +520,11 @@ let private dockStyling (theme : Theme) = [
     ]
 
     rule ".dock-tabs .preview" [
-        Css.backgroundColor theme.Overlay
+        Css.backgroundColor overlay_color
     ]
 
     rule ".preview" [
-        Css.backgroundColor theme.Overlay
+        Css.backgroundColor overlay_color
     ]
 
 
@@ -616,7 +560,7 @@ let private dockStyling (theme : Theme) = [
     rule ".drag-overlay" [
         Css.displayNone
         Css.positionRelative
-        Css.backgroundColor (theme.Overlay)
+        Css.backgroundColor (overlay_color)
         Css.zIndex 999
         Css.width (percent 100)
         Css.height (percent 100)
@@ -668,8 +612,8 @@ let private dockStyling (theme : Theme) = [
 
     rule ".tab-label.dragging" [
         //Css.displayNone
-        Css.backgroundColor theme.Overlay
-        Css.color theme.Overlay
+        Css.backgroundColor overlay_color
+        Css.color overlay_color
     ]
 
 
@@ -684,12 +628,15 @@ let private dockStyling (theme : Theme) = [
         Css.paddingLeft (rem 0.5)
         Css.paddingRight (rem 0.5)
         //Css.height (rem 1.5)
-        Css.backgroundColor (theme.ControlBackground)
+        // Css.backgroundColor (theme.ControlBackground)
         Css.fontSize (percent 75)
         Css.displayFlex
         Css.flexDirectionColumn
         Css.justifyContentCenter
         Css.height (rem 1.5)
+        Css.minHeight (5)
+        Css.maxHeight (rem 1.5)
+        Css.overflowHidden
     ]
 
     rule ".pane-header>div" [
@@ -705,19 +652,22 @@ let private dockStyling (theme : Theme) = [
         Css.width (percent 100)
         Css.height (percent 100)
         Css.overflowAuto
-        Css.backgroundColor theme.ContentBackground
+        // Css.borderWidth (px 1)
+        // Css.borderStyle (Feliz.borderStyle.solid)
+        // Css.borderColor ("var(--color-border)")
+        // Css.backgroundColor theme.ContentBackground
     ]
 
 ]
 
-let private toolbarStyling (theme : Theme) = [
+let private toolbarStyling () = [
 
     rule ".xd-toolbar" [
         Css.fontSize (FontSizes.Toolbar)
-        Css.color (theme.ControlTextColor)
+        // Css.color (theme.ControlTextColor)
         Css.displayFlex
         Css.flexDirectionRow
-        Css.backgroundColor theme.ControlBackground
+        // Css.backgroundColor theme.ControlBackground
     ]
 
     rule ".button-group" [
@@ -734,7 +684,7 @@ let private toolbarStyling (theme : Theme) = [
         Css.custom ("pointer-events", "none")
         Css.flexDirectionColumn
         Css.gap (px 4)
-        Css.backgroundColor (theme.ControlBackground)
+        // Css.backgroundColor (theme.ControlBackground)
         Css.boxShadow "0 2px 5px 0 rgba(0,0,0,.5)"
         Css.zIndex 999
     ]
@@ -767,7 +717,7 @@ let private toolbarStyling (theme : Theme) = [
         Css.custom("grid-template-columns", "1.2rem auto")
         Css.alignItemsCenter
         Css.borderStyleNone
-        Css.custom("width", "fit-content")
+        // Css.custom("width", "fit-content")
     ]
 
     rule ".item-group-right" [
@@ -800,20 +750,20 @@ let private toolbarStyling (theme : Theme) = [
     ]
 
     rule ".xd-item-button>i" [
-        Css.color LightTheme.Icon
+        // Css.color LightTheme.Icon
         Css.textAlignCenter
     ]
 
     rule ".xd-item-button:hover" [
-        Css.backgroundColor theme.BackgroundHover
+        // Css.backgroundColor theme.BackgroundHover
     ]
 
     rule ".menu-stack>.xd-item-button:hover" [
-        Css.backgroundColor theme.Highlight
+        // Css.backgroundColor theme.Highlight
     ]
 
     rule ".xd-item-button:active" [
-        Css.backgroundColor theme.BackgroundSelected
+        // Css.backgroundColor theme.BackgroundSelected
         Css.color ("inherit")
     ]
 
@@ -828,7 +778,7 @@ let private toolbarStyling (theme : Theme) = [
         Css.borderStyleSolid
         Css.borderWidth (px 0)
         Css.borderLeftWidth (px 1)
-        Css.borderColor theme.Border
+        Css.borderColor "var(--color-border)"
     ]
 
     rule ".item-text" [
@@ -871,17 +821,17 @@ let private toolbarStyling (theme : Theme) = [
     ]
 
     rule ".xd-item-button.disabled:hover" [
-        Css.backgroundColor theme.ContentBackground
+        // Css.backgroundColor theme.ContentBackground
     ]
 
     rule ".menu-stack>.xd-item-button.disabled:hover" [
-        Css.backgroundColor theme.ContentBackground
+        // Css.backgroundColor theme.ContentBackground
     ]
 
 
 ]
 
-let overrides (theme : Theme) = [
+let overrides () = [
     rule ".hidden" [
         Css.displayNone
     ]
@@ -924,8 +874,8 @@ let overrides (theme : Theme) = [
     ])
 ]
 
-let Styling (t : Theme) = baseStyling t @ dockStyling t @ toolbarStyling t @ overrides t
+let Styling () = baseStyling () @ dockStyling () @ toolbarStyling () @ overrides ()
 
-let installStyling (t : Theme) =
-    addGlobalStyleSheet Browser.Dom.document (Styling t)
+let installStyling () =
+    addGlobalStyleSheet Browser.Dom.document (Styling ())
 
