@@ -458,7 +458,7 @@ module private EventHandlers =
 
 let private viewTabLabel (model : System.IObservable<Model>) dispatch dockLocation (pane : DockPane) =
     //console.log($"{tabLabel.Name} @ {dockLocation}")
-    UI.divc "tab-label" [
+    UI.divc "theme-tool-button tab-label" [
 
         Attr.custom ("data-tabname", pane.Key)
 
@@ -815,7 +815,7 @@ with
             defaultValue)
 
     member __.Configuration
-        with get() =
+        with get() : obj =
             match rootElement with
             | Some rootElement ->
                 let panes = 
@@ -824,12 +824,12 @@ with
                         x.Value.Panes 
                         |> List.collect (fun p -> 
                                 [
-                                    "pane." + p.Key + ".location", x.Key.ToString()
+                                    "pane." + p.Key + ".location", x.Key.ToString() 
                                     "pane." + p.Key + ".show", (DockHelpers.isPaneShowing model.Value p.Key).ToString()
                                 ] ))
-                    |> Seq.toList
+                    |> Seq.toArray
 
-                [
+                [|
                     "left.width", (dockLeftContainer rootElement).style.width
                     "right.width", (dockRightContainer rootElement).style.width 
                     "top.height", (dockTopContainer rootElement).style.height 
@@ -843,10 +843,12 @@ with
                     "bottom-left.pct", (dockBottomLeftContainer rootElement).style.flexGrow
                     "bottom-right.pct", (dockBottomRightContainer rootElement).style.flexGrow
                     yield! panes
-                ] |> Map
-            | _ -> Map.empty
-        and set( cfg ) =
-            config <- Some cfg
+                |] |> fun x -> x |> JsHelpers.createObject
+            | _ -> {| |}
+
+        and set( cfg : obj) =
+            let kvs = JsHelpers.objectToNameValues cfg
+            config <- Some (Map kvs)
             rootElement |> Option.iter applyOptions
 
     member __.SetProperty (name:string, p : DockProperty) =
@@ -854,9 +856,6 @@ with
 
     member __.SetProperties (name:string, props : seq<DockProperty>) =
         props |> Seq.iter (fun p -> __.SetProperty( name, p))
-
-    // member __.ShowPane (name : string) =
-    //     dispatch (ShowPane name)
 
     member __.RemovePane(name : string) =
         dispatch (RemoveTab name)
@@ -877,7 +876,6 @@ with
         (DockHelpers.tryGetPane model.Value.Docks name).IsSome
         
     member __.ShowPane( name : string ) =
-        // Fable.Core.JS.console.log("ShowPane: " + name)
         dispatch (ShowPane name)
 
     member __.ShowingPanes =
@@ -885,6 +883,7 @@ with
 
     member __.AddPane (key : string, label : string, initLoc : DockLocation, header : SutilElement, content : SutilElement, show : bool ) =
         __.AddPane { DockPane.Default(key) with Label = LabelString label; Location = initLoc; Header = header; Content = content; IsOpen = show}
+
     member __.AddPane (key, options : PaneOptions list) =
         __.AddPane( DockPane.Create(key, options ))
 
