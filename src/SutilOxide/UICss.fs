@@ -57,13 +57,16 @@ let style = [
         Css.positionRelative
         Css.displayFlex
         Css.alignItemsCenter
-        Css.custom( "justify-content", "space-evenly" )
         Css.padding (rem 0.3)
         Css.borderRadius (px 3)
         Css.custom("transition", "background-color 100ms ease-in-out")
         Css.whiteSpaceNowrap
         Css.custom ("pointer-events", "none")
         Css.userSelectNone
+    ]
+
+    rule ".ui-control.ui-icon-only" [
+        Css.custom( "justify-content", "space-evenly" ) // Only if there's just an icon
     ]
 
     rule ".ui-control[role='button']" [
@@ -78,6 +81,7 @@ let style = [
         Css.paddingLeft (rem 1)
         Css.paddingRight (rem 1.5)
         Css.borderRadius (px 0)
+        Css.width (percent 100)
     ]
 
     // rule ".ui-select > .ui-menu-stack > .ui-control" [
@@ -273,10 +277,10 @@ let styleRibbonMenu = [
         // Css.marginBottom (rem 0.5)
     ]
 
-    rule ".ui-rm-ribboncontainer" [
-        Css.positionRelative
-        Css.zIndex 999
-    ]
+    // rule ".ui-rm-ribboncontainer" [
+    //     Css.positionRelative
+    //     Css.zIndex 999
+    // ]
 
     rule ".ui-rm-menu" [
         Css.marginLeft (rem 0.5)

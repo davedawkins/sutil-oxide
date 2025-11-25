@@ -217,7 +217,10 @@ module Control =
         | _ -> renderBuiltIn item
     
     and renderBuiltIn(item : Control) =
-        Html.divc "theme-tool-control ui-control" [
+        let iconOnly =
+            item.Icon.IsSome && item.Text.IsNone
+
+        Html.divc ([ "theme-tool-control"; "ui-control"; if iconOnly then "ui-icon-only" ] |> ToolInternal.makeClass) [
             Attr.tabIndex 0
 
             yield!
