@@ -408,6 +408,34 @@ module FileSystemExt =
                return names
             }
 
+        member __.TryFiles( path : string ) : AsyncPromise<string[]> =
+            promise {
+                let! isFolder = __.IsFolder path
+                if isFolder then
+                    try
+                        return! __.EntryNamesWhere(path, _.IsFile )
+                    with
+                    | x -> 
+                        console.error( "TryFiles: " + path, x.Message )
+                        return [||]
+                else
+                    return [||]
+            }
+
+        member __.TryFolders( path : string ) : AsyncPromise<string[]> =
+            promise {
+                let! isFolder = __.IsFolder path
+                if isFolder then
+                    try
+                        return! __.EntryNamesWhere(path, _.IsFolder )
+                    with
+                    | x -> 
+                        console.error( "TryFolders: " + path, x.Message )
+                        return [||]
+                else
+                    return [||]
+            }
+
         member __.Files( path : string ) : AsyncPromise<string[]> =
             __.EntryNamesWhere(path, _.IsFile )
 
