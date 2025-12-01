@@ -227,8 +227,11 @@ let private dockStyling () = [
 
     rule ".dock-tabs" [
         Css.positionRelative
-        Css.displayGrid
-        Css.custom("grid-template-columns", "repeat(10,max-content)")
+        Css.displayFlex
+        Css.flexDirectionRow
+        Css.flexWrapWrap
+        // Css.displayGrid
+        // Css.custom("grid-template-columns", "repeat(10,max-content)")
         Css.userSelectNone
         Css.overflowHidden
         //Css.gap (rem 1)
