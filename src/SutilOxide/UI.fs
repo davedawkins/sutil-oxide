@@ -119,8 +119,15 @@ module ToolHtml =
     open Tool 
     open ToolInternal
 
+    let icon_themed iconName (options : ToolOption seq) = 
+        Html.ic (makeClass [ Icon.makeFa iconName; "theme-tool-icon"; yield! getClassList options ]) []
+
+    let icon_unthemed iconName (options : ToolOption seq) = 
+        Html.ic (makeClass [ Icon.makeFa iconName;  yield! getClassList options ]) []
+
     let icon iconName (options : ToolOption seq) = 
-        Html.ic (makeClass [ Icon.makeFa iconName;  "theme-tool-icon"; yield! getClassList options ]) []
+        icon_themed iconName options
+
 
 module Control =
     open Common
