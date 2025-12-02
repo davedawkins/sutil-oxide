@@ -128,8 +128,8 @@ let style = [
         Css.positionRelative
         Css.displayFlex
         Css.flexDirectionColumn
-        Css.alignItemsCenter
-        Css.marginLeft (rem 0.2)
+        // Css.alignItemsCenter
+        // Css.marginLeft (rem 0.2)
     ]
 
     rule ".ui-group" [
@@ -172,7 +172,8 @@ let style = [
 
     rule ".ui-select > .ui-menu-stack" [
         Css.top (percent 100)
-        Css.left (rem -1)
+        Css.left (rem 0)
+        Css.width (percent 100)
     ]
 
     rule ".ui-select-value > .option-list > .option" [
@@ -196,6 +197,7 @@ let style = [
     rule ".option-list" [
         Css.displayFlex
         Css.flexDirectionColumn
+        Css.width (percent 100)
     ]
 
     rule "*:focus-within>.ui-menu-stack" [

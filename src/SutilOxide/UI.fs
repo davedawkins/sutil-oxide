@@ -31,6 +31,16 @@ module Common =
             | Value.Getter g -> Signal.make (g())
             | Value.Signal o -> o
 
+        member __.AsStore() =
+            match __ with
+            | Value.Const v  -> Store.make (Some v)
+            | Value.Getter g -> Store.make (g())
+            | Value.Signal o -> 
+                let s = Store.make o.Value
+                let d = o.Subscribe( Store.set s ) 
+                s.OnDispose( fun _ -> d.Dispose() )
+                s
+
         static member FromStoreOpt<'T>( src : IStore<'T option> ) : Value<'T> =
             src |> Signal.fromStore |> Signal
 
@@ -120,7 +130,7 @@ module ToolHtml =
     open ToolInternal
 
     let icon_themed iconName (options : ToolOption seq) = 
-        Html.ic (makeClass [ Icon.makeFa iconName; "theme-tool-icon"; yield! getClassList options ]) []
+        Html.ic (makeClass [ Icon.makeFa iconName; "theme-tool-icon"; "fa-fw"; yield! getClassList options ]) []
 
     let icon_unthemed iconName (options : ToolOption seq) = 
         Html.ic (makeClass [ Icon.makeFa iconName;  yield! getClassList options ]) []
@@ -130,11 +140,10 @@ module ToolHtml =
 
 
 module Control =
-    open Common
-    open Sutil
     open Sutil.CoreElements
     type Popup = interface end
 
+    type OnTextChange = (string -> unit)
     type OnClick = (unit -> unit)
     type OnCheck = (bool -> unit)
     type OnSelect = (obj -> unit)
@@ -148,7 +157,8 @@ module Control =
     let private keyGen = idGenerator( "key" )
 
     type ControlType =
-        | ControlLabel
+        | ControlLabel 
+        | ControlTextField of (OnTextChange * Value<string>)
         | ControlButton of OnClick
         | ControlCheck of OnCheck * Value<bool>
         | ControlMenu of (unit -> Control list)
@@ -160,229 +170,248 @@ module Control =
         Text : Text option
         Icon : Icon option
         Shortcut : Shortcut option
+        ReadOnly : bool
         Type : ControlType
     }
     with 
-        static member Create() = 
+        static member Create(typ) = 
             {
                 Key = keyGen()
                 Text = None
                 Icon = None
                 Shortcut = None
-                Type = ControlLabel
+                ReadOnly = false
+                Type = typ
             }
 
     type ControlOption =
         | Key of string
         | Text of Text
         | Icon of Icon
+        | ReadOnly of bool
         | Shortcut of Shortcut
         static member icon( name : string ) = Icon (Icon.FaIcon (Value.Const name))
         static member text( name : string ) = Text (Text.PlainText (Value.Const name))
 
         //| Type of RibbonControlType
 
-    let custom( e : Core.SutilElement ) : Control = { Control.Create() with Type = ControlCustom e }
+    let custom( e : Core.SutilElement ) : Control = Control.Create(ControlCustom e)
 
-    let makeControl (options : ControlOption list) =
+    let makeControl (typ) (options : ControlOption list) =
         let withOption (c : Control) (option : ControlOption) : Control =
             match option with
             | Key l -> { c with Key = l }
             | Text l -> { c with Text = Some l }
             | Icon l -> { c with Icon = Some l }
+            | ReadOnly l -> { c with ReadOnly = l }
             | Shortcut l -> { c with Shortcut = Some l }
             //| Type l -> { c with Type = l }
-        options |> List.fold withOption (Control.Create())
+        options |> List.fold withOption (Control.Create(typ))
 
-    let makeLabel options = options |> makeControl
+    // let makeLabel options = options |> makeControl
 
     let makeSeparator() =
         //makeLabel [ ControlOption.Text (PlainText (Value.Const "|")) ]
-        makeLabel [ 
+        makeControl ControlLabel [ 
             ControlOption.Icon (FaIcon (Value.Const "pipe"))
         ]
 
+    let makeReadOnlyTextField value options = 
+        makeControl (ControlTextField (ignore,value)) [ yield! options; ReadOnly true ]
+        
     let makeButton cb options = 
-        { makeControl options with Type = ControlButton cb }
+        makeControl (ControlButton cb) options
         
     let makeCheck onCheck value options = 
-        { makeControl options with Type = ControlCheck (onCheck,value) }
+        makeControl (ControlCheck (onCheck,value)) options
         
     let makeMenu items options = 
-        { makeControl options with Type = ControlMenu items }
+        makeControl (ControlMenu items) options
 
     let makeSelect<'t> (onSelect : 't -> unit) (value : Value<'t>) (items : unit -> (string * 't) list) options =
-        { makeControl options with Type = ControlSelect (unbox onSelect, unbox value, unbox items) }
+        makeControl 
+            (ControlSelect (unbox onSelect, unbox value, unbox items))
+            options
 
     let internal renderSeparator() = Html.divc "ui-vsep" []
 
     let [<Literal>] NOTSETVALUE = "----"
 
-    let rec renderControl (item : Control) =
-        match item.Type with
-        | ControlCustom el -> el
-        | _ -> renderBuiltIn item
-    
-    and renderBuiltIn(item : Control) =
+    let rec renderControlWithParent (parent : Control option) (item : Control) =
         let iconOnly =
             item.Icon.IsSome && item.Text.IsNone
 
-        Html.divc ([ "theme-tool-control"; "ui-control"; if iconOnly then "ui-icon-only" ] |> ToolInternal.makeClass) [
-            Attr.tabIndex 0
+        let makeControlCheck (onCheck, value : Value<bool>) =
+            let checkedS : IStore<bool option> = value.AsStore()
+            [
+                Attr.roleCheckbox
+                Bind.attr( "aria-checked", checkedS .>> string )
+                disposeOnUnmount [ checkedS ]
+                Bind.el( checkedS,
+                    fun ch -> 
+                        let iconName = ch |> Option.map (fun f -> if f then "check" else "square") |> Option.defaultValue "x"
+                        let isChecked = ch |> Option.defaultValue false 
+                        ToolHtml.icon iconName [ if isChecked then Tool.Class "checked" ] 
+                )
+                Ev.onClick (fun e ->
+                    e.preventDefault()
+                    checkedS |> Store.modify (fun v -> match v with Some true -> Some false | _ -> Some true)
+                    checkedS.Value |> Option.iter onCheck
+                )
+            ]
 
-            yield!
-                match item.Type with
-                | ControlCheck (onCheck, value) ->
-                    let checkedS : IStore<bool option> = 
-                        match value with
-                        | Value.Const z -> Store.make (Some z)
-                        | Value.Getter g -> Store.make (g())
-                        | Value.Signal o ->
-                            let s = Store.make o.Value
-                            let d = o.Subscribe( Store.set s )
-                            s
-                    [
-                        Attr.roleCheckbox
-                        Bind.attr( "aria-checked", checkedS .>> string )
-                        disposeOnUnmount [ checkedS ]
-                        Bind.el( checkedS,
-                            fun ch -> 
-                                let iconName = ch |> Option.map (fun f -> if f then "check" else "square") |> Option.defaultValue "x"
-                                let isChecked = ch |> Option.defaultValue false 
-                                ToolHtml.icon iconName [ if isChecked then Tool.Class "checked" ] 
-                        )
-                        Ev.onClick (fun e ->
-                            e.preventDefault()
-                            checkedS |> Store.modify (fun v -> match v with Some true -> Some false | _ -> Some true)
-                            checkedS.Value |> Option.iter onCheck
-                        )
+        let textValueToElement (textValue) (text : string -> Core.SutilElement) =
+            match textValue with
+            | Value.Const s -> text s
+            | Value.Getter g -> text (g() |> Option.defaultValue NOTSETVALUE)
+            | Value.Signal o ->
+                Bind.el( o, fun optS -> text (optS |> Option.defaultValue NOTSETVALUE ))    
+
+
+        let iconLabel = 
+            [|
+                match item.Icon with
+                | Some (FaIcon (Value.Const fa)) -> 
+                    ToolHtml.icon fa [ ]
+                | Some (FaIcon (Value.Getter fa)) -> 
+                    ToolHtml.icon (fa() |> Option.defaultValue "x") [ ] 
+                | Some (FaIcon (Value.Signal fas)) -> 
+                    Html.i [
+                        Bind.className( fas .> (fun optIcon -> "theme-tool-icon fa-fw " + match optIcon with Some ic -> Icon.makeFa(ic) | None -> Icon.makeFa("x")))
                     ]
-                | _ -> []
+                | _ -> () 
 
+                match item.Text with
+                | Some (PlainText textValue) -> 
+                    textValueToElement textValue text
+                    // match textValue with
+                    // | Value.Const s -> text s
+                    // | Value.Getter g -> text (g() |> Option.defaultValue NOTSETVALUE)
+                    // | Value.Signal o ->
+                    //     Bind.el( o, fun optS -> text (optS |> Option.defaultValue NOTSETVALUE ))
+                | _ -> ()
+            |]
 
-            match item.Icon with
-            | Some (FaIcon (Value.Const fa)) -> 
-                ToolHtml.icon fa [ Tool.Class "left" ] //  Html.ic ("left " + Icon.makeFa fa) []
-            | Some (FaIcon (Value.Getter fa)) -> 
-                ToolHtml.icon (fa() |> Option.defaultValue "") [ Tool.Class "left" ] //  Html.ic ("left " + Icon.makeFa fa) []
-                // Html.ic ("left " + Icon.makeFa (fa() |> Option.defaultValue "")) []
-            | Some (FaIcon (Value.Signal fas)) -> 
-                Html.i [
-                    Bind.className( fas .> (fun optIcon -> "theme-tool-icon left " + match optIcon with Some ic -> Icon.makeFa(ic) | None -> Icon.makeFa("x")))
+        let controlClasses = 
+            [ "theme-tool-control"; "ui-control"; if iconOnly then "ui-icon-only" ] 
+
+        // Html.divc ([ "theme-tool-control"; "ui-control"; if iconOnly then "ui-icon-only" ] |> ToolInternal.makeClass) [
+        //     Attr.tabIndex 0
+
+            // yield!
+        match item.Type with
+
+        | ControlLabel -> Html.divc (controlClasses |> ToolInternal.makeClass) iconLabel
+        | ControlTextField (_, value) ->
+            Html.divc (controlClasses |> ToolInternal.makeClass) [
+                Html.label [
+                    yield! iconLabel
                 ]
-            | _ -> Sutil.CoreElements.nothing
+                textValueToElement value Html.span
+            ]
 
-            match item.Text with
-            | Some (PlainText textValue) -> 
-                match textValue with
-                | Value.Const s -> text s
-                | Value.Getter g -> text (g() |> Option.defaultValue NOTSETVALUE)
-                | Value.Signal o ->
-                    Bind.el( o, fun optS -> text (optS |> Option.defaultValue NOTSETVALUE ))
-            | _ -> Sutil.CoreElements.nothing
+        | ControlCustom el -> el
 
-            yield!
-                match item.Type with
-                | ControlCustom _ -> [ ]
+        | ControlCheck (cb, value) ->
+            Html.divc (controlClasses |> ToolInternal.makeClass) [ 
+                Attr.tabIndex 0
+                yield! makeControlCheck (cb,value)
+                yield! iconLabel
+            ]
 
-                | ControlButton onClick -> 
-                    [
-                        Attr.roleButton
-                        attrDataCmd (item.Key)
-                        Ev.onClick (fun _ -> onClick()) 
-                    ]
+        | ControlButton onClick -> 
+            Html.buttonc (controlClasses |> ToolInternal.makeClass) [
+                Attr.tabIndex 0
+                Attr.roleButton
+                attrDataCmd (item.Key)
+                
+                yield! iconLabel
 
-                | ControlMenu items ->
-                    let itemStore : IStore<Control list> = Store.make []
-                    [ 
-                        Attr.roleMenu
-                        attrDataCmd (item.Key)
-                        disposeOnUnmount [ itemStore ]
-                        ToolHtml.icon "angle-down" [ Tool.Class "right" ]
-                        // Html.ic ("right " + (Icon.makeFa("angle-down"))) []
-                        Ev.onClick (fun _ -> items() |> Store.set itemStore)
-                        Bind.el( itemStore, fun items ->
-                            Html.divc "theme-menu ui-menu-stack scroll-shadows" (items |> List.map renderControl)
-                        )
-                    ]
+                Ev.onClick (fun _ -> onClick()) 
+            ]
 
-                | ControlSelect (onSelect, value, items) ->
+        | ControlMenu items ->
+            let itemStore : IStore<Control list> = Store.make []
+            Html.divc ([ yield! controlClasses; "flex items-center justify-between" ] |> ToolInternal.makeClass) [
+                Attr.tabIndex 0
+                Attr.roleMenu
+                attrDataCmd (item.Key)
+                
+                Html.span [
+                    yield! iconLabel
+                ]
+                ToolHtml.icon "angle-down" [ ]
+
+                Ev.onClick (fun _ -> items() |> Store.set itemStore)
+
+                Bind.el( itemStore, fun items ->
+                    Html.divc "theme-menu ui-menu-stack scroll-shadows" (items |> List.map (renderControlWithParent (Some item)))
+                )
+                disposeOnUnmount [ itemStore ]
+            ]
+
+        | ControlSelect (onSelect, value, items) ->
+            
+            let _eq = JsHelpers.fastEquals
+
+            let itemMap : IStore<(string*obj) list> = Store.make (items())
+
+            let current : IStore<obj option> = value.AsStore()
+
+            let makeSelectItem (label, value) =
+                let handler () =
+                    if label <> NOTSETVALUE then
+                        Store.set current (Some value)
+                        onSelect value
+
+                [
+                    Text (PlainText (Value.Const label))
+                ] |> makeButton handler
+
+            let itemStore : IStore<Control list> = Store.make []
+
+            Html.divc (controlClasses |> ToolInternal.makeClass) [ 
+                Attr.tabIndex 0
+                Attr.roleListBox
+
+                Html.label [
+                    yield! iconLabel
+                ]
+
+                Html.divc "ui-select" [
+                    Attr.tabIndex 0
+                    attrDataCmd (item.Key)
+                    disposeOnUnmount [ itemStore ]
                     
-                    let _eq = JsHelpers.fastEquals
-
-                    let itemMap : IStore<(string*obj) list> = Store.make (items())
-
-                    let findLabel (v : obj) =
-                        itemMap.Value 
-                        |> List.tryFind (snd>>_eq v) 
-                        |> Option.map fst
-                        |> Option.defaultValue ""
-
-                    let current : IStore<obj option> = 
-                        match value with
-                        | Value.Const z -> Store.make (Some z)
-                        | Value.Getter g -> Store.make (g())
-                        | Value.Signal o ->
-                            let s = Store.make o.Value
-                            let d = o.Subscribe( Store.set s )
-                            s
-
-                    let makeSelectItem (label, value) =
-
-                        let handler () =
-                            if label <> NOTSETVALUE then
-                                Store.set current (Some value)
-                                onSelect value
-
-                        //let checkValue = Value.Observable (current .> _eq value, _eq value current.Value )
-
-                        [
-                            Text (PlainText (Value.Const label))
-                        ] |> makeButton handler
-
-                    let itemStore : IStore<Control list> = Store.make []
-
-                    [ 
-                        Attr.roleListBox
-                        Html.divc "ui-select" [
-                            Attr.tabIndex 0
-                            attrDataCmd (item.Key)
-                            disposeOnUnmount [ itemStore ]
-                            
-                            Html.divc "ui-select-value" [
-                                Html.divc "option-list" [
-                                    Bind.each( 
-                                        itemMap, 
-                                        (fun (label, value) -> 
-                                            Html.divc "option" [ 
-                                                Bind.toggleClass( current .> (fun cv -> match cv with Some v -> _eq value v | None -> label = NOTSETVALUE), "selected" )
-                                                text label 
-                                            ]), 
-                                        fst )
-                                ]
-                                // Bind.el( 
-                                //     current .> findLabel,
-                                //     fun label -> Html.span [ text label ]
-                                // )
-                                // Html.ic ("right " + (Icon.makeFa("angle-down"))) []
-                                ToolHtml.icon "angle-down" [ Tool.Class "right" ]
-                            ]
-                            Ev.onClick (fun _ -> 
-                                let _items = 
-                                    match current.Value with
-                                    | None -> items() @ [ NOTSETVALUE, null ]
-                                    | Some _ -> items()
-                                _items |> Store.set itemMap
-                                _items |> List.map makeSelectItem |> Store.set itemStore
-                            )
-                            Bind.el( itemStore, fun items ->
-                                Html.divc "theme-menu ui-menu-stack scroll-shadows" (items |> List.map renderControl)
-                            )
+                    Html.divc "ui-select-value" [
+                        Html.divc "option-list" [
+                            Bind.each( 
+                                itemMap, 
+                                (fun (label, value) -> 
+                                    Html.divc "option" [ 
+                                        Bind.toggleClass( current .> (function Some v -> _eq value v | None -> label = NOTSETVALUE), "selected" )
+                                        text label 
+                                    ]), 
+                                fst )
                         ]
+                        ToolHtml.icon "angle-down" [ Tool.Class "right" ]
                     ]
+                    Ev.onClick (fun _ -> 
+                        let _items = 
+                            match current.Value with
+                            | None -> items() @ [ NOTSETVALUE, null ]
+                            | Some _ -> items()
+                        _items |> Store.set itemMap
+                        _items |> List.map makeSelectItem |> Store.set itemStore
+                    )
+                    Bind.el( itemStore, fun items ->
+                        Html.divc "theme-menu ui-menu-stack scroll-shadows" (items |> List.map (renderControlWithParent(Some item)))
+                    )
+                ]
+            ]
 
-                | _ -> []
-        ]
+    let renderControl (item : Control) =
+        renderControlWithParent None item
 
 module Toolbar =
 
@@ -395,9 +424,6 @@ module Toolbar =
 module Ribbon =
     open Control
         
-    // type Stack = 
-    //     Stack of Control list
-
     type Group = {
         Key : string
         Label : string
@@ -441,9 +467,6 @@ module Ribbon =
             )
 
 module RibbonMenu = 
-    open Sutil
-    open Sutil.Core
-
     open Ribbon
 
     type RibbonMenu = {
@@ -481,9 +504,6 @@ module RibbonMenu =
         ]       
 
 module Input =
-    open Common
-    open Browser.Types
-
     type Option<'T> =
     | Key of string
     | Class of string
