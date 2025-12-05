@@ -13,20 +13,11 @@ open Fable.Core.JsInterop
 open Browser.Types
 open SutilOxide.Types
 open Sutil
+open Sutil.DomHelpers
 
-[<AutoOpen>]
-module DomHelpers =
-
+[<AutoOpen>] 
+module ResizeController =
     let toEl (et : EventTarget) = et :?> HTMLElement
-    let targetEl (e : Event) = e.target |> toEl
-    let currentEl (e : Event) = e.currentTarget |> toEl
-
-    let getPaneFlexGrow (el : HTMLElement) =
-        let cs = (window.getComputedStyle el)
-        try
-            cs.flexGrow |> System.Double.Parse |> int
-        with
-        | _ -> 0
 
     let setPaneFlexGrow (el : HTMLElement) (w : int) =
         el.style.flexGrow <- $"{w}"
@@ -44,18 +35,99 @@ module DomHelpers =
     let setPaneHeight (el : HTMLElement) (h : int) =
         el.style.height <- $"{h}px"
 
-    let setPaneSizeUsingFlexGrow (getSize : HTMLElement -> int) (el : HTMLElement) (size : int) =
+    let setPaneSizeUsingFlexGrow (getSize : HTMLElement -> int) ((el,el2) : HTMLElement * HTMLElement) (size : int) =
         let parentSz = getSize (el.parentElement)
         let pct = (float size) / (float parentSz)
 
         setPaneFlexGrow el (int (pct * 10000.0))
-        setPaneFlexGrow (el.previousElementSibling |> toEl) (int ( (1.0 - pct) * 10000.0))
+        setPaneFlexGrow el2 (int ( (1.0 - pct) * 10000.0))
+        // setPaneFlexGrow (el.previousElementSibling |> toEl) (int ( (1.0 - pct) * 10000.0))
 
     let setPaneWidthUsingFlexGrow =
         setPaneSizeUsingFlexGrow getPaneWidth
 
     let setPaneHeightUsingFlexGrow  =
         setPaneSizeUsingFlexGrow getPaneHeight
+
+    // https://jsfiddle.net/x9o7y561/
+    let resizeController
+            (pos : MouseEvent -> float)
+            (getPanes : HTMLElement -> (HTMLElement * HTMLElement))
+            (getSize : (HTMLElement * HTMLElement) -> int)
+            (setSize : (HTMLElement * HTMLElement) -> int -> unit)
+            //(commit : (HTMLElement * HTMLElement) -> int -> unit)
+            (commit : unit -> unit)
+            (direction : int) =
+
+        Ev.onMouseDown (fun e ->
+            e.preventDefault()
+            let (pane, pane2) as panes = (e.targetHtmlElement) |> getPanes
+            let posOffset: float = pos e
+            let startSize = float (getSize panes)
+            let rec mouseDragHandler = fun (e : Browser.Types.MouseEvent) ->
+                e.preventDefault()
+                let primaryButtonPressed = e.buttons = 1
+
+                if not primaryButtonPressed then
+                    setSize panes (int ((posOffset - pos e) * (float direction) + startSize))
+                    commit() // panes (int ((posOffset - pos e) * (float direction) + startSize))
+                    document.body.removeEventListener("pointermove", !!mouseDragHandler)
+                    Toolbar.MenuMonitor.monitorAll()
+                else
+                    setSize panes (int ((posOffset - pos e) * (float direction) + startSize))
+
+            document.body.addEventListener("pointermove", !!mouseDragHandler)
+        )
+
+    let prevSibling (e : HTMLElement) = e.previousElementSibling :?> HTMLElement
+    let nextSibling (e : HTMLElement) = e.nextElementSibling :?> HTMLElement
+
+    module PrevSibling =
+
+        let getPanes (e : HTMLElement) = prevSibling e, nextSibling e
+
+        let resizeControllerEw (direction : int) commit =
+            resizeController (fun e -> e.pageX) getPanes (fst>>getPaneWidth) (fst>>setPaneWidth) commit -direction
+
+        let resizeControllerNs (direction : int) commit =
+            resizeController (fun e -> e.pageY) getPanes (fst>>getPaneHeight) (fst>>setPaneHeight) commit -direction
+
+        let resizeControllerNsFlex (direction : int) commit =
+            resizeController (fun e -> e.pageY) getPanes (fst>>getPaneHeight) setPaneHeightUsingFlexGrow commit -direction
+
+        let resizeControllerEwFlex (direction : int) commit =
+            resizeController (fun e -> e.pageX) getPanes (fst>>getPaneWidth) setPaneWidthUsingFlexGrow commit -direction
+
+    module ParentPane =
+
+        let getPanes (e : HTMLElement) = e.parentElement, prevSibling (e.parentElement)
+
+        let resizeControllerEw (direction : int) commit =
+            resizeController (fun e -> e.pageX) getPanes (fst>>getPaneWidth) (fst>>setPaneWidth) commit direction
+
+        let resizeControllerNs (direction : int) commit =
+            resizeController (fun e -> e.pageY) getPanes (fst>>getPaneHeight) (fst>>setPaneHeight) commit direction
+
+        let resizeControllerNsFlex (direction : int) commit =
+            resizeController (fun e -> e.pageY) getPanes (fst>>getPaneHeight) setPaneHeightUsingFlexGrow commit direction
+
+        let resizeControllerEwFlex (direction : int) commit =
+            resizeController (fun e -> e.pageX) getPanes (fst>>getPaneWidth) setPaneWidthUsingFlexGrow commit direction
+
+
+[<AutoOpen>]
+module DomHelpers =
+
+    let toEl (et : EventTarget) = et :?> HTMLElement
+    let targetEl (e : Event) = e.target |> toEl
+    let currentEl (e : Event) = e.currentTarget |> toEl
+
+    let getPaneFlexGrow (el : HTMLElement) =
+        let cs = (window.getComputedStyle el)
+        try
+            cs.flexGrow |> System.Double.Parse |> int
+        with
+        | _ -> 0
 
     let getContentParentNode (location : DockLocation) =
         let contentId =
@@ -75,44 +147,6 @@ module DomHelpers =
     let getWrapperNode (name : string) =
         document.querySelector("#pane-" + name.ToLower())
 
-    // https://jsfiddle.net/x9o7y561/
-    let resizeController
-            (pos : MouseEvent -> float)
-            (getSize : HTMLElement -> int)
-            (setSize : HTMLElement -> int -> unit)
-            (commit : HTMLElement -> int -> unit)
-            (direction : int) =
-
-        Ev.onMouseDown (fun e ->
-            e.preventDefault()
-            let pane = ((targetEl e).parentElement) :?> HTMLDivElement
-            let posOffset: float = pos e
-            let startSize = float (getSize pane)
-            let rec mouseDragHandler = fun (e : Browser.Types.MouseEvent) ->
-                e.preventDefault()
-                let primaryButtonPressed = e.buttons = 1
-
-                if not primaryButtonPressed then
-                    commit pane (int ((posOffset - pos e) * (float direction) + startSize))
-                    document.body.removeEventListener("pointermove", !!mouseDragHandler)
-                    Toolbar.MenuMonitor.monitorAll()
-                else
-                    setSize pane (int ((posOffset - pos e) * (float direction) + startSize))
-
-            document.body.addEventListener("pointermove", !!mouseDragHandler)
-        )
-
-    let resizeControllerEw (direction : int) commit =
-        resizeController (fun e -> e.pageX) getPaneWidth setPaneWidth (fun e s -> setPaneWidth e s; commit()) direction
-
-    let resizeControllerNs (direction : int) commit =
-        resizeController (fun e -> e.pageY) getPaneHeight setPaneHeight (fun e s -> setPaneHeight e s; commit()) direction
-
-    let resizeControllerNsFlex (direction : int) commit =
-        resizeController (fun e -> e.pageY) getPaneHeight setPaneHeightUsingFlexGrow (fun e s -> setPaneHeightUsingFlexGrow e s; commit()) direction
-
-    let resizeControllerEwFlex (direction : int) commit =
-        resizeController (fun e -> e.pageX) getPaneWidth setPaneWidthUsingFlexGrow (fun e s -> setPaneWidthUsingFlexGrow e s; commit()) direction
 
     let toListFromNodeList (l : NodeListOf<'a>) =
         [0..l.length-1] |> List.map (fun i -> l.item(i),i)

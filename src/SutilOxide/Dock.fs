@@ -508,11 +508,11 @@ let dockContainer (options : unit -> Options) model (loc : DockLocation) =
         match loc with
         | LeftBottom | RightBottom ->
             UI.divc $"dock-resize-handle top vertical" [
-                resizeControllerNsFlex 1 (fun _ -> options().OnConfigurationChanged())
+                ParentPane.resizeControllerNsFlex 1 (fun _ -> options().OnConfigurationChanged())
             ]
         | TopRight | BottomRight ->
             UI.divc $"dock-resize-handle left horizontal" [
-                resizeControllerEwFlex 1 (fun _ -> options().OnConfigurationChanged())
+                ParentPane.resizeControllerEwFlex 1 (fun _ -> options().OnConfigurationChanged())
             ]
         | _ -> ()
     ]
@@ -657,7 +657,7 @@ type DockContainer() =
                     dockContainer (fun _ -> options) model TopRight
 
                     UI.divc $"dock-resize-handle bottom vertical" [
-                        resizeControllerNs -1 (fun _ -> options.OnConfigurationChanged())
+                        ParentPane.resizeControllerNs -1 (fun _ -> options.OnConfigurationChanged())
                     ]
                 ]
 
@@ -671,7 +671,7 @@ type DockContainer() =
                         dockContainer (fun _ -> options) model LeftBottom
 
                         UI.divc $"dock-resize-handle right horizontal" [
-                            resizeControllerEw -1 (fun _ -> options.OnConfigurationChanged())
+                            ParentPane.resizeControllerEw -1 (fun _ -> options.OnConfigurationChanged())
                         ]
                     ]
 
@@ -709,7 +709,7 @@ type DockContainer() =
                         dockContainer (fun _ -> options) model RightBottom
 
                         UI.divc $"dock-resize-handle left horizontal" [
-                            resizeControllerEw 1 (fun _ -> options.OnConfigurationChanged())
+                            ParentPane.resizeControllerEw 1 (fun _ -> options.OnConfigurationChanged())
                         ]
                     ]
 
@@ -723,7 +723,7 @@ type DockContainer() =
                     dockContainer (fun _ -> options) model BottomRight
 
                     UI.divc $"dock-resize-handle top vertical" [
-                        resizeControllerNs 1 (fun _ -> options.OnConfigurationChanged())
+                        ParentPane.resizeControllerNs 1 (fun _ -> options.OnConfigurationChanged())
                     ]
                 ]
             ]
