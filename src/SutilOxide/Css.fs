@@ -773,7 +773,7 @@ let private toolbarStyling () = [
     rule ".fa-check" [
         Css.opacity 0
     ]
-    rule ".fa-check.checked" [
+    rule ".fa-check.checked, .fa-check.selected" [
         Css.opacity 1
     ]
 
