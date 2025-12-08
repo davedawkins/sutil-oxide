@@ -404,7 +404,6 @@ module FileSystemExt =
         member __.EntryNames( path : string ) : AsyncPromise<string[]> =
             promise {
                let! names = __.EntryNamesWhere(path, fun _ -> true )
-               Fable.Core.JS.console.log("EntryNames:path=" + path + ":", names)
                return names
             }
 

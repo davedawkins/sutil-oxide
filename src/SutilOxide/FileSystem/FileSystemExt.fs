@@ -56,7 +56,6 @@ module Extensions =
                         path, 
                         fun _ -> __.Remove(path)
                 )
-                Fable.Core.JS.console.log("Creating folder: " + path )
                 do! __.CreateFolder(path)
             }
 
