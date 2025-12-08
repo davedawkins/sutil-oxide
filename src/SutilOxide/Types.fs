@@ -85,6 +85,7 @@ type BasicLocation =
     | Top
     | Bottom
 with
+    static member All = [ Left; Right; Centre; Top; Bottom ]
     member __.LowerName = __.ToString().ToLower()
     member __.Orientation =
         match __ with Left|Right -> Horizontal | _ -> Vertical
@@ -129,7 +130,6 @@ with
         | _,Left | Left,_ -> Left
         | _ -> Right
 
-
     member __.Primary =
         match __ with
         | CentreLeft | CentreRight -> Centre
@@ -158,6 +158,7 @@ type LabelElement =
     | LabelElement of SutilElement
 
 type PaneOptions =
+    | Group of string
     | Label of string
     | LabelEl of SutilElement
     | CanClose of bool
@@ -170,13 +171,46 @@ type PaneOptions =
     | OnShow of (bool -> unit)
     | Size of float
 
+module StringHelpers =
+    open System
+    open System.Text.RegularExpressions
+
+    let toClass( s : string ) = s.ToLower().Replace(" ", "-").Replace("_","-")
+
+    let toCapWords (input: string) =
+        let spaced =
+            // Insert space before capitals in PascalCase / camelCase
+            Regex.Replace(input, "([a-z])([A-Z])", "$1 $2")
+        let cleaned =
+            spaced.Replace("-", " ")
+                .Replace("_", " ")
+                .Trim()
+                .ToLowerInvariant()
+        // Capitalize each word
+        cleaned.Split([| ' ' |], StringSplitOptions.RemoveEmptyEntries)
+        |> Array.map (fun w -> w.[0].ToString().ToUpper() + w.Substring(1))
+        |> String.concat " "
+
+type DockPaneKey = Key of string
+    with 
+        static member From(s : string) =
+            if StringHelpers.toClass s <> s || s = "" then
+                Fable.Core.JS.console.error( "DockPaneKey: ",  sprintf "Invalid key value: %s: lowercase and '-' only" s ) 
+                failwithf "Invalid key value: %s: lowercase and '-' only" s
+            Key s
+
+        override __.ToString (): string = let (Key s) = __ in s
+        member __.AsLabel = __.ToString() |> StringHelpers.toCapWords
+
+
 type DockPane = 
     {
         Label : LabelElement
         CanClose : bool
-        Key : string
+        StrictKey : DockPaneKey
         Icon: string
         Location : DockLocation
+        Group : string
         Header : SutilElement
         Content : SutilElement
         IsOpen : bool
@@ -184,6 +218,9 @@ type DockPane =
         OnShow : bool -> unit
         Size : float
     }
+    member __.Key = __.StrictKey.ToString()
+    member __.KeyAsClass = __.StrictKey.ToString()
+    member __.KeyAsLabel = __.StrictKey.AsLabel
     static member Equals( p1 : DockPane, p2 : DockPane) =
         p1.Label = p2.Label &&
         p1.CanClose = p2.CanClose &&
@@ -194,7 +231,7 @@ type DockPane =
 //    static member MakeKey(s:string) = s.ToLower().Replace(".", "_")
     static member Default( key : string ) =
         {
-            Key = key
+            StrictKey = DockPaneKey.From(key)
             Label = LabelString key
             CanClose = false
             Location = CentreLeft
@@ -205,6 +242,7 @@ type DockPane =
             Icon = "fa-folder"
             OnShow = ignore
             Size = -1
+            Group = ""
         }
         
     static member Create( key : string, options : PaneOptions list ) : DockPane =
@@ -213,6 +251,7 @@ type DockPane =
             | LabelEl e -> { cfg with Label = LabelElement e }
             | Label s -> { cfg with Label = LabelString s }
             | Icon s -> { cfg with Icon = s }
+            | Group s -> { cfg with Group = s }
             | CanClose s -> { cfg with CanClose = s }
             | Location s -> { cfg with Location = s }
             | Content s -> { cfg with Content = s }
