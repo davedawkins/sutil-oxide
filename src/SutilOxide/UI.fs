@@ -87,7 +87,7 @@ module Icon =
             name
         else 
             let faName = if name.StartsWith "fa-" then name else "fa-" + name
-            prefix + " " + faName
+            prefix + " fa-fw " + faName
             
     let makeFaBrand (name : string) = 
         _makeFa "fa-brands" name
@@ -130,10 +130,10 @@ module ToolHtml =
     open ToolInternal
 
     let icon_themed iconName (options : ToolOption seq) = 
-        Html.ic (makeClass [ Icon.makeFa iconName; "theme-tool-icon"; "fa-fw"; yield! getClassList options ]) []
+        Html.ic (makeClass [ Icon.makeFa iconName; "theme-tool-icon"; yield! getClassList options ]) []
 
     let icon_unthemed iconName (options : ToolOption seq) = 
-        Html.ic (makeClass [ Icon.makeFa iconName;  yield! getClassList options ]) []
+        Html.ic (makeClass [ Icon.makeFa iconName; yield! getClassList options ]) []
 
     let icon iconName (options : ToolOption seq) = 
         icon_themed iconName options
@@ -682,6 +682,7 @@ module Controller =
         abstract CreateGroup: ribbonKey:string * key:string * label:string * controls : Control.Control list -> unit
 
     type PaneOption =
+        | Group of string
         | Location of Common.DockLocation
         | TabText of Common.Text 
         | TabIcon of Common.Icon
