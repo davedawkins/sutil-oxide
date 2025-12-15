@@ -153,6 +153,7 @@ with
 //     Label : string
 // }
 
+
 type LabelElement =
     | LabelString of string
     | LabelElement of SutilElement
@@ -160,16 +161,17 @@ type LabelElement =
 type PaneOptions =
     | Group of string
     | Label of string
+    | Icon of string
     | LabelEl of SutilElement
     | CanClose of bool
+    | CanFloat of bool
+    | CanMove of bool
     | Location of DockLocation
     | Header of SutilElement
     | Content of SutilElement
     | IsOpen of bool
-    | Icon of string
     | OnClose of (unit -> unit)
     | OnShow of (bool -> unit)
-    | Size of float
 
 module StringHelpers =
     open System
@@ -207,6 +209,8 @@ type DockPane =
     {
         Label : LabelElement
         CanClose : bool
+        CanFloat : bool
+        CanMove : bool
         StrictKey : DockPaneKey
         Icon: string
         Location : DockLocation
@@ -216,7 +220,6 @@ type DockPane =
         IsOpen : bool
         OnClose : unit -> unit
         OnShow : bool -> unit
-        Size : float
     }
     member __.Key = __.StrictKey.ToString()
     member __.KeyAsClass = __.StrictKey.ToString()
@@ -232,8 +235,10 @@ type DockPane =
     static member Default( key : string ) =
         {
             StrictKey = DockPaneKey.From(key)
-            Label = LabelString key
+            Label = LabelString (key |> StringHelpers.toCapWords)
             CanClose = false
+            CanFloat = false
+            CanMove = false
             Location = CentreLeft
             Header = text key
             Content = Html.div key
@@ -241,7 +246,6 @@ type DockPane =
             OnClose = ignore
             Icon = "fa-folder"
             OnShow = ignore
-            Size = -1
             Group = ""
         }
         
@@ -253,13 +257,14 @@ type DockPane =
             | Icon s -> { cfg with Icon = s }
             | Group s -> { cfg with Group = s }
             | CanClose s -> { cfg with CanClose = s }
+            | CanFloat s -> { cfg with CanFloat = s }
+            | CanMove s -> { cfg with CanMove = s }
             | Location s -> { cfg with Location = s }
             | Content s -> { cfg with Content = s }
             | Header s -> { cfg with Header = s }
             | IsOpen s -> { cfg with IsOpen = s }
             | OnClose s -> { cfg with OnClose = s }
             | OnShow s -> { cfg with OnShow = s }
-            | Size s -> { cfg with Size = s }
 
         let init = (DockPane.Default(key))
         options |> List.fold withOpt init
