@@ -41,6 +41,12 @@ module Common =
                 s.OnDispose( fun _ -> d.Dispose() )
                 s
 
+        static member From( src : (unit -> 'T option)) =
+            Value<_>.Getter src
+
+        static member From( src : 'T ) =
+            Value<_>.Const src
+
         static member FromStoreOpt<'T>( src : IStore<'T option> ) : Value<'T> =
             src |> Signal.fromStore |> Signal
 
@@ -55,6 +61,9 @@ module Common =
 
         static member FromObservable<'T>( src : System.IObservable<'T>, init : 'T ) : Value<'T> =
             Signal.fromObservable (Some init) (src .> Some) |> Signal
+
+        static member FromObservableOpt<'T>( src : System.IObservable<'T option> ) : Value<'T> =
+            Signal.fromObservable None src |> Signal
 
     type Direction = Vertical | Horizontal
 
@@ -767,6 +776,7 @@ module Forms =
         {
             Editor : FieldEditor<'T>
             Label: string
+            Suffix : string
             Parse: Parser<'T>
             Format: 'T -> string
             Set: ('T -> unit) option
@@ -778,6 +788,7 @@ module Forms =
 
         static member Empty<'T>() = 
                 {   Label = ""
+                    Suffix = ""
                     Editor = FieldEditor.BuiltIn BuiltInEditor.Text
                     SystemTypeName = typedefof<System.String>.FullName
                     Parse = fun value -> Result<'T,string>.Error("No parser for '" + value + "'")
@@ -824,17 +835,23 @@ module Forms =
                     { empty with Format = sprintf "%A" }
                     //failwith ("Unsupported input for type " + t.FullName )
 
-        static member inline Create() : Field<'T> = 
-            let t = typedefof<'T> // For erased union , this will be underlying primitive type, like string
-            let fullname = typedefof<'T>.FullName // This will be the name of the erased union
-            Field<'T>.Init(t, fullname)
+        static member internal CreateWithType( t : System.Type, fullName : string ) : Field<'T> = 
+            Field<'T>.Init(t, fullName)
 
-        // static member FromJs ( js : obj ) =
-        //     let mapJs f
+        static member inline Create() : Field<'T> = 
+            // let t = typedefof<'T> // For erased union , this will be underlying primitive type, like string
+            // let fullname = typedefof<'T>.FullName // This will be the name of the erased union
+            // Field<'T>.Init(t, fullname)
+            Field<'T>.CreateWithType( typedefof<'T>, typedefof<'T>.FullName )
+
+        static member inline Create( label : string ) : Field<'T> = 
+            Field<'T>.CreateWithType( typedefof<'T>, typedefof<'T>.FullName ).WithLabel(label)
 
         member private __.WithEditor( e : FieldEditor<'T> ) : Field<'T> = { __ with Editor = e }
         member private __.WithBuiltIn( t : BuiltInEditor ) : Field<'T> = { __ with Editor = FieldEditor.BuiltIn t }
+        member __.WithCustomEditor( f ) = { __ with Editor = FieldEditor.Ctor f }
         member __.WithLabel( s : string ) : Field<'T> = { __ with Label = s }
+        member __.WithSuffix( s : string ) : Field<'T> = { __ with Suffix = s }
         member __.WithParse( p : Parser<'T> ) : Field<'T> = { __ with Parse = p }
         member __.WithFormat( f : 'T -> string ) : Field<'T> = { __ with Format = f }
         member __.WithSet( s : 'T -> unit ) : Field<'T> = { __ with Set = Some s }
@@ -930,24 +947,32 @@ module Forms =
             cssInstalled <- true
             Sutil.Styling.addGlobalStyleSheet (Browser.Dom.document) style |> ignore
 
-    let viewFields (fields : FieldElement seq) =
+    let renderFieldElements (fields : Core.SutilElement seq) =
         installCss()
-        fields |> Seq.map _.Render() |> Html.divc "ui-field-group"
+        fields |> Html.divc "ui-field-group"
 
+    let renderFields (fields : FieldElement seq) =
+        fields |> Seq.map _.Render() |> renderFieldElements
 
-    let internal withLabelError (label: string) (editor: IStore<string> -> Core.SutilElement) =
+    let viewFields (fields : FieldElement seq) =
+        fields |> renderFields
+
+    let internal withLabelError (field: Field<_>) (editor: IStore<string> -> Core.SutilElement) =
         let error = Store.make ""
 
         Html.divc "ui-field" [
             CoreElements.disposeOnUnmount [ error ]
             Html.label [
-                text label
+                text (field.Label)
             ]
             Html.div [
-                editor error
-                Bind.el( error, fun e -> Html.spanc "error" [ text e ] )
+                if field.Suffix <> "" then
+                    Html.divc "flex gap-1" [ editor error; Html.span [ text field.Suffix ] ]
+                else
+                    editor error
+                Bind.el( error, fun e -> Html.spanc "error text-destructive" [ text e ] )
             ]
-        ]    
+        ] 
 
     let internal editFieldSelect (f : Field<'t>) (error : IStore<string>) =
         // let (getter: unit -> 't) = f.Get
@@ -1009,22 +1034,96 @@ module Forms =
     [<Emit("document.activeElement === $0")>]
     let hasFocus( el : Browser.Types.EventTarget ) : bool = jsNative
 
-    let internal editFieldInput (builtIn : BuiltInEditor) (f : Field<'t>) (error : IStore<string>) =
-        let (typ: string) = builtIn |> string |> _.ToLower()
-        // let (getter: unit -> 't) = f.Get
+
+    // let internal editFieldInput (builtIn : BuiltInEditor) (f : Field<'t>) (error : IStore<string>) =
+    //     let (typ: string) = builtIn |> string |> _.ToLower()
+    //     let (setter: ('t -> unit) option) = f.Set
+    //     let (format: 't -> string) = f.Format
+    //     let parse: (string -> Result<'t,string>) = f.Parse
+
+    //     let timeout = SutilOxide.JsHelpers.createTimeout()
+
+    //     let value = f.Value.AsSignal()
+
+    //     let formatted = 
+    //         value |> Signal.map (fun o -> 
+    //             match o with 
+    //             | Some v -> Fable.Core.JS.console.log("Formatting: ", f.Label,  v)
+    //             | None -> Fable.Core.JS.console.log("Formatting: ", f.Label,  " [not set]")
+    //             o |> Option.map format |> Option.defaultValue Control.NOTSETVALUE
+    //             |> fun text ->
+    //                 Fable.Core.JS.console.log("Formatted as: ", f.Label, text)
+    //                 text
+    //         )
+
+    //     let validate (e : Browser.Types.Event) =
+    //         let input = (e.target :?> Browser.Types.HTMLInputElement)
+    //         let result = 
+    //             Fable.Core.JS.console.log("Parsing: ", f.Label, input.value, JsHelpers.jsTypeOf(input.value) )
+    //             match input.value with
+    //             | Control.NOTSETVALUE -> Error "Value is not set"
+    //             | v -> v |> parse 
+
+    //         match result with Error s -> s | _ -> "" 
+    //             |> Store.set error
+
+    //         result
+        
+    //     let commit set (e : Browser.Types.Event)  =
+    //         let input = (e.target :?> Browser.Types.HTMLInputElement)
+    //         if input.value <> formatted.Value && input.value <> Control.NOTSETVALUE then
+    //             validate e |> Result.iter set
+
+    //     Html.input [    
+    //         Attr.custom ("type" ,typ)
+
+    //         Bind.attr("value", formatted)
+
+    //         Ev.onFocus(fun e ->
+    //             let input = (e.target :?> Browser.Types.HTMLInputElement)
+
+    //             input.value <- formatted.Value
+
+    //             "" |> Store.set error 
+    //             if input.value <> Control.NOTSETVALUE then
+    //                 validate e |> ignore
+    //         )
+
+    //         Ev.onMount( fun e -> validate e |> ignore )
+
+    //         match setter with 
+    //         | Some f ->
+    //             Ev.onBlur (commit f)
+    //             Ev.onChange (fun (e : Browser.Types.Event) -> 
+    //                 if not (hasFocus e.target) then
+    //                     timeout 500 (fun _ -> commit f e) 
+    //             )
+    //             Ev.onInput (fun (e : Browser.Types.Event) -> 
+    //                 if not (hasFocus e.target) then
+    //                     timeout 500 (fun _ -> commit f e) 
+    //             )
+    //         | None ->
+    //             Attr.readOnly true
+    //             Ev.onInput( fun e -> validate e |> ignore)
+    //     ]
+
+    let mkInput attrs (f : Field<'t>) (error : IStore<string>) =
+        // let (typ: string) = builtIn |> string |> _.ToLower()
         let (setter: ('t -> unit) option) = f.Set
         let (format: 't -> string) = f.Format
-        let (parse: string -> Result<'t,string>) = f.Parse
+        let parse: (string -> Result<'t,string>) = f.Parse
 
         let timeout = SutilOxide.JsHelpers.createTimeout()
 
         let value = f.Value.AsSignal()
 
-        let formatted = value |> Signal.map (fun o -> o |> Option.map format |> Option.defaultValue Control.NOTSETVALUE)
+        let formatted = 
+            value |> Signal.map (fun o -> o |> Option.map format |> Option.defaultValue Control.NOTSETVALUE)
 
         let validate (e : Browser.Types.Event) =
             let input = (e.target :?> Browser.Types.HTMLInputElement)
             let result = 
+                Fable.Core.JS.console.log("Parsing: ", f.Label, input.value, JsHelpers.jsTypeOf(input.value) )
                 match input.value with
                 | Control.NOTSETVALUE -> Error "Value is not set"
                 | v -> v |> parse 
@@ -1040,8 +1139,6 @@ module Forms =
                 validate e |> Result.iter set
 
         Html.input [    
-            Attr.custom ("type" ,typ)
-
             Bind.attr("value", formatted)
 
             Ev.onFocus(fun e ->
@@ -1070,7 +1167,13 @@ module Forms =
             | None ->
                 Attr.readOnly true
                 Ev.onInput( fun e -> validate e |> ignore)
+        
+            yield! attrs
         ]
+
+    let internal editFieldInput (builtIn : BuiltInEditor) (f : Field<'t>) (error : IStore<string>) =
+        let typ : string = builtIn |> string |> _.ToLower()
+        mkInput [ Attr.custom("type", typ) ] f error
 
 //    open FrameworkTypes
 
@@ -1094,7 +1197,10 @@ module Forms =
     module FormExt =
 
         type Field<'T> with
-            member __.BuildMap( f : Core.SutilElement -> Core.SutilElement ) =
+            member __.BuildWith( editor : Field<'T> -> IStore<string> -> Core.SutilElement) =
+                FieldElement.Of( fun () -> withLabelError __ (editor __))
+
+            member __.BuildWithBuiltIn() =
                 let editor : (IStore<string> -> Core.SutilElement) =
                     match shortName(__.SystemTypeName) with
 
@@ -1119,7 +1225,8 @@ module Forms =
                         | FieldEditor.Ctor ctor ->
                             fun errors -> ctor(__,errors)
 
-                FieldElement.Of( fun () -> withLabelError __.Label editor |> f )
+                __.BuildWith( fun _ error -> editor error )
+                // FieldElement.Of( fun () -> withLabelError __ editor |> f )
 
             member __.Build() =
-                __.BuildMap id
+                __.BuildWithBuiltIn()
