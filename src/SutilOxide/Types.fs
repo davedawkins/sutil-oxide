@@ -163,6 +163,9 @@ type PaneOptions =
     | Label of string
     | Icon of string
     | LabelEl of SutilElement
+    | LabelTooltip of string
+    | HeaderTooltip of string
+    | Tooltip of string
     | CanClose of bool
     | CanFloat of bool
     | CanMove of bool
@@ -208,6 +211,7 @@ type DockPaneKey = Key of string
 type DockPane = 
     {
         Label : LabelElement
+        LabelTooltip : string option
         CanClose : bool
         CanFloat : bool
         CanMove : bool
@@ -216,6 +220,7 @@ type DockPane =
         Location : DockLocation
         Group : string
         Header : SutilElement
+        HeaderTooltip : string option
         Content : SutilElement
         IsOpen : bool
         OnClose : unit -> unit
@@ -236,11 +241,13 @@ type DockPane =
         {
             StrictKey = DockPaneKey.From(key)
             Label = LabelString (key |> StringHelpers.toCapWords)
+            LabelTooltip = None
             CanClose = false
             CanFloat = false
             CanMove = false
             Location = CentreLeft
             Header = text key
+            HeaderTooltip = None
             Content = Html.div key
             IsOpen = true
             OnClose = ignore
@@ -265,6 +272,9 @@ type DockPane =
             | IsOpen s -> { cfg with IsOpen = s }
             | OnClose s -> { cfg with OnClose = s }
             | OnShow s -> { cfg with OnShow = s }
+            | LabelTooltip s -> { cfg with LabelTooltip = Some s }
+            | HeaderTooltip s -> { cfg with HeaderTooltip = Some s }
+            | Tooltip s -> { cfg with HeaderTooltip = Some s; LabelTooltip = Some s }
 
         let init = (DockPane.Default(key))
         options |> List.fold withOpt init

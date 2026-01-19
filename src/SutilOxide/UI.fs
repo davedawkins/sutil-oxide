@@ -694,6 +694,8 @@ module Controller =
         | Group of string
         | Location of Common.DockLocation
         | TabText of Common.Text 
+        | TabTooltip of Common.Text 
+        | HeaderTooltip of Common.Text 
         | TabIcon of Common.Icon
         | TabElement of SutilElement
         | HeaderText of Common.Text
