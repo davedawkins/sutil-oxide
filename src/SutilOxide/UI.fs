@@ -708,6 +708,9 @@ module Controller =
     type IDockController =
         abstract CreatePane: paneKey:string * PaneOption list -> unit
         abstract ShowPane: paneKey:string -> unit
+        abstract HidePane: paneKey:string -> unit
+        abstract MinimizePane: paneKey:string -> unit
+        abstract ContainsPane: paneKey:string -> bool
         abstract RemovePane: paneKey: string -> unit
 
 module Forms =
@@ -1125,7 +1128,7 @@ module Forms =
         let validate (e : Browser.Types.Event) =
             let input = (e.target :?> Browser.Types.HTMLInputElement)
             let result = 
-                Fable.Core.JS.console.log("Parsing: ", f.Label, input.value, JsHelpers.jsTypeOf(input.value) )
+                // Fable.Core.JS.console.log("Parsing: ", f.Label, input.value, JsHelpers.jsTypeOf(input.value) )
                 match input.value with
                 | Control.NOTSETVALUE -> Error "Value is not set"
                 | v -> v |> parse 
