@@ -240,13 +240,16 @@ let css = [
         Css.displayFlex
         Css.flexDirectionColumn
         Css.gap (rem 0.2)
-        Css.fontSize (px 12)
+        // Css.fontSize (px 12)
     ]
 
     rule ".fx-entry" [
         Css.cursorPointer
         Css.padding (px 2)
         Css.paddingLeft (rem 0.5)
+        Css.displayFlex
+        Css.alignItemsCenter
+        Css.gap (rem 0.25)
     ]
 
     // rule ".file-explorer-entries .selected" [
