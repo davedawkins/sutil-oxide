@@ -175,12 +175,13 @@ type PaneOptions =
     | IsOpen of bool
     | OnClose of (unit -> unit)
     | OnShow of (bool -> unit)
+    | OnChildActivate of (string -> bool -> unit)
 
 module StringHelpers =
     open System
     open System.Text.RegularExpressions
 
-    let toClass( s : string ) = s.ToLower().Replace(" ", "-").Replace("_","-")
+    let toClass( s : string ) = s.ToLower().Replace(" ", "-").Replace("_","-").Replace(".","-")
 
     let toCapWords (input: string) =
         let spaced =
@@ -225,6 +226,7 @@ type DockPane =
         IsOpen : bool
         OnClose : unit -> unit
         OnShow : bool -> unit
+        OnChildActivate : string -> bool -> unit
     }
     member __.Key = __.StrictKey.ToString()
     member __.KeyAsClass = __.StrictKey.ToString()
@@ -249,11 +251,12 @@ type DockPane =
             Header = text key
             HeaderTooltip = None
             Content = Html.div key
-            IsOpen = true
+            IsOpen = false
             OnClose = ignore
             Icon = "fa-folder"
             OnShow = ignore
             Group = ""
+            OnChildActivate = fun _ _ -> ()
         }
         
     static member Create( key : string, options : PaneOptions list ) : DockPane =
@@ -271,6 +274,7 @@ type DockPane =
             | Header s -> { cfg with Header = s }
             | IsOpen s -> { cfg with IsOpen = s }
             | OnClose s -> { cfg with OnClose = s }
+            | OnChildActivate s -> { cfg with OnChildActivate = s }
             | OnShow s -> { cfg with OnShow = s }
             | LabelTooltip s -> { cfg with LabelTooltip = Some s }
             | HeaderTooltip s -> { cfg with HeaderTooltip = Some s }
