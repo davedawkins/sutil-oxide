@@ -115,7 +115,6 @@ module PromiseResult =
     let map (f : 'a -> 'b) (pr : PromiseResult<'a,string>) : PromiseResult<'b,string> =
         pr |> Promise.map (Result.map f)
 
-
     let liftBind (f : 'a -> PromiseResult<'b,string>) (r : Result<'a,string>) : PromiseResult<'b,string> =
         promise {
             return!
@@ -150,3 +149,7 @@ module PromiseResult =
         p |> Promise.bind (function
             | Ok v -> Promise.lift v
             | Error e -> Promise.reject (System.Exception e))
+        
+    
+    let Ok v = Result.Ok v |> Promise.lift
+    let Error e = Result.Error e |> Promise.lift
