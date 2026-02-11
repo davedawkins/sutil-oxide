@@ -441,6 +441,15 @@ module FileSystemExt =
         member __.Folders( path : string ) : AsyncPromise<string[]> =
             __.EntryNamesWhere(path, _.IsFolder )
 
+        member __.TryGetFileText( path : string ) =
+            promise {
+                let! c = __.GetContent( path )
+                match c with 
+                | Some (Content.Bytes data) -> return Ok(data |> JsHelpers.ByteArray.textDecode)
+                | None -> return Error (sprintf "File not found: %s" path)
+                | _ -> return Error (sprintf "Not a file: %s" path)
+            }
+
         member __.GetFileText(path : string) =
             promise {
                 let! c = __.GetContent( path )
@@ -463,25 +472,25 @@ module FileSystemExt =
         member __.GetFileContent(path : string) =
             __.GetFileText path
 
-        member __.TryGetFileBytes(path : string) =
-            promise {
-                let! f = __.IsFile(path)
-                if f then 
-                    let! data = __.GetFileBytes path
-                    return Some data
-                else
-                    return None
-            }
+        // member __.TryGetFileBytes(path : string) =
+        //     promise {
+        //         let! f = __.IsFile(path)
+        //         if f then 
+        //             let! data = __.GetFileBytes path
+        //             return Some data
+        //         else
+        //             return None
+        //     }
 
-        member __.TryGetFileText(path : string) =
-            promise {
-                let! f = __.IsFile(path)
-                if f then 
-                    let! text = __.GetFileText path
-                    return Some text
-                else
-                    return None
-            }
+        // member __.TryGetFileText(path : string) =
+        //     promise {
+        //         let! f = __.IsFile(path)
+        //         if f then 
+        //             let! text = __.GetFileText path
+        //             return Some text
+        //         else
+        //             return None
+        //     }
 
         member __.GetCreatedAt(path : string) =
             promise {
