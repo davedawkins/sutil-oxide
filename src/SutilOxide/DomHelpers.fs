@@ -105,9 +105,9 @@ module ResizeController =
                 let primaryButtonPressed = e.buttons = 1
 
                 if not primaryButtonPressed then
-                    let sz = int ((posOffset - pos xy e) * (float direction) + startSize)
-                    setSize xy panes sz
-                    commit sz // panes (int ((posOffset - pos e) * (float direction) + startSize))
+                    // let sz = int ((posOffset - pos xy e) * (float direction) + startSize)
+                    // setSize xy panes sz
+                    commit (getSize xy panes)
                     document.body.removeEventListener("pointermove", !!mouseDragHandler)
                     Toolbar.MenuMonitor.monitorAll()
                 else
@@ -118,10 +118,9 @@ module ResizeController =
 
     let prevSibling (e : HTMLElement) = e.previousElementSibling :?> HTMLElement
     let nextSibling (e : HTMLElement) = e.nextElementSibling :?> HTMLElement
+    let getPanes (e : HTMLElement) = prevSibling e, nextSibling e
 
     module PrevSibling =
-
-        let getPanes (e : HTMLElement) = prevSibling e, nextSibling e
 
         let resizeControllerEw (direction : int) commit =
             resizeController (fun e -> e.pageX) getPanes (fst>>getPaneWidth) (fst>>setPaneWidth) commit -direction
@@ -159,6 +158,15 @@ module ResizeController =
                 (fun xy (p1,p2) sz -> match xy with "x" -> setPaneWidth p1 sz |_ -> setPaneHeight p1 sz)
                 commit -direction
 
+    module NextSibling =
+
+        let resizeControllerFlexBasisXY (direction : int) (commit : float -> unit) =
+            resizeControllerXY
+                (fun xy e -> match xy with "x" -> e.pageX | _ -> e.pageY) 
+                getPanes
+                (fun xy (_,p2) -> match xy with "x" -> p2 |> getPaneWidth |_ -> p2 |> getPaneHeight)
+                (fun xy (_,p2) sz -> setPaneFlexBasis p2 sz)
+                commit direction
 
     module ParentPane =
 
