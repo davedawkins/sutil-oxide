@@ -79,28 +79,48 @@ module Internal =
             member this.Dispose() = this.Dispose()
             member this.Notify(v) = this.Notify(v)
 
-    type Cell<'T>(init:'T) =
+    type Cell<'T>(init: (unit -> 'T) option) =
         let disposeListeners = new ResizeArray<unit -> unit>()
         let clients = new EventSourceWithResult<'T,unit>()
-        let mutable value = init
+        
+        let mutable _value_initialized = false
+        let mutable _value = Unchecked.defaultof<'T> // init()
+
         let _set v = 
-            value <- v
-            clients.Notify(value)
+            _value <- v
+            _value_initialized <- true
+
+        let _set_notify v = 
+            _set v
+            clients.Notify(_value)
+            
+        let _init( assert_is_set : bool ) = 
+            if not _value_initialized then
+                match init with
+                | Some i -> _set(i())
+                | None -> if assert_is_set then failwithf "Cell read before initialized"
+        
+        let _get( assert_is_set : bool ) = 
+            _init assert_is_set
+            _value
 
         member _.Subscribe(handler) = 
             let unsub = clients.Subscribe(handler)
-            handler(value)
+
+            _init(false)
+            if _value_initialized then handler(_value)
+
             unsub
 
-        member _.Set(v) = _set(v)
-        member _.Value with get() = value
+        member _.Set(v) = _set_notify v
+        member _.Value with get() = _get(true)
 
         member _.OnDispose( f : unit -> unit ) =
             disposeListeners.Add(f)
 
         interface ICell<'T> with
-            member _.Value with get() = value 
-            member _.Set(v) = _set(v)
+            member _.Value with get() = _get(true) 
+            member __.Set(v) = __.Set(v)
             member _.Dispose() = 
                 clients.Dispose()
                 disposeListeners |> Seq.iter (fun f -> f())
@@ -108,7 +128,8 @@ module Internal =
 
         interface System.IObservable<'T> with
             member _.Subscribe( observer : System.IObserver<'T> ) =
-                observer.OnNext(value)
+                _init(false)
+                if _value_initialized then observer.OnNext(_value)
                 clients.Subscribe( fun v -> observer.OnNext(v) )
 
     type Promise<'T> = Fable.Core.JS.Promise<'T>
@@ -129,9 +150,27 @@ module Internal =
 
 [<RequireQualifiedAccess>]
 
+module private CellInternal =
+    let make<'T> (init : 'T) = new Internal.Cell<'T>(Some (fun () -> init))
+    let makef<'T> (init : unit -> 'T) = new Internal.Cell<'T>(Some init)
+    let makeu<'T> () = new Internal.Cell<'T>(None)
+
 module Cell =
     let set (cell : ICell<'a>) (v : 'a) = cell.Set v
-    let make<'a> (init : 'a) : ICell<'a> = new Internal.Cell<'a>(init)
+
+    let make<'T> (init : 'T) : ICell<'T> = CellInternal.make init 
+
+    let makef<'T> (init : unit -> 'T) : ICell<'T> = CellInternal.makef init
+
+    /// <summary>
+    /// Make with uninitialized value. 
+    /// Will throw if read before initialized.
+    /// Won't initialize new subscribers until initialized.
+    /// </summary>
+    let makeu<'T> () : ICell<'T> = CellInternal.makeu ()
+
+    let modify (f : 'T -> 'T) (cell : ICell<'T>) = cell.Value |> f |> cell.Set
+
 
 [<RequireQualifiedAccess>]
 module EventSource =
@@ -140,7 +179,7 @@ module EventSource =
 [<RequireQualifiedAccess>]
 module Signal =
 
-    let make (init : 'T) : ISignal<'T> = new Internal.Cell<_>(init)
+    let make (init : 'T) : ISignal<'T> = new Internal.Cell<_>(Some(fun () -> init))
 
     let fromObservable<'T> (init : 'T) (source:IObservable<'T>) : ISignal<'T> =
         let mutable value = init
@@ -171,13 +210,13 @@ module Signal =
         }
 
     let map (f : 'T -> 'U) (source : ISignal<'T>) : ISignal<'U> =
-        let cell = new Internal.Cell<'U>( f(source.Value) )
+        let cell = CellInternal.make( f(source.Value) )
         let unsub = source.Subscribe( fun v -> cell.Set(f v ) )
         cell.OnDispose(fun _ -> unsub.Dispose()) 
         cell
 
     let mapDistinct<'T,'U when 'U : equality> (f : 'T -> 'U) (source : ISignal<'T>) : ISignal<'U> =
-        let cell = new Internal.Cell<'U>( f(source.Value) )
+        let cell = CellInternal.make( f(source.Value) )
 
         let unsub = source.Subscribe( fun v -> 
             let u = f v
@@ -189,6 +228,100 @@ module Signal =
     let filter (f : 'T -> bool) (source : ISignal<'T>) : ISignal<'T option> =
         let fopt v = if f v then Some v else None
         source |> map fopt
+
+    let map2<'A, 'B, 'Res> (f: 'A -> 'B -> 'Res) (a: ISignal<'A>) (b: ISignal<'B>) : ISignal<'Res> =
+        let cell = CellInternal.make (f (a.Value) (b.Value) )
+        let unsub_a = a.Subscribe( fun v_a -> cell.Set(f v_a     b.Value ) )
+        let unsub_b = b.Subscribe( fun v_b -> cell.Set(f a.Value v_b ) )
+        cell.OnDispose(fun _ -> unsub_a.Dispose(); unsub_b.Dispose()) 
+        cell
+
+    let zip<'A,'B> (a:ISignal<'A>) (b:ISignal<'B>) : ISignal<'A*'B> =
+        map2<'A, 'B, 'A * 'B> (fun a b -> a, b) a b
+
+    type TraceEvent<'T> =
+        | Subscribed of int
+        | NotifyStarted of int * 'T * double 
+        | NotifyCompleted of int * 'T * double * double
+        | Unsubscribed of int
+
+    let trace<'T> (log: TraceEvent<'T> -> unit) (src : ISignal<'T>) : ISignal<'T> =
+        let mutable nextId = 0
+        { new ISignal<'T> with 
+            member __.Dispose() = src.Dispose()
+            member __.Value with get() = src.Value
+            member __.Subscribe (observer: IObserver<'T>): IDisposable = 
+
+                let clientId = nextId
+                nextId <- nextId
+
+                let dispose = src.Subscribe(
+                    { new IObserver<'T> with
+                        member __.OnCompleted (): unit = observer.OnCompleted()
+                        member __.OnError (error: exn): unit = observer.OnError(error)
+                        member __.OnNext (value: 'T): unit = 
+                            let started = JsHelpers.performanceNow()
+                            try
+                                log (NotifyStarted (clientId, value, started))
+                                observer.OnNext(value)
+                            with
+                            | x ->
+                                observer.OnError(x)
+                            let completed = JsHelpers.performanceNow()
+                            log (NotifyCompleted (clientId, value, started, completed))
+                    })
+                
+                log (Subscribed clientId)
+                { new IDisposable with
+                    member __.Dispose() = 
+                        dispose.Dispose()
+                        log (Unsubscribed clientId)
+                }
+        }
+
+
+
+module Observable =
+    let trace<'T> (log: Signal.TraceEvent<'T> -> unit) (src : System.IObservable<'T>) : IObservable<'T> =
+        let mutable nextId = 0
+        { new IObservable<'T> with 
+            member __.Subscribe (observer: IObserver<'T>): IDisposable = 
+
+                let clientId = nextId
+                nextId <- nextId
+
+                let dispose = src.Subscribe(
+                    { new IObserver<'T> with
+                        member __.OnCompleted (): unit = observer.OnCompleted()
+                        member __.OnError (error: exn): unit = observer.OnError(error)
+                        member __.OnNext (value: 'T): unit = 
+                            let started = JsHelpers.performanceNow()
+                            try
+                                log (Signal.NotifyStarted (clientId, value, started))
+                                observer.OnNext(value)
+                            with
+                            | x ->
+                                observer.OnError(x)
+                            let completed = JsHelpers.performanceNow()
+                            log (Signal.NotifyCompleted (clientId, value, started, completed))
+                    })
+                
+                log (Signal.Subscribed clientId)
+                { new IDisposable with
+                    member __.Dispose() = 
+                        dispose.Dispose()
+                        log (Signal.Unsubscribed clientId)
+                }
+        }
+
+
+module SignalOperators =
+    let (.>) s f = Signal.map f s
+
+    /// <summary>
+    /// Alias for <c>Store.mapDistinct</c>
+    /// </summary>
+    let (.>>) s f = Signal.mapDistinct f s
 
 [<AutoOpen>]
 module ReactiveEx =
