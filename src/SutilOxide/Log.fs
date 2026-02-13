@@ -23,16 +23,16 @@ let Console =
 
 let mutable private sources : Map<string,bool> = 
     [
-        "Dom", true
+        // "Dom", true
     ] |> Map
 
 let mutable private categories : Map<string,bool> = 
     [
-        "Trace", true
+        "Trace", false
     ] |> Map
 
 let sourceIsEnabled src = not (sources.ContainsKey src) || sources[src]
-let categoryIsEnabled src = not (categories.ContainsKey src) || categories[src]
+let categoryIsEnabled (src : string)= let lc = src.ToLower() in not (categories.ContainsKey lc) || categories[lc]
 
 type LogCategory =
     | Info 
@@ -40,17 +40,12 @@ type LogCategory =
     | Error 
     | Warning
     | Trace
-    | Custom of string
     with    
-        override __.ToString() =
-            match __ with
-            | Info -> "Info"
-            | Debug -> "Debug"
-            | Error -> "Error"
-            | Trace -> "Trace"
-            | Warning -> "Warning"
-            | Custom c -> c
+        static member All = [ Info; Debug; Error; Warning; Trace ]
 
+let isCategory (c : string) =
+    let all = LogCategory.All |> List.map (_.ToString()>>_.ToLower()) |> Set
+    all.Contains(c.ToLower())
 
 let mutable private  _idCounter = 0
 let private nextId() =
@@ -116,7 +111,7 @@ let enableSource (source : string) (enabled : bool) =
     sources <- sources.Add(source, enabled)
 
 let enableCategory (cat : string) (enabled : bool) =
-    categories <- categories.Add(cat, enabled)
+    categories <- categories.Add(cat.ToLower(), enabled)
 
 let logmessage (m : LogMessage) =
     if categoryIsEnabled m.Category && sourceIsEnabled m.Source then
