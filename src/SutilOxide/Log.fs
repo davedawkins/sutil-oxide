@@ -9,6 +9,7 @@ let _console_log : obj = jsNative
 type ILog =
     abstract group: message:string -> unit
     abstract groupEnd: unit -> unit
+    abstract logbase : string * string * string * obj -> unit
     abstract log: ?message: obj * [<System.ParamArray>] optionalParams: obj[] -> unit
     abstract trace: ?message: obj * [<System.ParamArray>] optionalParams: obj[] -> unit
     abstract error: ?message: obj * [<System.ParamArray>] optionalParams: obj[] -> unit
@@ -140,22 +141,27 @@ let listen ( cb : LogMessage -> unit ) =
 let inline private  fmt msg args =
     ( args |> Array.append [| msg :> obj |] |> Array.map string |> String.concat " " )
 
-let createWith logm (source : string) =
+let createWith (baselog : string -> string -> string -> obj -> unit) (source : string) =
     {
         new ILog with
+
+            member _.logbase( src : string, cat : string, msg : string, ctx : obj ) : unit = baselog src cat msg ctx
+
             member _.group(label : string) = 
                 startGroup( source + ": " + label)
             member _.groupEnd() = endGroup()
+
             member _.log( arg0, argsN ) =
-                logm source "Trace" (fmt arg0 argsN) null
+                baselog source "Trace" (fmt arg0 argsN) null
+
             member _.trace( arg0, argsN ) =
-                logm source "Trace" (fmt arg0 argsN) null
+                baselog source "Trace" (fmt arg0 argsN) null
             member _.error( arg0, argsN ) =
-                logm source "Error" (fmt arg0 argsN) null
+                baselog source "Error" (fmt arg0 argsN) null
             member _.warning( arg0, argsN ) =
-                logm source "Warning" (fmt arg0 argsN) null
+                baselog source "Warning" (fmt arg0 argsN) null
             member _.info( arg0, argsN ) =
-                logm source "Info" (fmt arg0 argsN) null
+                baselog source "Info" (fmt arg0 argsN) null
             member _.console( arg0, argsN ) =
                 Fable.Core.JS.console.log( source, argsN |> Array.append [| arg0 :> obj |] )
     }
