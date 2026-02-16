@@ -48,6 +48,9 @@ let jsEmptyObject : obj= jsNative
 [<Emit("typeof($0)")>]
 let jsTypeOf(x : obj) : string = jsNative
 
+[<Emit("Array.isArray($0)")>]
+let jsIsArray(x : obj) : bool = jsNative
+
 [<Emit("Object.assign($0, $1)")>]
 let jsObjectAssign(target : 'a, source : 'b) : 'c = jsNative
 
