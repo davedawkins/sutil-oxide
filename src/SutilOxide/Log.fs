@@ -3,7 +3,7 @@ module SutilOxide.Log
 open Fable.Core
 open SutilOxide.Reactive
 
-[<Emit("window.console.log")>]
+[<Emit("console.log")>]
 let _console_log : obj = jsNative
 
 type ILog =
