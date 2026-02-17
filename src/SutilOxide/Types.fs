@@ -166,6 +166,7 @@ type PaneOptions =
     | LabelTooltip of string
     | HeaderTooltip of string
     | Tooltip of string
+    | CanMinimize of bool
     | CanClose of bool
     | CanFloat of bool
     | CanMove of bool
@@ -173,7 +174,9 @@ type PaneOptions =
     | Header of SutilElement
     | Content of SutilElement
     | IsOpen of bool
+    | IsMinimized of bool
     | OnClose of (unit -> unit)
+    | OnMinimize of (unit -> unit)
     | OnShow of (bool -> unit)
     | OnChildActivate of (string -> bool -> unit)
 
@@ -214,6 +217,7 @@ type DockPane =
         Label : LabelElement
         LabelTooltip : string option
         CanClose : bool
+        CanMinimize : bool
         CanFloat : bool
         CanMove : bool
         StrictKey : DockPaneKey
@@ -224,7 +228,9 @@ type DockPane =
         HeaderTooltip : string option
         Content : SutilElement
         IsOpen : bool
+        IsMinimized : bool
         OnClose : unit -> unit
+        OnMinimize : unit -> unit
         OnShow : bool -> unit
         OnChildActivate : string -> bool -> unit
     }
@@ -245,6 +251,7 @@ type DockPane =
             Label = LabelString (key |> StringHelpers.toCapWords)
             LabelTooltip = None
             CanClose = false
+            CanMinimize = false
             CanFloat = false
             CanMove = false
             Location = CentreLeft
@@ -252,7 +259,9 @@ type DockPane =
             HeaderTooltip = None
             Content = Html.div key
             IsOpen = false
+            IsMinimized = false
             OnClose = ignore
+            OnMinimize = ignore
             Icon = "fa-folder"
             OnShow = ignore
             Group = ""
@@ -267,13 +276,16 @@ type DockPane =
             | Icon s -> { cfg with Icon = s }
             | Group s -> { cfg with Group = s }
             | CanClose s -> { cfg with CanClose = s }
+            | CanMinimize s -> { cfg with CanMinimize = s }
             | CanFloat s -> { cfg with CanFloat = s }
             | CanMove s -> { cfg with CanMove = s }
             | Location s -> { cfg with Location = s }
             | Content s -> { cfg with Content = s }
             | Header s -> { cfg with Header = s }
             | IsOpen s -> { cfg with IsOpen = s }
+            | IsMinimized s -> { cfg with IsMinimized = s }
             | OnClose s -> { cfg with OnClose = s }
+            | OnMinimize s -> { cfg with OnMinimize = s }
             | OnChildActivate s -> { cfg with OnChildActivate = s }
             | OnShow s -> { cfg with OnShow = s }
             | LabelTooltip s -> { cfg with LabelTooltip = Some s }
