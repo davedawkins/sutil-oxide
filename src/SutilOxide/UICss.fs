@@ -61,7 +61,7 @@ let style = [
         Css.borderRadius (px 3)
         Css.custom("transition", "background-color 100ms ease-in-out")
         Css.whiteSpaceNowrap
-        Css.custom ("pointer-events", "none")
+        // Css.custom ("pointer-events", "none")
         Css.userSelectNone
     ]
 

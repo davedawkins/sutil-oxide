@@ -174,6 +174,7 @@ type PaneOptions =
     | Header of SutilElement
     | Content of SutilElement
     | IsOpen of bool
+    | IsExclusive of bool
     | IsMinimized of bool
     | OnClose of (unit -> unit)
     | OnMinimize of (unit -> unit)
@@ -227,6 +228,7 @@ type DockPane =
         Header : SutilElement
         HeaderTooltip : string option
         Content : SutilElement
+        IsExclusive : bool
         IsOpen : bool
         IsMinimized : bool
         OnClose : unit -> unit
@@ -259,6 +261,7 @@ type DockPane =
             HeaderTooltip = None
             Content = Html.div key
             IsOpen = false
+            IsExclusive = false
             IsMinimized = false
             OnClose = ignore
             OnMinimize = ignore
@@ -283,6 +286,7 @@ type DockPane =
             | Content s -> { cfg with Content = s }
             | Header s -> { cfg with Header = s }
             | IsOpen s -> { cfg with IsOpen = s }
+            | IsExclusive s -> { cfg with IsExclusive = s }
             | IsMinimized s -> { cfg with IsMinimized = s }
             | OnClose s -> { cfg with OnClose = s }
             | OnMinimize s -> { cfg with OnMinimize = s }

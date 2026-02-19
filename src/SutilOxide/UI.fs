@@ -14,6 +14,65 @@ module Helpers =
             let v = input.value //store the value of the element
             input.setSelectionRange(v.Length, v.Length))
 
+[<AutoOpen>]
+module Aria =
+    open Fable.Core
+
+    [<StringEnum; RequireQualifiedAccess>]
+    type AriaRole =
+        | [<CompiledName("alert")>] Alert
+        | [<CompiledName("alertdialog")>] AlertDialog
+        | [<CompiledName("application")>] Application
+        | [<CompiledName("article")>] Article
+        | [<CompiledName("banner")>] Banner
+        | [<CompiledName("button")>] Button
+        | [<CompiledName("checkbox")>] Checkbox
+        | [<CompiledName("combobox")>] Combobox
+        | [<CompiledName("complementary")>] Complementary
+        | [<CompiledName("contentinfo")>] ContentInfo
+        | [<CompiledName("dialog")>] Dialog
+        | [<CompiledName("document")>] Document
+        | [<CompiledName("feed")>] Feed
+        | [<CompiledName("form")>] Form
+        | [<CompiledName("grid")>] Grid
+        | [<CompiledName("group")>] Group
+        | [<CompiledName("heading")>] Heading
+        | [<CompiledName("img")>] Img
+        | [<CompiledName("label")>] Label
+        | [<CompiledName("link")>] Link
+        | [<CompiledName("list")>] List
+        | [<CompiledName("listbox")>] ListBox
+        | [<CompiledName("listitem")>] ListItem
+        | [<CompiledName("log")>] Log
+        | [<CompiledName("main")>] Main
+        | [<CompiledName("menu")>] Menu
+        | [<CompiledName("menubar")>] MenuBar
+        | [<CompiledName("menuitem")>] MenuItem
+        | [<CompiledName("navigation")>] Navigation
+        | [<CompiledName("none")>] None
+        | [<CompiledName("option")>] Option
+        | [<CompiledName("presentation")>] Presentation
+        | [<CompiledName("progressbar")>] ProgressBar
+        | [<CompiledName("radio")>] Radio
+        | [<CompiledName("radiogroup")>] RadioGroup
+        | [<CompiledName("region")>] Region
+        | [<CompiledName("row")>] Row
+        | [<CompiledName("search")>] Search
+        | [<CompiledName("searchbox")>] SearchBox
+        | [<CompiledName("separator")>] Separator
+        | [<CompiledName("slider")>] Slider
+        | [<CompiledName("spinbutton")>] SpinButton
+        | [<CompiledName("status")>] Status
+        | [<CompiledName("switch")>] Switch
+        | [<CompiledName("tab")>] Tab
+        | [<CompiledName("table")>] Table
+        | [<CompiledName("tablist")>] TabList
+        | [<CompiledName("tabpanel")>] TabPanel
+        | [<CompiledName("textbox")>] TextBox
+        | [<CompiledName("timer")>] Timer
+        | [<CompiledName("toolbar")>] ToolBar
+        | [<CompiledName("tooltip")>] Tooltip
+
 module Common = 
     open Reactive
 
@@ -246,13 +305,62 @@ module Control =
 
     let [<Literal>] NOTSETVALUE = "----"
 
+    let controlClasses (iconOnly: bool) =
+        [ "theme-tool-control"; "ui-control"; if iconOnly then "ui-icon-only" ] 
+
+
+    let textValueToElement textValue (text : string -> Core.SutilElement) =
+        match textValue with
+        | Value.Const s -> text s
+        | Value.Getter g -> text (g() |> Option.defaultValue NOTSETVALUE)
+        | Value.Signal o ->
+            Bind.el( o, fun optS -> text (optS |> Option.defaultValue NOTSETVALUE ))    
+
+    let renderIconLabel (itemIcon : Icon option) (itemText : Text option) =
+        [|
+            match itemIcon with
+            | Some (FaIcon (Value.Const fa)) -> 
+                ToolHtml.icon fa [ ]
+            | Some (FaIcon (Value.Getter fa)) -> 
+                ToolHtml.icon (fa() |> Option.defaultValue "x") [ ] 
+            | Some (FaIcon (Value.Signal fas)) -> 
+                Html.i [
+                    Bind.className( fas .> (fun optIcon -> "theme-tool-icon fa-fw " + match optIcon with Some ic -> Icon.makeFa(ic) | None -> Icon.makeFa("x")))
+                ]
+            | _ -> () 
+
+            match itemText with
+            | Some (PlainText textValue) -> 
+                textValueToElement textValue text
+            | _ -> ()
+        |]
+
+    let renderLabelledControlElement 
+            (key : string) 
+            (cls : string)
+            (icon : Icon option) 
+            (label : Text option) 
+            // (role : AriaRole) 
+            (controlElement : Core.SutilElement ) : Core.SutilElement =
+
+        Html.divc ([cls; yield! controlClasses(false) ] |> ToolInternal.makeClass) [
+            Attr.tabIndex 0
+            // Attr.role (role.ToString())
+            attrDataCmd key
+            Html.label [
+                Attr.for' key
+                yield! renderIconLabel icon label
+            ]
+            controlElement// |> CoreElements.inject [ Attr.id key ]
+        ]
+
     let rec renderControlWithParent (parent : Control option) (item : Control) =
         let iconOnly =
             item.Icon.IsSome && item.Text.IsNone
 
         let makeControlCheck (onCheck, value : Value<bool>) =
             let checkedS : IStore<bool option> = value.AsStore()
-            [
+            Html.div [
                 Attr.roleCheckbox
                 Bind.attr( "aria-checked", checkedS .>> string )
                 disposeOnUnmount [ checkedS ]
@@ -269,40 +377,9 @@ module Control =
                 )
             ]
 
-        let textValueToElement (textValue) (text : string -> Core.SutilElement) =
-            match textValue with
-            | Value.Const s -> text s
-            | Value.Getter g -> text (g() |> Option.defaultValue NOTSETVALUE)
-            | Value.Signal o ->
-                Bind.el( o, fun optS -> text (optS |> Option.defaultValue NOTSETVALUE ))    
+        let iconLabel = lazy renderIconLabel item.Icon item.Text
 
-
-        let iconLabel = 
-            [|
-                match item.Icon with
-                | Some (FaIcon (Value.Const fa)) -> 
-                    ToolHtml.icon fa [ ]
-                | Some (FaIcon (Value.Getter fa)) -> 
-                    ToolHtml.icon (fa() |> Option.defaultValue "x") [ ] 
-                | Some (FaIcon (Value.Signal fas)) -> 
-                    Html.i [
-                        Bind.className( fas .> (fun optIcon -> "theme-tool-icon fa-fw " + match optIcon with Some ic -> Icon.makeFa(ic) | None -> Icon.makeFa("x")))
-                    ]
-                | _ -> () 
-
-                match item.Text with
-                | Some (PlainText textValue) -> 
-                    textValueToElement textValue text
-                    // match textValue with
-                    // | Value.Const s -> text s
-                    // | Value.Getter g -> text (g() |> Option.defaultValue NOTSETVALUE)
-                    // | Value.Signal o ->
-                    //     Bind.el( o, fun optS -> text (optS |> Option.defaultValue NOTSETVALUE ))
-                | _ -> ()
-            |]
-
-        let controlClasses = 
-            [ "theme-tool-control"; "ui-control"; if iconOnly then "ui-icon-only" ] 
+        let controlClass = controlClasses iconOnly |> ToolInternal.makeClass
 
         // Html.divc ([ "theme-tool-control"; "ui-control"; if iconOnly then "ui-icon-only" ] |> ToolInternal.makeClass) [
         //     Attr.tabIndex 0
@@ -310,44 +387,48 @@ module Control =
             // yield!
         match item.Type with
 
-        | ControlLabel -> Html.divc (controlClasses |> ToolInternal.makeClass) iconLabel
+        | ControlLabel -> Html.divc controlClass iconLabel.Value
         | ControlTextField (_, value) ->
-            Html.divc (controlClasses |> ToolInternal.makeClass) [
-                Html.label [
-                    yield! iconLabel
-                ]
-                textValueToElement value Html.span
-            ]
+            renderLabelledControlElement "" item.Key item.Icon item.Text (Html.span [ Attr.role "label"; (textValueToElement value Html.span) ])
+            // Html.divc (controlClass) [
+                // Html.label [
+                    // yield! iconLabel.Value
+                // ]
+                // textValueToElement value Html.span
+            // ]
 
         | ControlCustom el -> el
 
         | ControlCheck (cb, value) ->
-            Html.divc (controlClasses |> ToolInternal.makeClass) [ 
-                Attr.tabIndex 0
-                yield! makeControlCheck (cb,value)
-                yield! iconLabel
-            ]
+            renderLabelledControlElement "ui-check" item.Key item.Icon item.Text (makeControlCheck (cb,value))
+            // Html.divc (controlClass) [ 
+                // Attr.tabIndex 0
+                // makeControlCheck (cb,value)
+                // yield! iconLabel.Value
+            // ]
 
         | ControlButton onClick -> 
-            Html.buttonc (controlClasses |> ToolInternal.makeClass) [
+            Html.buttonc (controlClass) [
+                Attr.id (item.Key)
                 Attr.tabIndex 0
                 Attr.roleButton
                 attrDataCmd (item.Key)
                 
-                yield! iconLabel
+                yield! iconLabel.Value
 
                 Ev.onClick (fun _ -> onClick()) 
             ]
 
         | ControlMenu items ->
             let itemStore : IStore<Control list> = Store.make []
-            Html.divc ([ yield! controlClasses; "flex items-center justify-between" ] |> ToolInternal.makeClass) [
+            Html.divc ([ controlClass; "flex items-center justify-between" ] |> ToolInternal.makeClass) [
+                Attr.id (item.Key)
                 Attr.tabIndex 0
                 Attr.roleMenu
                 attrDataCmd (item.Key)
                 
                 Html.span [
-                    yield! iconLabel
+                    yield! iconLabel.Value
                 ]
                 ToolHtml.icon "angle-down" [ ]
 
@@ -379,12 +460,12 @@ module Control =
 
             let itemStore : IStore<Control list> = Store.make []
 
-            Html.divc (controlClasses |> ToolInternal.makeClass) [ 
+            Html.divc (controlClass) [ 
                 Attr.tabIndex 0
                 Attr.roleListBox
 
                 Html.label [
-                    yield! iconLabel
+                    yield! iconLabel.Value
                 ]
 
                 Html.divc "ui-select" [
@@ -786,6 +867,8 @@ module Forms =
             Format: 'T -> string
             Set: ('T -> unit) option
             Value: Value<'T>
+            Enabled: Value<bool>
+            Tooltip: Value<string>
             AllowedValues: (unit -> string[]) option
             Step : float
             SystemTypeName : string
@@ -801,6 +884,8 @@ module Forms =
                     AllowedValues = None
                     Set = None
                     Step = 1.0
+                    Enabled = Value.Const true
+                    Tooltip = Value.Const ""
                     Value = Value.Const Unchecked.defaultof<'T> } : Field<'T>
 
         /// Map system types to input type
@@ -861,6 +946,8 @@ module Forms =
         member __.WithFormat( f : 'T -> string ) : Field<'T> = { __ with Format = f }
         member __.WithSet( s : 'T -> unit ) : Field<'T> = { __ with Set = Some s }
         member __.WithValue( v : Value<'T> ) : Field<'T> = { __ with Value = v }
+        member __.WithEnabled( v : Value<bool> ) : Field<'T> = { __ with Enabled = v }
+        member __.WithTooltip( v : Value<string> ) : Field<'T> = { __ with Tooltip = v }
         member __.WithGet( g : unit -> 'T ) : Field<'T> = { __ with Value = Value.Getter (g>>Some) }
 
         member __.WithAllowedValues( vals : unit -> string[] ) : Field<'T> = 
@@ -896,7 +983,7 @@ module Forms =
         ]
 
         rule ".ui-field label" [
-            Css.flexBasis (px 115)
+            Css.flexBasis (rem 10)
             Css.flexShrink 0
             // Css.fontWeightBold
         ]
@@ -964,8 +1051,10 @@ module Forms =
 
     let internal withLabelError (field: Field<_>) (editor: IStore<string> -> Core.SutilElement) =
         let error = Store.make ""
+        let enabled = field.Enabled.AsSignal()
 
         Html.divc "ui-field" [
+            Bind.toggleClass( enabled .>> ((Option.defaultValue false)>>not), "disabled")
             CoreElements.disposeOnUnmount [ error ]
             Html.label [
                 text (field.Label)
@@ -1022,8 +1111,10 @@ module Forms =
     let internal editFieldCheckbox (field : Field<bool>) (error : IStore<string>) =
 
         let value = field.Value.AsSignal()
+        let enabled = field.Enabled.AsSignal()
 
-        Html.input [    
+        Html.input [
+            Bind.booleanAttr( "disabled",  enabled .>> (Option.defaultValue false>>not) )
             Attr.typeCheckbox
             Bind.attr( "checked", value )
             // Attr.isChecked (field.Get())   
