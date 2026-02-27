@@ -26,7 +26,16 @@ module ResizeController =
         el.style.flexBasis <- $"{w}px"
 
     let getPaneWidth (el : HTMLElement) =
-        (window.getComputedStyle el).width[..(-3)] |> System.Double.Parse |> int
+        let widthStr = (window.getComputedStyle el).width
+        try
+            if widthStr = "auto" then // Probably hidden
+                el.clientWidth |> int
+            else
+                widthStr[..(-3)] |> System.Double.Parse |> int
+        with
+        | x ->
+            Fable.Core.JS.console.error( sprintf "Could not parse width: '%s'" widthStr, el )
+            el.clientWidth |> int
 
     let setPaneWidth (el : HTMLElement) (w : int) =
         el.style.width <- $"{w}px"
