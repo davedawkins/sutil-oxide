@@ -149,8 +149,7 @@ module Internal =
                 (allPromises |> Promise.all).``then``(ignore)
 
 [<RequireQualifiedAccess>]
-
-module private CellInternal =
+module CellInternal =
     let make<'T> (init : 'T) = new Internal.Cell<'T>(Some (fun () -> init))
     let makef<'T> (init : unit -> 'T) = new Internal.Cell<'T>(Some init)
     let makeu<'T> () = new Internal.Cell<'T>(None)
