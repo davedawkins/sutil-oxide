@@ -315,6 +315,16 @@ module Path =
     let getFileName path = getFileNameWithExt path
     let getFileNameWithExt path = getFileNameWithExt path
     let getFileNameNoExt path = getFileNameNoExt path
+    
+    let getFirstFolder( path : string ) : string =
+        Internal.parsePath path |> Array.head
+
+    let stripTrailingSlash (path : string) = path.TrimEnd([| '/'; '\\' |] )
+    let stripLeadingSlash (path : string) = path.TrimStart([| '/'; '\\' |] )
+
+    let getRelativePath (parent : string) (path : string) =
+        if path.StartsWith parent then path.Substring( 0, parent.Length ) |> stripTrailingSlash else path
+
     let getExtension (path : string) =
         let fileName = getFileNameWithExt path
         let p = fileName.LastIndexOf('.')
@@ -385,7 +395,7 @@ module FileSystemExt =
                 return e |> Option.map (fun e -> e.Meta.EntryType = EntryType.Folder) |> Option.defaultValue false
             }
 
-        member private __.EntryNamesWhere( path : string, pred : Entry -> bool ) : AsyncPromise<string[]> =
+        member __.GetEntries( path : string ) : AsyncPromise<Entry[]> =
             let _path = path
             promise {
                 let! e = __.GetEntry(path)
@@ -394,12 +404,29 @@ module FileSystemExt =
                     let! c = __.GetContent(path)
                     match c with
                     | Some (Content.Entries entries) ->
-                        return entries |> Array.filter pred |> Array.map _.Name
+                        return entries
                     | _ -> 
                         return failwithf "Internal error: Not a folder: %s" path
                 | x ->
                     return failwithf "Not a folder: '%s' '%s' (%A)" _path path x
             }
+
+        member private __.EntryNamesWhere( path : string, pred : Entry -> bool ) : AsyncPromise<string[]> =
+            __.GetEntries path |> Promise.map(Array.filter pred>>Array.map _.Name)
+            // let _path = path
+            // promise {
+            //     let! e = __.GetEntry(path)
+            //     match e with
+            //     | Some entry when entry.Meta.EntryType = EntryType.Folder ->
+            //         let! c = __.GetContent(path)
+            //         match c with
+            //         | Some (Content.Entries entries) ->
+            //             return entries |> Array.filter pred |> Array.map _.Name
+            //         | _ -> 
+            //             return failwithf "Internal error: Not a folder: %s" path
+            //     | x ->
+            //         return failwithf "Not a folder: '%s' '%s' (%A)" _path path x
+            // }
 
         member __.EntryNames( path : string ) : AsyncPromise<string[]> =
             promise {

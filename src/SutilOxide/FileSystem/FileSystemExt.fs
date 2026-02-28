@@ -164,18 +164,35 @@ module Extensions =
                     return nestedResults |> Array.collect id
             }
 
-        member __.Entries (path : string) : Promise<string []> =
+
+        // member __.Entries (path : string) : Promise<string []> =
+        //     promise {
+        //         let! isFolderPath = __.IsFolder path
+        //         if not isFolderPath then
+        //             return Array.empty
+        //         else
+        //             let! folders = __.Folders path
+        //             let! files = __.Files path
+
+        //             return
+        //                 files
+        //                 |> Array.append folders
+        //     }
+
+        member __.EntriesRecursive (path : string) : Promise<Entry []> =
             promise {
                 let! isFolderPath = __.IsFolder path
                 if not isFolderPath then
                     return Array.empty
                 else
-                    let! folders = __.Folders path
-                    let! files = __.Files path
+                    let! entries = __.GetEntries path
+                    let! nestedResults =
+                        entries
+                        |> Array.map (fun entry -> { entry with Name = Path.combine path entry.Name })
+                        |> Array.map (fun entry -> __.EntriesRecursive entry.Name |> Promise.map(Array.append [|entry|]) )
+                        |> Promise.all
 
-                    return
-                        files
-                        |> Array.append folders
+                    return nestedResults |> Array.collect id
             }
 
         member __.FilesRecursive (path : string) : Promise<string []> =
