@@ -468,6 +468,15 @@ module FileSystemExt =
         member __.Folders( path : string ) : AsyncPromise<string[]> =
             __.EntryNamesWhere(path, _.IsFolder )
 
+        member __.TryGetFileBytes( path : string ) =
+            promise {
+                let! c = __.GetContent( path )
+                match c with 
+                | Some (Content.Bytes data) -> return Ok data
+                | None -> return Error (sprintf "File not found: %s" path)
+                | _ -> return Error (sprintf "Not a file: %s" path)
+            }
+
         member __.TryGetFileText( path : string ) =
             promise {
                 let! c = __.GetContent( path )
