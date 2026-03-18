@@ -90,6 +90,12 @@ module Common =
             | Value.Getter g -> Signal.make (g())
             | Value.Signal o -> o
 
+        member __.AsSignalDefault( defaultValue ) =
+            match __ with
+            | Value.Const v  -> Signal.make (v)
+            | Value.Getter g -> Signal.make (g() |> Option.defaultValue defaultValue)
+            | Value.Signal o -> o |> Signal.map (Option.defaultValue defaultValue)
+
         member __.AsStore() =
             match __ with
             | Value.Const v  -> Store.make (Some v)
