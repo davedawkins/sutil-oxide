@@ -212,6 +212,11 @@ module ToolHtml =
     let icon iconName (options : ToolOption seq) = 
         icon_themed iconName options
 
+module Tooltip =
+    let mutable tooltip : Value<string> -> Core.SutilElement seq = fun string -> []
+
+    let registerHandler f = tooltip <- f
+
 
 module Control =
     open Sutil.CoreElements
@@ -1072,6 +1077,9 @@ module Forms =
                     editor error
                 Bind.el( error, fun e -> Html.spanc "error text-destructive" [ text e ] )
             ]
+
+            if (field.Tooltip |> function Value.Const "" -> false | _ -> true) then
+                yield! Tooltip.tooltip field.Tooltip
         ] 
 
     let internal editFieldSelect (f : Field<'t>) (error : IStore<string>) =
