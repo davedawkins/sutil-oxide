@@ -103,6 +103,7 @@ type LogMessage =
 
 let private statusCell : Reactive.ICell<string> = Reactive.Cell.make("")
 let statusSignal : Reactive.ISignal<string> = statusCell
+let clearStatus() = statusCell.Set("")
 
 let mutable private logListeners : IEventSource<LogMessage> = EventSource.make()
 
