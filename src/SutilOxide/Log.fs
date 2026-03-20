@@ -16,6 +16,12 @@ type ILog =
     abstract warning: ?message: obj * [<System.ParamArray>] optionalParams: obj[] -> unit
     abstract info: ?message: obj * [<System.ParamArray>] optionalParams: obj[] -> unit
     abstract console: ?message: obj * [<System.ParamArray>] optionalParams: obj[] -> unit
+    abstract status: message:string -> unit
+
+[<AutoOpen>]
+module ILogExtensions =
+    type ILog with
+        member inline this.statusf fmt = Printf.kprintf this.status fmt
 
 let Console = 
     {|
@@ -41,8 +47,9 @@ type LogCategory =
     | Error 
     | Warning
     | Trace
+    | Status
     with    
-        static member All = [ Info; Debug; Error; Warning; Trace ]
+        static member All = [ Info; Debug; Error; Warning; Trace; Status ]
 
 let isCategory (c : string) =
     let all = LogCategory.All |> List.map (_.ToString()>>_.ToLower()) |> Set
@@ -93,6 +100,9 @@ type LogMessage =
             Context = if ctx <> null then Some ctx else None
             Time = System.DateTime.Now
         }
+
+let private statusCell : Reactive.ICell<string> = Reactive.Cell.make("")
+let statusSignal : Reactive.ISignal<string> = statusCell
 
 let mutable private logListeners : IEventSource<LogMessage> = EventSource.make()
 
@@ -164,6 +174,9 @@ let createWith (baselog : string -> string -> string -> obj -> unit) (source : s
                 baselog source "Info" (fmt arg0 argsN) null
             member _.console( arg0, argsN ) =
                 Fable.Core.JS.console.log( source, argsN |> Array.append [| arg0 :> obj |] )
+            member _.status( msg ) =
+                baselog source "Status" msg null
+                statusCell.Set(msg)
     }
     
 let create (source : string) =
