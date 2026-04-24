@@ -182,12 +182,12 @@ module Signal =
 
     let fromObservable<'T> (init : 'T) (source:IObservable<'T>) : ISignal<'T> =
         let mutable value = init
+        let dispose0 = source.Subscribe( fun next -> value <- next )
         { new ISignal<'T> with
             member _.Value = value
-            member _.Dispose() = ()
+            member _.Dispose() = dispose0.Dispose()
             member _.Subscribe( h : IObserver<'T> ) =
                 let dispose = source.Subscribe( fun next ->
-                    value <- next
                     h.OnNext next
                 )
                 h.OnNext value

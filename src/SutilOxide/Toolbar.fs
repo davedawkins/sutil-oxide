@@ -30,6 +30,7 @@ type ButtonProperty =
     | Mode of ButtonMode
     | Label of string
     | Icon of string
+    | Tooltip of string
     | OnClick of (Browser.Types.MouseEvent -> unit)
     | OnCheckChanged of (bool -> unit)
     | IsChecked of bool
@@ -40,19 +41,21 @@ type Button = {
     Mode : ButtonMode
     Label : string option
     Icon : string option
+    Tooltip : string option
     OnClick : (Browser.Types.MouseEvent -> unit) option
     OnCheckChanged : (bool -> unit) option
     IsChecked : bool
     IsEnabled : bool
 }
 with
-    static member Empty = { Label = None; Icon = None; OnClick = None; OnCheckChanged = None; Mode = Button; IsChecked = false; Display = LabelIcon; IsEnabled = true }
+    static member Empty = { Label = None; Icon = None; OnClick = None; OnCheckChanged = None; Mode = Button; IsChecked = false; Display = LabelIcon; IsEnabled = true; Tooltip = None }
     member __.With (p : ButtonProperty) =
         match p with
         | Display s -> { __ with Display = s }
         | Mode s -> { __ with Mode = s }
         | Label s -> { __ with Label = Some s }
         | Icon s -> { __ with Icon = Some s }
+        | Tooltip s -> { __ with Tooltip = Some s }
         | IsChecked s -> { __ with IsChecked = s }
         | IsEnabled s -> { __ with IsEnabled = s }
         | OnClick s -> { __ with OnClick = Some s }
@@ -207,6 +210,11 @@ let mkButton b =
             ))
             |> Option.defaultValue nothing
 
+        match b.Tooltip with
+        | Some text ->
+            yield! UI.Tooltip.tooltip (UI.Common.Value.Const text)
+        | None -> ()
+
     ]
 
 let vseparator =
@@ -220,7 +228,7 @@ let gap = Html.span [ Attr.className "xd-gap" ]
 let buttonItem props =
     { (Button.From props) with Mode = Button } |> mkButton
 
-let button name icon cb =
+let button name icon cb tooltip =
     buttonItem [
         if icon <> "" then
             Icon (icon)
@@ -228,6 +236,8 @@ let button name icon cb =
         OnClick cb
         if icon <> "" then
             Display IconOnly
+        if tooltip <> "" then
+            Tooltip tooltip
     ]
 
 let toolbar props items =
