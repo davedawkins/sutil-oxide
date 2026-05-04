@@ -242,13 +242,14 @@ module Control =
         | ControlCheck of OnCheck * Value<bool>
         | ControlMenu of (unit -> Control list)
         | ControlSelect of (OnSelect * Value<obj> * (unit -> (string * obj) list))
-        | ControlCustom of Core.SutilElement
+        | ControlCustom of Core.SutilElement[]
 
     and Control = {
         Key : string
         Text : Text option
         Icon : Icon option
         Shortcut : Shortcut option
+        Tooltip : string option
         ReadOnly : bool
         Type : ControlType
     }
@@ -260,6 +261,7 @@ module Control =
                 Icon = None
                 Shortcut = None
                 ReadOnly = false
+                Tooltip = None
                 Type = typ
             }
 
@@ -269,12 +271,13 @@ module Control =
         | Icon of Icon
         | ReadOnly of bool
         | Shortcut of Shortcut
+        | Tooltip of string
         static member icon( name : string ) = Icon (Icon.FaIcon (Value.Const name))
         static member text( name : string ) = Text (Text.PlainText (Value.Const name))
 
         //| Type of RibbonControlType
 
-    let custom( e : Core.SutilElement ) : Control = Control.Create(ControlCustom e)
+    let custom( e : Core.SutilElement seq ) : Control = Control.Create(ControlCustom (e |> Seq.toArray))
 
     let makeControl (typ) (options : ControlOption list) =
         let withOption (c : Control) (option : ControlOption) : Control =
@@ -284,6 +287,7 @@ module Control =
             | Icon l -> { c with Icon = Some l }
             | ReadOnly l -> { c with ReadOnly = l }
             | Shortcut l -> { c with Shortcut = Some l }
+            | Tooltip s -> { c with Tooltip = Some s }
             //| Type l -> { c with Type = l }
         options |> List.fold withOption (Control.Create(typ))
 
@@ -351,6 +355,7 @@ module Control =
             (cls : string)
             (icon : Icon option) 
             (label : Text option) 
+            (tooltip : string option)
             // (role : AriaRole) 
             (controlElement : Core.SutilElement ) : Core.SutilElement =
 
@@ -363,6 +368,8 @@ module Control =
                 yield! renderIconLabel icon label
             ]
             controlElement// |> CoreElements.inject [ Attr.id key ]
+            
+            yield! tooltip |> Option.map (fun s -> Tooltip.tooltip (Value.From s)) |> Option.defaultValue []
         ]
 
     let rec renderControlWithParent (parent : Control option) (item : Control) =
@@ -398,9 +405,9 @@ module Control =
             // yield!
         match item.Type with
 
-        | ControlLabel -> Html.divc controlClass iconLabel.Value
+        | ControlLabel -> [ Html.divc controlClass iconLabel.Value ]
         | ControlTextField (_, value) ->
-            renderLabelledControlElement "" item.Key item.Icon item.Text (Html.span [ Attr.role "label"; (textValueToElement value Html.span) ])
+            [ renderLabelledControlElement "" item.Key item.Icon item.Text item.Tooltip (Html.span [ Attr.role "label"; (textValueToElement value Html.span) ]) ]
             // Html.divc (controlClass) [
                 // Html.label [
                     // yield! iconLabel.Value
@@ -408,10 +415,10 @@ module Control =
                 // textValueToElement value Html.span
             // ]
 
-        | ControlCustom el -> el
+        | ControlCustom el -> el |> Array.toList
 
         | ControlCheck (cb, value) ->
-            renderLabelledControlElement "ui-check" item.Key item.Icon item.Text (makeControlCheck (cb,value))
+            [ renderLabelledControlElement "ui-check" item.Key item.Icon item.Text item.Tooltip (makeControlCheck (cb,value)) ]
             // Html.divc (controlClass) [ 
                 // Attr.tabIndex 0
                 // makeControlCheck (cb,value)
@@ -419,7 +426,7 @@ module Control =
             // ]
 
         | ControlButton onClick -> 
-            Html.buttonc (controlClass) [
+            [ Html.buttonc (controlClass) [
                 Attr.id (item.Key)
                 Attr.tabIndex 0
                 Attr.roleButton
@@ -428,11 +435,11 @@ module Control =
                 yield! iconLabel.Value
 
                 Ev.onClick (fun _ -> onClick()) 
-            ]
+            ] ]
 
         | ControlMenu items ->
             let itemStore : IStore<Control list> = Store.make []
-            Html.divc ([ controlClass; "flex items-center justify-between" ] |> ToolInternal.makeClass) [
+            [ Html.divc ([ controlClass; "flex items-center justify-between" ] |> ToolInternal.makeClass) [
                 Attr.id (item.Key)
                 Attr.tabIndex 0
                 Attr.roleMenu
@@ -446,10 +453,10 @@ module Control =
                 Ev.onClick (fun _ -> items() |> Store.set itemStore)
 
                 Bind.el( itemStore, fun items ->
-                    Html.divc "theme-menu ui-menu-stack scroll-shadows" (items |> List.map (renderControlWithParent (Some item)))
+                    Html.divc "theme-menu ui-menu-stack scroll-shadows" (items |> List.collect (renderControlWithParent (Some item)))
                 )
                 disposeOnUnmount [ itemStore ]
-            ]
+            ] ]
 
         | ControlSelect (onSelect, value, items) ->
             
@@ -471,7 +478,7 @@ module Control =
 
             let itemStore : IStore<Control list> = Store.make []
 
-            Html.divc (controlClass) [ 
+            [ Html.divc (controlClass) [ 
                 Attr.tabIndex 0
                 Attr.roleListBox
 
@@ -506,10 +513,10 @@ module Control =
                         _items |> List.map makeSelectItem |> Store.set itemStore
                     )
                     Bind.el( itemStore, fun items ->
-                        Html.divc "theme-menu ui-menu-stack scroll-shadows" (items |> List.map (renderControlWithParent(Some item)))
+                        Html.divc "theme-menu ui-menu-stack scroll-shadows" (items |> List.collect (renderControlWithParent(Some item)))
                     )
                 ]
-            ]
+            ] ]
 
     let renderControl (item : Control) =
         renderControlWithParent None item
@@ -520,7 +527,7 @@ module Toolbar =
         | ToolbarOrientation of Common.Orientation
 
     let render (options : ToolbarOption seq) (controls : Control.Control seq) =
-        Html.divc "ui-toolbar" (controls |> Seq.map Control.renderControl)
+        Html.divc "ui-toolbar" (controls |> Seq.collect Control.renderControl)
 
 module Ribbon =
     open Control
@@ -539,7 +546,7 @@ module Ribbon =
 
     let private renderStack ( chunk : Control list ) =
         Html.divc "ui-stack" 
-            (chunk |> List.map Control.renderControl)
+            (chunk |> List.collect Control.renderControl)
 
     let private renderGroup (group : Group) =
         Html.divc "ui-group" [
