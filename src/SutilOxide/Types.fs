@@ -185,6 +185,7 @@ module StringHelpers =
     open System
     open System.Text.RegularExpressions
 
+    let toPaneId( s : string ) = s.ToLower().Replace(" ", "-").Replace(".","-")
     let toClass( s : string ) = s.ToLower().Replace(" ", "-").Replace("_","-").Replace(".","-")
 
     let toCapWords (input: string) =
@@ -204,7 +205,7 @@ module StringHelpers =
 type DockPaneKey = Key of string
     with 
         static member From(s : string) =
-            if StringHelpers.toClass s <> s || s = "" then
+            if StringHelpers.toPaneId s <> s || s = "" then
                 Fable.Core.JS.console.error( "DockPaneKey: ",  sprintf "Invalid key value: %s: lowercase and '-' only" s ) 
                 failwithf "Invalid key value: %s: lowercase and '-' only" s
             Key s
