@@ -158,6 +158,11 @@ type LabelElement =
     | LabelString of string
     | LabelElement of SutilElement
 
+[<RequireQualifiedAccess>]
+type IsOpenOption = 
+    | Definite of bool
+    | Default of bool
+
 type PaneOptions =
     | Group of string
     | Label of string
@@ -173,7 +178,7 @@ type PaneOptions =
     | Location of DockLocation
     | Header of SutilElement
     | Content of SutilElement
-    | IsOpen of bool
+    | IsOpen of IsOpenOption
     | IsExclusive of bool
     | IsMinimized of bool
     | OnClose of (unit -> unit)
@@ -230,13 +235,14 @@ type DockPane =
         HeaderTooltip : string option
         Content : SutilElement
         IsExclusive : bool
-        IsOpen : bool
+        IsOpen : IsOpenOption
         IsMinimized : bool
         OnClose : unit -> unit
         OnMinimize : unit -> unit
         OnShow : bool -> unit
         OnChildActivate : string -> bool -> unit
     }
+    member __.IsOpenCalculated = __.IsOpen = IsOpenOption.Default true || __.IsOpen = IsOpenOption.Definite true
     member __.Key = __.StrictKey.ToString()
     member __.KeyAsClass = __.StrictKey.ToString()
     member __.KeyAsLabel = __.StrictKey.AsLabel
@@ -261,7 +267,7 @@ type DockPane =
             Header = text key
             HeaderTooltip = None
             Content = Html.div key
-            IsOpen = false
+            IsOpen = IsOpenOption.Default false
             IsExclusive = false
             IsMinimized = false
             OnClose = ignore
