@@ -476,6 +476,7 @@ type FileExplorer( fs : IFsAsync ) =
 
     let mutable onEdit : string -> unit = ignore
     let mutable onDrop : FileList -> IFsAsync -> string -> bool = fun _ _ _ -> false
+    let selection = SutilOxide.Reactive.Cell.make ""
 
     let create fs =
         //let sessionState = loadSessionState() |> Option.defaultWith defaultSessionState
@@ -498,6 +499,8 @@ type FileExplorer( fs : IFsAsync ) =
         member _.OnDrop( h : FileList -> IFsAsync -> string -> bool ) = onDrop <- h
         member _.Dispatch = dispatch
         member _.Selected = model.Value.Selected
+        member _.SelectedSignal = model .> _.Selected |> SutilOxide.Reactive.Signal.fromObservable ""
+        
         member _.CurrentFolder = model.Value.Cwd
 
         member __.SelectPath( path : string ) =
