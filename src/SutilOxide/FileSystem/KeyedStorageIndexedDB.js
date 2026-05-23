@@ -820,6 +820,30 @@ export class KeyedStorageIndexedDB {
 
             errors.push(...orphanedUids);
 
+            // Multi-parent detection: every non-root UID must appear in
+            // exactly one parent's Children list. Multiple in-edges mean
+            // path lookups can fail when the entry's own Name disagrees
+            // with a parent's Children-row label.
+            const inEdges = new Map();
+            for (const [parentUid, entry] of uidToEntry) {
+                for (const row of entry.Children) {
+                    if (Array.isArray(row) && row.length >= 2 && typeof row[1] === 'number') {
+                        const childUid = row[1];
+                        if (!inEdges.has(childUid)) inEdges.set(childUid, []);
+                        inEdges.get(childUid).push({ parentUid, name: row[0] });
+                    }
+                }
+            }
+            for (const [childUid, refs] of inEdges) {
+                if (refs.length < 2) continue;
+                const child = uidToEntry.get(childUid);
+                const childName = child ? child.Name : '?';
+                const refSummary = refs.map(r => `uid:${r.parentUid}/"${r.name}"`).join(', ');
+                errors.push(
+                    `Entry uid:${childUid} ("${childName}") has ${refs.length} parent references ` +
+                    `(should be 1): ${refSummary}`);
+            }
+
             // (root) bookkeeping sanity: NextUid must exceed every existing
             // uid, otherwise the next allocation will collide. Warn-only;
             // the FS continues to function with a stale NextUid (just risks
@@ -1052,17 +1076,53 @@ export class KeyedStorageIndexedDB {
 
             const validUids = new Set(uidToEntry.keys());
 
+            // Multi-parent detection: build inverse map and pick a canonical
+            // keeper for each UID with >1 in-edges. Heuristic: keep the row
+            // whose name matches the child's own Name field (the canonical
+            // reference). If ambiguous (none match, or multiple match),
+            // pick the lowest-UID parent deterministically — the entry
+            // stays reachable either way; the duplicate rows are removed
+            // by the same per-parent filter that handles dangling refs.
+            const parentsOf = new Map();
+            for (const [parentUid, entry] of uidToEntry) {
+                for (const row of entry.Children) {
+                    if (Array.isArray(row) && row.length >= 2 && typeof row[1] === 'number') {
+                        const childUid = row[1];
+                        if (!parentsOf.has(childUid)) parentsOf.set(childUid, []);
+                        parentsOf.get(childUid).push({ parentUid, name: row[0] });
+                    }
+                }
+            }
+            const keeperOf = new Map();   // childUid -> {parentUid, name} (only when refs > 1)
+            for (const [childUid, refs] of parentsOf) {
+                if (refs.length < 2) continue;
+                const child = uidToEntry.get(childUid);
+                if (!child) continue;
+                const matching = refs.filter(r => r.name === child.Name);
+                const pool = matching.length >= 1 ? matching : refs;
+                keeperOf.set(childUid, pool.slice().sort((a, b) => a.parentUid - b.parentUid)[0]);
+            }
+
+            // Per-parent filter: drops malformed rows, dangling refs, and
+            // duplicate-parent rows (keeper retained; others removed).
             for (const [uid, entry] of uidToEntry) {
                 if (!entry.Children.length) continue;
                 const before = entry.Children;
-                const after = before.filter(child => {
-                    if (!Array.isArray(child) || child.length < 2) {
-                        console.log(`Removing malformed child row from uid:${uid}: ${JSON.stringify(child)}`);
+                const after = before.filter(row => {
+                    if (!Array.isArray(row) || row.length < 2) {
+                        console.log(`Removing malformed child row from uid:${uid}: ${JSON.stringify(row)}`);
                         return false;
                     }
-                    const childUid = child[1];
+                    const [name, childUid] = row;
                     if (!validUids.has(childUid)) {
-                        console.log(`Removing dangling reference: uid:${uid}/${child[0]} -> uid:${childUid}`);
+                        console.log(`Removing dangling reference: uid:${uid}/${name} -> uid:${childUid}`);
+                        return false;
+                    }
+                    const keeper = keeperOf.get(childUid);
+                    if (keeper && !(keeper.parentUid === uid && keeper.name === name)) {
+                        console.log(
+                            `Removing duplicate parent ref: uid:${uid}/"${name}" -> uid:${childUid} ` +
+                            `(keeper: uid:${keeper.parentUid}/"${keeper.name}")`);
                         return false;
                     }
                     return true;
@@ -1074,6 +1134,8 @@ export class KeyedStorageIndexedDB {
                     this._setMetaModified(updated);
                     const bytes = this._encodeEntryBytes(updated, uidToOrig.get(uid));
                     await this.put(uidToKey.get(uid), bytes);
+                    uidToEntry.set(uid, updated);
+                    uidToOrig.set(uid, bytes);
                 }
             }
 
