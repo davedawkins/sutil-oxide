@@ -563,6 +563,34 @@ export class KeyedStorageIndexedDB {
         });
     }
 
+
+    /**
+     * Decode a raw value read from the IndexedDB store into the JSON header
+     * text that downstream code can pass to JSON.parse.
+     *
+     * The current write path (F# side: ByteArray.textEncode) stores values
+     * as Uint8Array. For File entries, the value is `<json-header>\0<blob>`,
+     * matching the F# read path which slices at the first NUL byte
+     * (see KeyedStorageFileSystemAsync.fs:getDecodedEntry).
+     *
+     * Legacy DBs may still contain string-typed values; pass those through.
+     *
+     * @param {*} value - The raw value as returned by the cursor (Uint8Array,
+     *   string, or other).
+     * @returns {string|null} The decoded JSON header text, or null if the
+     *   value's shape is unrecognised.
+     * @private
+     */
+    _decodeEntryBytes(value) {
+        if (typeof value === 'string') return value;
+        if (value instanceof Uint8Array) {
+            const nul = value.indexOf(0);
+            const header = nul >= 0 ? value.subarray(0, nul) : value;
+            return new TextDecoder().decode(header);
+        }
+        return null;
+    }
+
     /**
      * Check database consistency for file system entries
      * Validates that:
@@ -609,7 +637,25 @@ export class KeyedStorageIndexedDB {
             for (const {key, value} of fsEntries) {
                 try {
                     const uid = parseInt(key.substring(4)); // Remove "uid:" prefix
-                    const entry = JSON.parse(value);
+                    const decoded = this._decodeEntryBytes(value);
+                    if (decoded === null) {
+                        parseErrors.push(`Entry ${key} has unrecognised value shape (expected Uint8Array or string)`);
+                        continue;
+                    }
+                    let entry;
+                    try {
+                        entry = JSON.parse(decoded);
+                    } catch (e) {
+                        // Include the first ~120 chars of decoded text so the
+                        // error is actionable. Pre-fix code surfaced the raw
+                        // byte-array stringification, which began "123,34,..."
+                        // and tripped on the comma at column 4.
+                        const snippet = decoded.length > 120
+                            ? decoded.substring(0, 120) + '...'
+                            : decoded;
+                        parseErrors.push(`Failed to parse entry ${key}: ${e.message} | header: ${snippet}`);
+                        continue;
+                    }
                     
                     // Basic validation of entry structure
                     if (typeof entry !== 'object' || entry === null) {
@@ -635,7 +681,9 @@ export class KeyedStorageIndexedDB {
                     uidToKey.set(uid, key);
                     validatedEntries++;
                 } catch (parseError) {
-                    parseErrors.push(`Failed to parse entry ${key}: ${parseError.message}`);
+                    // Structural / validation errors (Uid type, Children type).
+                    // Decode/parse errors are surfaced above with a snippet.
+                    parseErrors.push(`Entry ${key} failed validation: ${parseError.message}`);
                 }
             }
 
@@ -656,8 +704,8 @@ export class KeyedStorageIndexedDB {
                 };
             }
 
-            if (rootEntry.Type !== "Folder" && rootEntry.Type !== 1) { // 1 is Folder enum value
-                errors.push("Root entry is not a folder");
+            if (rootEntry.Type !== "Folder") {
+                errors.push(`Root entry is not a folder (Type=${JSON.stringify(rootEntry.Type)})`);
             }
 
             // Helper function to build full paths for entries
@@ -772,11 +820,43 @@ export class KeyedStorageIndexedDB {
 
             errors.push(...orphanedUids);
 
+            // (root) bookkeeping sanity: NextUid must exceed every existing
+            // uid, otherwise the next allocation will collide. Warn-only;
+            // the FS continues to function with a stale NextUid (just risks
+            // a collision on the next createEntry call).
+            const rootBookkeeping = allEntries.find(e => e.key === '(root)');
+            // Find max uid via a loop — spread (Math.max(...iter)) blows the
+            // call stack at ~10k entries on V8/SpiderMonkey, and real DBs
+            // already exceed that (see issue #292).
+            let maxUid = -1;
+            for (const k of uidToEntry.keys()) {
+                if (k > maxUid) maxUid = k;
+            }
+            if (!rootBookkeeping) {
+                warnings.push("(root) bookkeeping key is absent; next-uid allocator will start from 1 and may collide with existing entries");
+            } else {
+                const decodedRoot = this._decodeEntryBytes(rootBookkeeping.value);
+                if (decodedRoot === null) {
+                    warnings.push(`(root) bookkeeping value has unrecognised shape (expected Uint8Array or string)`);
+                } else {
+                    try {
+                        const r = JSON.parse(decodedRoot);
+                        if (typeof r.NextUid !== 'number') {
+                            warnings.push(`(root) bookkeeping has invalid NextUid: ${JSON.stringify(r.NextUid)}`);
+                        } else if (r.NextUid <= maxUid) {
+                            warnings.push(`(root) NextUid (${r.NextUid}) is not greater than max(uid:N) (${maxUid}); next allocation may collide`);
+                        }
+                    } catch (e) {
+                        warnings.push(`(root) bookkeeping failed to parse: ${e.message}`);
+                    }
+                }
+            }
+
             // Generate summary statistics
             const folderCount = Array.from(uidToEntry.values())
-                .filter(e => e.Type === "Folder" || e.Type === 1).length;
+                .filter(e => e.Type === "Folder").length;
             const fileCount = Array.from(uidToEntry.values())
-                .filter(e => e.Type === "File" || e.Type === 0).length;
+                .filter(e => e.Type === "File").length;
 
             const isValid = errors.length === 0;
             const summary = isValid 
@@ -851,9 +931,17 @@ export class KeyedStorageIndexedDB {
     /**
      * Fix dangling child references by removing references to non-existent UIDs
      * Also repairs corrupted Type fields in root entry first
+     *
+     * ⚠️  STALE — DO NOT RUN. This function targets a legacy layout (top-
+     * level Modified timestamps, numeric Type fields, string-stored values).
+     * The current schema stores values as Uint8Array with Meta-array
+     * timestamps and string-named Types. Running this against a live DB
+     * today will corrupt entries. Tracked in issue #292 for rewrite.
+     *
      * @returns {Promise<number>} Number of dangling references removed
      */
     async fixDanglingReferences() {
+        console.warn('[KeyedStorageIndexedDB] STALE repair function called. This targets a legacy storage layout and will corrupt the current DB. See issue #292.');
         console.log('Starting dangling reference cleanup...');
         let fixedCount = 0;
         
@@ -968,9 +1056,17 @@ export class KeyedStorageIndexedDB {
     /**
      * Move orphaned entries (entries not reachable from root) to a root "orphans" folder
      * Also repairs any corrupted Type fields (string -> numeric)
+     *
+     * ⚠️  STALE — DO NOT RUN. This function targets a legacy layout (top-
+     * level Modified timestamps, numeric Type fields, string-stored values).
+     * The current schema stores values as Uint8Array with Meta-array
+     * timestamps and string-named Types. Running this against a live DB
+     * today will corrupt entries. Tracked in issue #292 for rewrite.
+     *
      * @returns {Promise<number>} Number of orphaned entries moved
      */
     async fixOrphanedEntries() {
+        console.warn('[KeyedStorageIndexedDB] STALE repair function called. This targets a legacy storage layout and will corrupt the current DB. See issue #292.');
         console.log('Starting orphaned entries cleanup...');
         let movedCount = 0;
         
