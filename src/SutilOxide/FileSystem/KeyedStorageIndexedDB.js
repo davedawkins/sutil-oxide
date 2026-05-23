@@ -1093,13 +1093,47 @@ export class KeyedStorageIndexedDB {
                     }
                 }
             }
+            // Reachability from root via the (current, pre-repair) Children
+            // edges. The keeper-pick prefers reachable parents over
+            // orphan-subtree parents — a keeper inside an orphan subtree
+            // would silently orphan the child, fresh corruption.
+            const reachable = new Set();
+            (() => {
+                const stack = [0];
+                while (stack.length > 0) {
+                    const u = stack.pop();
+                    if (reachable.has(u)) continue;
+                    reachable.add(u);
+                    const e = uidToEntry.get(u);
+                    if (e && Array.isArray(e.Children)) {
+                        for (const row of e.Children) {
+                            if (Array.isArray(row) && row.length >= 2 && typeof row[1] === 'number') {
+                                if (uidToEntry.has(row[1])) stack.push(row[1]);
+                            }
+                        }
+                    }
+                }
+            })();
+
+            // Keeper-pick priority:
+            //  1. Reachable parent whose row name matches child.Name (canonical + reachable).
+            //  2. Reachable parent (any name; lowest-UID deterministic).
+            //  3. Any parent whose row name matches child.Name (canonical, even if orphaned).
+            //  4. Any parent (lowest-UID deterministic).
+            // If the keeper falls into class 3 or 4, the child remains in an
+            // orphan subtree post-repair — fixOrphanedEntries will pick it up.
             const keeperOf = new Map();   // childUid -> {parentUid, name} (only when refs > 1)
             for (const [childUid, refs] of parentsOf) {
                 if (refs.length < 2) continue;
                 const child = uidToEntry.get(childUid);
                 if (!child) continue;
-                const matching = refs.filter(r => r.name === child.Name);
-                const pool = matching.length >= 1 ? matching : refs;
+                const pools = [
+                    refs.filter(r => reachable.has(r.parentUid) && r.name === child.Name),
+                    refs.filter(r => reachable.has(r.parentUid)),
+                    refs.filter(r => r.name === child.Name),
+                    refs,
+                ];
+                const pool = pools.find(p => p.length >= 1) || refs;
                 keeperOf.set(childUid, pool.slice().sort((a, b) => a.parentUid - b.parentUid)[0]);
             }
 
