@@ -929,123 +929,155 @@ export class KeyedStorageIndexedDB {
     }
 
     /**
-     * Fix dangling child references by removing references to non-existent UIDs
-     * Also repairs corrupted Type fields in root entry first
+     * Encode an entry into the byte format the F# read path expects.
      *
-     * ⚠️  STALE — DO NOT RUN. This function targets a legacy layout (top-
-     * level Modified timestamps, numeric Type fields, string-stored values).
-     * The current schema stores values as Uint8Array with Meta-array
-     * timestamps and string-named Types. Running this against a live DB
-     * today will corrupt entries. Tracked in issue #292 for rewrite.
+     * Header bytes are JSON encoded via TextEncoder. If `originalValue` is
+     * a Uint8Array carrying a `\0`+blob tail (File entry), the original
+     * tail is preserved verbatim — `<new-header><\0><original-tail>`.
+     * Folders and legacy string-stored values produce header-only output.
      *
-     * @returns {Promise<number>} Number of dangling references removed
+     * Blob preservation matters: the consistency-check tests on a real DB
+     * showed File entries with arbitrary binary content (e.g. typed-array
+     * payloads). Re-encoding by decoding+re-encoding would corrupt
+     * non-UTF-8 bytes.
+     *
+     * @param {object} entry - Decoded entry; JSON-stringified for the header.
+     * @param {Uint8Array|string|null} originalValue - Pre-edit stored value;
+     *   used to preserve any blob tail.
+     * @returns {Uint8Array}
+     * @private
+     */
+    _encodeEntryBytes(entry, originalValue) {
+        const headerBytes = new TextEncoder().encode(JSON.stringify(entry));
+        if (originalValue instanceof Uint8Array) {
+            const nul = originalValue.indexOf(0);
+            if (nul >= 0) {
+                const tail = originalValue.subarray(nul + 1);
+                const out = new Uint8Array(headerBytes.length + 1 + tail.length);
+                out.set(headerBytes, 0);
+                out[headerBytes.length] = 0;
+                out.set(tail, headerBytes.length + 1);
+                return out;
+            }
+        }
+        return headerBytes;
+    }
+
+    /**
+     * Update `entry.Meta`'s ModifiedAt row in place. Creates the Meta
+     * array (with CreatedAt + ModifiedAt) if absent, and appends a
+     * ModifiedAt row if the array exists but doesn't carry one. Never
+     * writes a top-level Modified field — that was a legacy schema slot.
+     *
+     * @param {object} entry
+     * @private
+     */
+    _setMetaModified(entry) {
+        const now = new Date().toISOString();
+        if (!Array.isArray(entry.Meta)) {
+            entry.Meta = [['CreatedAt', now], ['ModifiedAt', now]];
+            return;
+        }
+        let found = false;
+        for (let i = 0; i < entry.Meta.length; i++) {
+            const row = entry.Meta[i];
+            if (Array.isArray(row) && row.length >= 2 && row[0] === 'ModifiedAt') {
+                entry.Meta[i] = ['ModifiedAt', now];
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            entry.Meta.push(['ModifiedAt', now]);
+        }
+    }
+
+    /**
+     * Decode + validate uid:N entries from the store. Skips entries that
+     * fail decoding/parsing/validation — `checkConsistency` owns reporting
+     * those. Returns three parallel maps so callers can both read the
+     * parsed entry and round-trip the original bytes for blob preservation.
+     *
+     * @returns {Promise<{uidToEntry: Map, uidToKey: Map, uidToOrig: Map}>}
+     * @private
+     */
+    async _loadEntryMaps() {
+        const allEntries = await this._getAllEntries();
+        const fsEntries = allEntries.filter(e =>
+            typeof e.key === 'string' && e.key.startsWith('uid:'));
+
+        const uidToEntry = new Map();
+        const uidToKey = new Map();
+        const uidToOrig = new Map();
+        for (const { key, value } of fsEntries) {
+            try {
+                const uid = parseInt(key.substring(4));
+                if (!Number.isFinite(uid)) continue;
+                const decoded = this._decodeEntryBytes(value);
+                if (decoded === null) continue;
+                const entry = JSON.parse(decoded);
+                if (typeof entry !== 'object' || entry === null) continue;
+                if (typeof entry.Uid !== 'number') continue;
+                if (!Array.isArray(entry.Children)) continue;
+                uidToEntry.set(uid, entry);
+                uidToKey.set(uid, key);
+                uidToOrig.set(uid, value);
+            } catch (_) {
+                // Skip — checkConsistency owns parse-error reporting.
+            }
+        }
+        return { uidToEntry, uidToKey, uidToOrig, allEntries };
+    }
+
+    /**
+     * Fix dangling child references by removing pointers to non-existent
+     * UIDs and dropping malformed child rows. Idempotent: re-running on a
+     * clean store returns 0 and writes nothing.
+     *
+     * Writes Uint8Array values, preserves File blob tails, updates
+     * Meta.ModifiedAt (never top-level Modified).
+     *
+     * @returns {Promise<number>} Number of bad child rows removed
      */
     async fixDanglingReferences() {
-        console.warn('[KeyedStorageIndexedDB] STALE repair function called. This targets a legacy storage layout and will corrupt the current DB. See issue #292.');
         console.log('Starting dangling reference cleanup...');
         let fixedCount = 0;
-        
-        try {
-            // First, check and repair root entry Type field if corrupted
-            const rootEntry = await this.get('uid:0');
-            if (rootEntry) {
-                try {
-                    const entry = JSON.parse(rootEntry);
-                    if (typeof entry.Type === 'number') {
-                        let stringType;
-                        switch (entry.Type) {
-                            case 0:
-                                stringType = 'File';
-                                break;
-                            case 1:
-                                stringType = 'Folder';
-                                break;
-                            default:
-                                console.warn(`Unknown numeric Type value for root: ${entry.Type}`);
-                                stringType = 'Folder'; // Default to Folder for root
-                        }
-                        
-                        const repairedRoot = {
-                            ...entry,
-                            Type: stringType,
-                            Modified: new Date().toISOString()
-                        };
-                        
-                        await this.put('uid:0', JSON.stringify(repairedRoot));
-                        console.log(`Repaired root entry Type field: ${entry.Type} -> "${stringType}"`);
-                    }
-                } catch (parseError) {
-                    console.warn(`Failed to parse root entry: ${parseError.message}`);
-                }
-            }
-            
-            // Get all entries from the database
-            const allEntries = await this._getAllEntries();
-            
-            // Filter for file system entries (those with uid: prefix)
-            const fsEntries = allEntries.filter(entry => 
-                typeof entry.key === 'string' && entry.key.startsWith('uid:'));
 
-            if (fsEntries.length === 0) {
+        try {
+            const { uidToEntry, uidToKey, uidToOrig } = await this._loadEntryMaps();
+            if (uidToEntry.size === 0) {
                 console.log('No file system entries found to process.');
                 return 0;
             }
 
-            // Parse entries and create lookup maps
-            const uidToEntry = new Map();
-            const uidToKey = new Map();
-
-            for (const {key, value} of fsEntries) {
-                try {
-                    const uid = parseInt(key.substring(4)); // Remove "uid:" prefix
-                    const entry = JSON.parse(value);
-                    
-                    // Basic validation
-                    if (typeof entry === 'object' && entry !== null && 
-                        typeof entry.Uid === 'number' && Array.isArray(entry.Children)) {
-                        uidToEntry.set(uid, entry);
-                        uidToKey.set(uid, key);
-                    }
-                } catch (parseError) {
-                    console.warn(`Failed to parse entry ${key}: ${parseError.message}`);
-                }
-            }
-
-            // Create set of valid UIDs
             const validUids = new Set(uidToEntry.keys());
-            
-            // Check each entry with children for dangling references
+
             for (const [uid, entry] of uidToEntry) {
-                if (Array.isArray(entry.Children) && entry.Children.length > 0) {
-                    const originalChildCount = entry.Children.length;
-                    const validChildren = entry.Children.filter(child => {
-                        if (Array.isArray(child) && child.length >= 2) {
-                            const [name, childUid] = child;
-                            if (validUids.has(childUid)) {
-                                return true;
-                            } else {
-                                console.log(`Removing dangling reference: UID ${uid}/${name} -> UID ${childUid}`);
-                                fixedCount++;
-                                return false;
-                            }
-                        } else {
-                            console.log(`Removing malformed child entry: UID ${uid} -> ${JSON.stringify(child)}`);
-                            fixedCount++;
-                            return false;
-                        }
-                    });
-                    
-                    // Update entry if we removed any children
-                    if (validChildren.length !== originalChildCount) {
-                        const updatedEntry = { ...entry, Children: validChildren };
-                        const key = uidToKey.get(uid);
-                        const updatedValue = JSON.stringify(updatedEntry);
-                        await this.put(key, updatedValue);
+                if (!entry.Children.length) continue;
+                const before = entry.Children;
+                const after = before.filter(child => {
+                    if (!Array.isArray(child) || child.length < 2) {
+                        console.log(`Removing malformed child row from uid:${uid}: ${JSON.stringify(child)}`);
+                        return false;
                     }
+                    const childUid = child[1];
+                    if (!validUids.has(childUid)) {
+                        console.log(`Removing dangling reference: uid:${uid}/${child[0]} -> uid:${childUid}`);
+                        return false;
+                    }
+                    return true;
+                });
+                const removed = before.length - after.length;
+                if (removed > 0) {
+                    fixedCount += removed;
+                    const updated = { ...entry, Children: after };
+                    this._setMetaModified(updated);
+                    const bytes = this._encodeEntryBytes(updated, uidToOrig.get(uid));
+                    await this.put(uidToKey.get(uid), bytes);
                 }
             }
-            
-            console.log(`Dangling reference cleanup completed. Fixed ${fixedCount} references.`);
+
+            console.log(`Dangling reference cleanup completed. Removed ${fixedCount} child rows.`);
             return fixedCount;
         } catch (error) {
             console.error('Error during dangling reference cleanup:', error);
@@ -1054,270 +1086,200 @@ export class KeyedStorageIndexedDB {
     }
 
     /**
-     * Move orphaned entries (entries not reachable from root) to a root "orphans" folder
-     * Also repairs any corrupted Type fields (string -> numeric)
+     * Move entries not reachable from root into a `/orphans` folder.
+     * Idempotent: re-running on a clean store returns 0, makes no writes,
+     * and does NOT create a duplicate /orphans folder.
      *
-     * ⚠️  STALE — DO NOT RUN. This function targets a legacy layout (top-
-     * level Modified timestamps, numeric Type fields, string-stored values).
-     * The current schema stores values as Uint8Array with Meta-array
-     * timestamps and string-named Types. Running this against a live DB
-     * today will corrupt entries. Tracked in issue #292 for rewrite.
+     * Ordering note: if a DB has both dangling references AND orphans,
+     * run `fixDanglingReferences` first. The legacy implementation
+     * accidentally marked dangling UIDs as "reachable" (its BFS pushed
+     * UIDs without verifying they existed); the rewrite's BFS only walks
+     * real entries, so an orphaned entry that was previously hidden
+     * behind a dangling reference is now correctly identified.
      *
-     * @returns {Promise<number>} Number of orphaned entries moved
+     * Coordinates UID allocation with the F# `Root.NextUid` counter in the
+     * `(root)` bookkeeping key. Allocates the /orphans folder UID above
+     * `max(NextUid, max(uid:N))`, then writes back `(root).NextUid` so the
+     * F# layer's next allocation skips ours. Refuses to run if `(root)`
+     * is absent or unparseable — without it the JS-side allocator can't
+     * safely coordinate with future F# writes.
+     *
+     * @returns {Promise<number>} Number of orphans moved
      */
     async fixOrphanedEntries() {
-        console.warn('[KeyedStorageIndexedDB] STALE repair function called. This targets a legacy storage layout and will corrupt the current DB. See issue #292.');
         console.log('Starting orphaned entries cleanup...');
         let movedCount = 0;
-        
-        try {
-            // Get all entries from the database
-            const allEntries = await this._getAllEntries();
-            
-            // Filter for file system entries (those with uid: prefix)
-            const fsEntries = allEntries.filter(entry => 
-                typeof entry.key === 'string' && entry.key.startsWith('uid:'));
 
-            if (fsEntries.length === 0) {
+        try {
+            const { uidToEntry, uidToKey, uidToOrig, allEntries } = await this._loadEntryMaps();
+            if (uidToEntry.size === 0) {
                 console.log('No file system entries found to process.');
                 return 0;
             }
 
-            // First pass: Repair any corrupted Type fields
-            let repairedCount = 0;
-            for (const {key, value} of fsEntries) {
-                try {
-                    const entry = JSON.parse(value);
-                    
-                    // Check if entry has corrupted Type field (number instead of string)
-                    if (typeof entry.Type === 'number') {
-                        let stringType;
-                        
-                        // Convert numeric Type to string enum value
-                        switch (entry.Type) {
-                            case 0:
-                                stringType = 'File';
-                                break;
-                            case 1:
-                                stringType = 'Folder';
-                                break;
-                            default:
-                                console.warn(`Unknown numeric Type value: ${entry.Type} for entry ${key}`);
-                                continue;
-                        }
-                        
-                        // Update the entry with correct string Type
-                        const repairedEntry = {
-                            ...entry,
-                            Type: stringType,
-                            Modified: new Date().toISOString()
-                        };
-                        
-                        await this.put(key, JSON.stringify(repairedEntry));
-                        repairedCount++;
-                        
-                        console.log(`Repaired Type field for ${key}: ${entry.Type} -> "${stringType}"`);
-                    }
-                } catch (parseError) {
-                    console.warn(`Failed to parse entry ${key} during Type repair: ${parseError.message}`);
-                }
+            // Coordinate with the F# Root.NextUid counter. Without it we
+            // cannot safely allocate a UID for /orphans — a future F#
+            // createEntry call could overwrite our folder.
+            const rootBookkeeping = allEntries.find(e => e.key === '(root)');
+            if (!rootBookkeeping) {
+                console.error('(root) bookkeeping key is absent. Cannot allocate /orphans UID safely. Refusing to run fixOrphanedEntries.');
+                return 0;
             }
-            
-            if (repairedCount > 0) {
-                console.log(`Repaired ${repairedCount} corrupted Type fields.`);
-                // Re-fetch entries after repairs
-                const updatedEntries = await this._getAllEntries();
-                const updatedFsEntries = updatedEntries.filter(entry => 
-                    typeof entry.key === 'string' && entry.key.startsWith('uid:'));
-                fsEntries.length = 0;
-                fsEntries.push(...updatedFsEntries);
-            }
-
-            // Parse entries and create lookup maps
-            const uidToEntry = new Map();
-            const uidToKey = new Map();
-
-            for (const {key, value} of fsEntries) {
-                try {
-                    const uid = parseInt(key.substring(4)); // Remove "uid:" prefix
-                    const entry = JSON.parse(value);
-                    
-                    // Basic validation
-                    if (typeof entry === 'object' && entry !== null && 
-                        typeof entry.Uid === 'number' && Array.isArray(entry.Children)) {
-                        uidToEntry.set(uid, entry);
-                        uidToKey.set(uid, key);
-                    }
-                } catch (parseError) {
-                    console.warn(`Failed to parse entry ${key}: ${parseError.message}`);
-                }
-            }
-
-            // Check if root exists
-            const rootEntry = uidToEntry.get(0);
-            if (!rootEntry) {
-                console.error('Root entry (UID 0) not found. Cannot fix orphaned entries.');
+            let nextUid;
+            try {
+                const decoded = this._decodeEntryBytes(rootBookkeeping.value);
+                if (decoded === null) throw new Error('unrecognised value shape');
+                const parsed = JSON.parse(decoded);
+                if (typeof parsed.NextUid !== 'number') throw new Error('invalid NextUid');
+                nextUid = parsed.NextUid;
+            } catch (e) {
+                console.error(`(root) bookkeeping failed to parse: ${e.message}. Refusing to run fixOrphanedEntries.`);
                 return 0;
             }
 
-            // Find all reachable entries from root
-            const reachableUids = new Set();
-            const toVisit = [0]; // Start with root UID
+            const rootEntry = uidToEntry.get(0);
+            if (!rootEntry) {
+                console.error('Root entry (uid:0) not found. Cannot move orphans.');
+                return 0;
+            }
 
-            while (toVisit.length > 0) {
-                const currentUid = toVisit.pop();
-                
-                if (reachableUids.has(currentUid)) {
-                    continue; // Already visited
-                }
-                
-                reachableUids.add(currentUid);
-                const entry = uidToEntry.get(currentUid);
-                
-                if (entry && Array.isArray(entry.Children)) {
-                    for (const child of entry.Children) {
-                        if (Array.isArray(child) && child.length >= 2) {
-                            const childUid = child[1];
-                            if (!reachableUids.has(childUid)) {
-                                toVisit.push(childUid);
-                            }
+            // BFS reachability from root via Children edges.
+            const reachable = new Set();
+            const stack = [0];
+            while (stack.length > 0) {
+                const u = stack.pop();
+                if (reachable.has(u)) continue;
+                reachable.add(u);
+                const e = uidToEntry.get(u);
+                if (e && Array.isArray(e.Children)) {
+                    for (const c of e.Children) {
+                        if (Array.isArray(c) && c.length >= 2 && uidToEntry.has(c[1])) {
+                            stack.push(c[1]);
                         }
                     }
                 }
             }
 
-            // Find orphaned entries (excluding root)
-            const orphanedUids = [];
-            for (const uid of uidToEntry.keys()) {
-                if (uid !== 0 && !reachableUids.has(uid)) {
-                    orphanedUids.push(uid);
-                }
+            const orphanUids = [];
+            for (const u of uidToEntry.keys()) {
+                if (u !== 0 && !reachable.has(u)) orphanUids.push(u);
             }
-
-            if (orphanedUids.length === 0) {
+            if (orphanUids.length === 0) {
                 console.log('No orphaned entries found.');
                 return 0;
             }
+            console.log(`Found ${orphanUids.length} orphan(s) to move.`);
 
-            console.log(`Found ${orphanedUids.length} orphaned entries to move.`);
-
-            // Find or create "orphans" folder in root
-            let orphansFolder = null;
-            let orphansFolderUid = null;
-
-            // Check if "orphans" folder already exists in root
-            for (const child of rootEntry.Children) {
-                if (Array.isArray(child) && child.length >= 2) {
-                    const [name, childUid] = child;
-                    if (name === 'orphans') {
-                        const childEntry = uidToEntry.get(childUid);
-                        if (childEntry && (childEntry.Type === 'Folder' || childEntry.Type === 1)) {
-                            orphansFolder = childEntry;
-                            orphansFolderUid = childUid;
-                            break;
-                        }
+            // Find existing /orphans folder under root, if any.
+            let orphansUid = null;
+            let orphansEntry = null;
+            for (const c of rootEntry.Children) {
+                if (Array.isArray(c) && c.length >= 2 && c[0] === 'orphans') {
+                    const cand = uidToEntry.get(c[1]);
+                    if (cand && cand.Type === 'Folder') {
+                        orphansUid = c[1];
+                        orphansEntry = cand;
+                        break;
                     }
                 }
             }
 
-            // Create orphans folder if it doesn't exist
-            if (!orphansFolder) {
-                // Find the next available UID
-                const usedUids = new Set(uidToEntry.keys());
-                let nextUid = 1;
-                while (usedUids.has(nextUid)) {
-                    nextUid++;
-                }
+            // Compute max(uid:N) via loop (no spread — see #292 for why).
+            let maxUid = -1;
+            for (const u of uidToEntry.keys()) {
+                if (u > maxUid) maxUid = u;
+            }
 
-                orphansFolderUid = nextUid;
-                orphansFolder = {
-                    Uid: orphansFolderUid,
+            if (!orphansEntry) {
+                // Allocate /orphans UID above max(NextUid, max(uid)+1) so
+                // the F# layer's next allocation skips it.
+                orphansUid = Math.max(nextUid, maxUid + 1);
+                const now = new Date().toISOString();
+                orphansEntry = {
+                    Type: 'Folder',
                     Name: 'orphans',
-                    Type: 'Folder', // String value as expected by F#
+                    Uid: orphansUid,
                     Children: [],
-                    Created: new Date().toISOString(),
-                    Modified: new Date().toISOString()
+                    Meta: [['CreatedAt', now], ['ModifiedAt', now]],
                 };
-
-                // Add to root's children
-                const updatedRoot = { 
-                    ...rootEntry, 
-                    Children: [...rootEntry.Children, ['orphans', orphansFolderUid]],
-                    Modified: new Date().toISOString()
+                // Order matters for crash-safety: write /orphans entry
+                // first, then root.Children update. A crash between the
+                // two leaves an unreferenced /orphans entry (which a
+                // re-run will turn into an orphan and re-attach), rather
+                // than a root.Children pointing at a non-existent UID
+                // (which would be a fresh dangling reference).
+                await this.put(`uid:${orphansUid}`,
+                    this._encodeEntryBytes(orphansEntry, null));
+                const updatedRoot = {
+                    ...rootEntry,
+                    Children: [...rootEntry.Children, ['orphans', orphansUid]],
                 };
+                this._setMetaModified(updatedRoot);
+                await this.put(uidToKey.get(0),
+                    this._encodeEntryBytes(updatedRoot, uidToOrig.get(0)));
+                // Bump (root).NextUid so F# skips orphansUid. Preserve any
+                // other fields the F# Root record may carry (or gain) by
+                // round-tripping the existing object — write only the
+                // NextUid override.
+                let existingRoot = {};
+                try {
+                    const decoded = this._decodeEntryBytes(rootBookkeeping.value);
+                    if (decoded !== null) existingRoot = JSON.parse(decoded) || {};
+                } catch (_) {
+                    // Already validated above; this can't fail. Defensive only.
+                    existingRoot = {};
+                }
+                const newBookkeeping = {
+                    ...existingRoot,
+                    NextUid: Math.max(nextUid, orphansUid + 1),
+                };
+                await this.put('(root)',
+                    this._encodeEntryBytes(newBookkeeping, rootBookkeeping.value));
 
-                // Save orphans folder and updated root
-                const orphansKey = `uid:${orphansFolderUid}`;
-                await this.put(orphansKey, JSON.stringify(orphansFolder));
-                await this.put(uidToKey.get(0), JSON.stringify(updatedRoot));
-                
-                uidToEntry.set(orphansFolderUid, orphansFolder);
-                uidToKey.set(orphansFolderUid, orphansKey);
-                
-                console.log(`Created orphans folder with UID ${orphansFolderUid}`);
+                uidToEntry.set(orphansUid, orphansEntry);
+                uidToKey.set(orphansUid, `uid:${orphansUid}`);
+                uidToOrig.set(orphansUid, null);
+                console.log(`Created /orphans folder at uid:${orphansUid}.`);
             }
 
-            // Helper function to generate unique names
-            const generateUniqueName = (baseName, existingNames) => {
-                if (!existingNames.has(baseName)) {
-                    return baseName;
-                }
-                
-                let counter = 1;
-                let uniqueName = `${baseName}_${counter}`;
-                while (existingNames.has(uniqueName)) {
-                    counter++;
-                    uniqueName = `${baseName}_${counter}`;
-                }
-                return uniqueName;
-            };
-
-            // Get existing names in orphans folder
+            // Move each orphan, renaming to avoid name collisions in /orphans.
             const existingNames = new Set();
-            for (const child of orphansFolder.Children) {
-                if (Array.isArray(child) && child.length >= 2) {
-                    existingNames.add(child[0]);
-                }
+            for (const c of orphansEntry.Children) {
+                if (Array.isArray(c) && c.length >= 2) existingNames.add(c[0]);
             }
-
-            // Move each orphaned entry to orphans folder
-            const newOrphansChildren = [...orphansFolder.Children];
-
-            for (const orphanUid of orphanedUids) {
-                const orphanEntry = uidToEntry.get(orphanUid);
-                if (orphanEntry) {
-                    const baseName = orphanEntry.Name || `unnamed_${orphanUid}`;
-                    const uniqueName = generateUniqueName(baseName, existingNames);
-                    existingNames.add(uniqueName);
-                    
-                    // Update the orphan's name if it was changed for uniqueness
-                    if (uniqueName !== orphanEntry.Name) {
-                        const updatedOrphan = {
-                            ...orphanEntry,
-                            Name: uniqueName,
-                            Modified: new Date().toISOString()
-                        };
-                        await this.put(uidToKey.get(orphanUid), JSON.stringify(updatedOrphan));
-                    }
-                    
-                    // Add to orphans folder
-                    newOrphansChildren.push([uniqueName, orphanUid]);
-                    movedCount++;
-                    
-                    console.log(`Moved orphaned entry UID ${orphanUid} (${orphanEntry.Name}) to orphans folder as "${uniqueName}"`);
-                }
-            }
-
-            // Update orphans folder with new children
-            const updatedOrphansFolder = {
-                ...orphansFolder,
-                Children: newOrphansChildren,
-                Modified: new Date().toISOString()
+            const generateUniqueName = (base) => {
+                if (!existingNames.has(base)) return base;
+                let i = 1;
+                while (existingNames.has(`${base}_${i}`)) i++;
+                return `${base}_${i}`;
             };
-            
-            await this.put(uidToKey.get(orphansFolderUid), JSON.stringify(updatedOrphansFolder));
-            
-            console.log(`Orphaned entries cleanup completed. Moved ${movedCount} entries to orphans folder.`);
+
+            const newChildren = [...orphansEntry.Children];
+            for (const orphanUid of orphanUids) {
+                const orphan = uidToEntry.get(orphanUid);
+                if (!orphan) continue;
+                const base = orphan.Name || `unnamed_${orphanUid}`;
+                const unique = generateUniqueName(base);
+                existingNames.add(unique);
+
+                if (unique !== orphan.Name) {
+                    const renamed = { ...orphan, Name: unique };
+                    this._setMetaModified(renamed);
+                    await this.put(uidToKey.get(orphanUid),
+                        this._encodeEntryBytes(renamed, uidToOrig.get(orphanUid)));
+                }
+                newChildren.push([unique, orphanUid]);
+                movedCount++;
+                console.log(`Moved orphan uid:${orphanUid} ("${orphan.Name}") to /orphans as "${unique}".`);
+            }
+
+            // Update /orphans Children in one put.
+            const updatedOrphans = { ...orphansEntry, Children: newChildren };
+            this._setMetaModified(updatedOrphans);
+            await this.put(uidToKey.get(orphansUid),
+                this._encodeEntryBytes(updatedOrphans, uidToOrig.get(orphansUid)));
+
+            console.log(`Orphaned entries cleanup completed. Moved ${movedCount} entries.`);
             return movedCount;
         } catch (error) {
             console.error('Error during orphaned entries cleanup:', error);
