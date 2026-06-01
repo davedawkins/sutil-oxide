@@ -97,7 +97,7 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
                             Name = RootName
                             Uid = RootUid
                             Content = ChildEntries Array.empty
-                            Meta = EntryMetaData.Create(Folder) 
+                            Meta = EntryMetaData.Create(Folder, 0) 
                         }
                     rootE |> putEntryUnsafe
 
@@ -410,7 +410,7 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
                             EntryStorage.Create(match entryType with Folder -> ChildEntries [||] | _ -> TextBlob "") with
                                 Uid = uid
                                 Name = name
-                                Meta = EntryMetaData.Create(entryType)
+                                Meta = EntryMetaData.Create(entryType,0)
                         }
 
                     // Fable.Core.JS.console.log("Put child entry ", path, uid, sprintf "%A" entryType)

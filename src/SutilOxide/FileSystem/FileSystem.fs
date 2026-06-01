@@ -20,14 +20,16 @@ module Types =
         EntryType: EntryType
         CreatedAt: System.DateTime
         ModifiedAt: System.DateTime
+        Size: int
     }
     with   
-        static member Create(t : EntryType) = 
+        static member Create(t : EntryType, sz : int) = 
             let now = System.DateTime.UtcNow
             {
                 EntryType = t
                 CreatedAt = now
                 ModifiedAt = now
+                Size = sz
             }
 
     type Entry = {
@@ -38,7 +40,6 @@ module Types =
             member __.IsFolder = __.Meta.EntryType = EntryType.Folder
     
     type Content =
-        // | TextUtf8 of string
         | Bytes of ByteArray
         | Entries of Entry[]
         
@@ -54,6 +55,11 @@ module Internal =
         | ByteBlob of ByteArray 
     with
         member __.EntryType = match __ with ChildEntries _ -> Folder | _ -> File
+        member __.Size =
+            match __ with
+            | EntryContent.ChildEntries _ -> 0
+            | EntryContent.TextBlob s -> s.Length
+            | EntryContent.ByteBlob s -> s.length
 
     type EntryStorage = {
         Content : EntryContent
@@ -63,6 +69,7 @@ module Internal =
     }
     with 
         member __.Type = __.Content.EntryType
+        member __.Size = __.Content.Size
         member __.Children = 
             match __.Content with
             | ChildEntries ce -> ce 
@@ -73,7 +80,7 @@ module Internal =
                 Content = entryContent
                 Name = ""
                 Uid = -1
-                Meta = EntryMetaData.Create(match entryContent with ChildEntries _ -> Folder | _ -> File)
+                Meta = EntryMetaData.Create( (match entryContent with ChildEntries _ -> Folder | _ -> File), entryContent.Size)
             }
 
     type EntryStorageDto = {
@@ -88,19 +95,22 @@ module Internal =
         member __.ToEntryStorage( data : ByteArray option ) : EntryStorage = 
             let getKey key = __.Meta 
                             |> Option.bind (fun items -> items |> Array.tryFind (fun (k,_) -> k = key))
-            {
-                Content = 
+                            
+            let content = 
                     match __.Type with
                     | Folder -> ChildEntries __.Children
                     | File ->
                         match data with
                         | Some bytes -> ByteBlob bytes 
                         | None -> TextBlob (__.Content |> Option.defaultValue "")
+            {
+                Content = content
                 Name = __.Name
                 Uid = __.Uid
                 Meta =
                     {
                         EntryType = __.Type
+                        Size = content.Size
                         CreatedAt = 
                             getKey "CreatedAt"
                             |> Option.bind (fun (k,v) -> try System.DateTime.Parse v |> Some with x -> None)
@@ -117,9 +127,6 @@ module Internal =
                 Name = fe.Name
                 Uid = fe.Uid
                 Content = None
-                    // match fe.Content with
-                    // | TextBlob s -> Some s
-                    // | _ -> None
                 Children = 
                     match fe.Content with
                     | ChildEntries entries -> entries
