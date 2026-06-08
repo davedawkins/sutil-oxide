@@ -1,7 +1,7 @@
 module SutilOxide.ResultExt
 
 [<RequireQualifiedAccess>]
-module ResultExt =
+module Result =
     open Fable.Core
 
     let fromMapOption (map : 'a -> 'b) (msg:string) (o : Option<'a>) : Result<'b,string> =
@@ -33,6 +33,31 @@ module ResultExt =
         | Ok v -> v
         | Error e -> failwith (sprintf "%A" e)
         
+    let ofOption (err: 'E) = function Some v -> Ok v | None -> Error err
+    let toOption = function Ok v -> Some v | Error _ -> None
+
+    /// Short-circuit traverse: first Error wins
+    let traverse (f: 'a -> Result<'b, 'E>) (xs: seq<'a>) : Result<'b list, 'E> =
+        let mutable err = None
+        let acc = ResizeArray<'b>()
+        use e = xs.GetEnumerator()
+        while err.IsNone && e.MoveNext() do
+            match f e.Current with
+            | Ok v    -> acc.Add v
+            | Error x -> err <- Some x
+        match err with
+        | Some x -> Error x
+        | None   -> Ok (List.ofSeq acc)
+
+    let sequenceShortCircuit xs = traverse id xs
+    
+    let ofPair (a : Result<'A,string>, b : Result<'B,string>) =
+        match a, b with 
+        | Ok a', Ok b' -> Ok (a',b') 
+        | Error e1, Error e2 -> Error (e1 + "," + e2) 
+        | Error e, _ | _, Error e -> Error e
+
+
 [<AutoOpen>]
 module ResultExtensions =
 
@@ -46,7 +71,6 @@ module ResultExtensions =
 
     let inline errorf format =
         Printf.ksprintf Result.Error format
-
 
 [<AutoOpen>]
 module OptionExtensions =

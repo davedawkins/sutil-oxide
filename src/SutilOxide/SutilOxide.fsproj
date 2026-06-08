@@ -18,6 +18,7 @@
     <Compile Include="Ace.fs" />
     <Compile Include="PropertyTypes.fs" />
     <Compile Include="ResultExt.fs" />
+    <Compile Include="ResultCE.fs" />
     <Compile Include="PromiseResult.fs" />
     <Compile Include="Modal.fs" />
     
