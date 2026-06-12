@@ -37,9 +37,10 @@ type SubFolderFileSystemAsync( fs : IFsAsync, mountPoint : string) =
         member this.GetContent(path: string): AsyncPromise<Content option> =
             fs.GetContent(makePath path)
 
-        member this.OnChanged(callback: string -> unit): AsyncPromise<IDisposable> =
-            fs.OnChanged(fun path -> 
-                if belongs path then callback(fixPath path))
+        member this.OnChanged(callback: FileSystemEvent -> unit): AsyncPromise<IDisposable> =
+            fs.OnChanged(fun ev -> 
+                if belongs ev.path then callback( ev.map(fixPath) )
+            )
 
         // IReadOnlyBatchingFileSystemOf members
         member this.GetEntryBatch(paths: string array): AsyncPromise<Entry option array> =

@@ -244,12 +244,6 @@ module Internal =
 
 open JsHelpers
 
-// type IKeyedStorage =
-//     abstract Exists: string -> bool
-//     abstract Get: string -> string
-//     abstract Put: string * string -> unit
-//     abstract Remove: string -> unit
-
 type IKeyedStorageAsync =
     abstract Exists: string -> Promise<bool>
     abstract Get: string -> Promise<obj>
@@ -278,16 +272,6 @@ module private BrowserStorage =
 
     let remove rootKey key =
         window.localStorage.removeItem (mk rootKey key)
-
-// type LocalStorage(rootKey : string) =
-//     interface IKeyedStorage with
-//         member __.Exists (key: string): bool = 
-//             BrowserStorage.exists rootKey key
-//         member __.Get (key: string): string = 
-//             BrowserStorage.getContents rootKey key
-//         member __.Put(key, content) = BrowserStorage.setContents rootKey key content
-//         member __.Remove (key: string): unit = 
-//             BrowserStorage.remove rootKey key
 
 module KeyedStorageIndexedDB =
     open Fable.Core
@@ -339,11 +323,32 @@ module Path =
 
 module PathOperators =
     let (/+) a b = Path.combine a b
+
+type FileSystemEventType =
+    | Created
+    | Renamed of string
+    | Removed
+    | Updated
     
+type FileSystemEvent =
+    {
+        path : string
+        event: FileSystemEventType
+    }
+    static member Created(path) = { path=path; event=Created }
+    static member Renamed(path,npath) = { path=path; event=Renamed npath }
+    static member Removed(path) = { path=path; event=Removed }
+    static member Updated(path) = { path=path; event=Updated }
+    member __.map( f : string -> string ) =
+        let path = __.path
+        match __.event with
+        | Renamed npath -> { path=f path; event = Renamed (f npath) }
+        | _ -> { path=f path; event = __.event }
+
 type IReadOnlyFileSystemOf<'EntryOption,'ContentOption,'Disposable> =
     abstract member GetEntry : path :string -> 'EntryOption
     abstract member GetContent : path : string  -> 'ContentOption
-    abstract member OnChanged : (string -> unit) -> 'Disposable
+    abstract member OnChanged : (FileSystemEvent -> unit) -> 'Disposable
 
 type IReadOnlyBatchingFileSystemOf<'EntryOption, 'ContentOption, 'Disposable> =
     inherit IReadOnlyFileSystemOf<AsyncPromise<'EntryOption>,AsyncPromise<'ContentOption>,AsyncPromise<'Disposable> >

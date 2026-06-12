@@ -28,16 +28,11 @@ module Result =
         | Ok p -> p.``then``(fun t -> Ok t)
         | Error e -> Promise.lift (Error e)
 
-    let getValueOrThrow (result: Result<'T, 'E>) : 'T =
-        match result with
-        | Ok v -> v
-        | Error e -> failwith (sprintf "%A" e)
-        
     let ofOption (err: 'E) = function Some v -> Ok v | None -> Error err
     let toOption = function Ok v -> Some v | Error _ -> None
 
     /// Short-circuit traverse: first Error wins
-    let traverse (f: 'a -> Result<'b, 'E>) (xs: seq<'a>) : Result<'b list, 'E> =
+    let traverse (f: 'a -> Result<'b, 'E>) (xs: seq<'a>) : Result<'b[] , 'E> =
         let mutable err = None
         let acc = ResizeArray<'b>()
         use e = xs.GetEnumerator()
@@ -47,7 +42,7 @@ module Result =
             | Error x -> err <- Some x
         match err with
         | Some x -> Error x
-        | None   -> Ok (List.ofSeq acc)
+        | None   -> Ok (Array.ofSeq acc)
 
     let sequenceShortCircuit xs = traverse id xs
     
@@ -57,20 +52,35 @@ module Result =
         | Error e1, Error e2 -> Error (e1 + "," + e2) 
         | Error e, _ | _, Error e -> Error e
 
+    let toThrow (r : Result<'a,'b>) =
+        r |> Result.mapError (fun err -> failwith (string err))
+        
+    let toIgnore (r : Result<'a,'b>) =
+        r |> Result.map ignore
 
+    let toIgnoreThrow (r : Result<'a,'b>) =
+        r |> function Ok _ -> () | Error err -> failwith (string err)
+        
+    let inline errorf format =
+        Printf.ksprintf Result.Error format
+
+    let getValueOrThrow (result: Result<'T, 'E>) : 'T =
+        match result with
+        | Ok v -> v
+        | Error e -> failwith (sprintf "%A" e)
+        
 [<AutoOpen>]
 module ResultExtensions =
 
     type Result<'T,'Err> with
         member __.ToThrow() =
-            match __ with Ok v -> v | Error e -> failwith (sprintf "%A" e)
+            __ |> Result.toThrow
         member __.ToUnit() : Result<unit, 'Err> =
-            __ |> Result.map ignore
+            __ |> Result.toIgnore
         member __.ToThrowU() : unit =
-            match __ with Ok _ -> () | Error e -> failwith (sprintf "%A" e)
+            __ |> Result.toIgnoreThrow
 
-    let inline errorf format =
-        Printf.ksprintf Result.Error format
+    // let inline errorf format = Result.errorf format
 
 [<AutoOpen>]
 module OptionExtensions =

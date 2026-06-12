@@ -16,7 +16,7 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
 
     let mutable initialized = false    
     let mutable root = { NextUid = 1 }
-    let mutable onChange : (string -> unit) list = []
+    let mutable onChange : (FileSystemEvent -> unit) list = []
     
     // Add a cache for frequently accessed entries
     let entryCache = System.Collections.Generic.Dictionary<int, EntryStorage option>()
@@ -27,7 +27,7 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
 
     let uidKey uid = sprintf "uid:%d" uid
 
-    let notifyOnChange (path : string) = onChange |> List.iter (fun h -> h path)
+    let notifyOnChange (ev ) = onChange |> List.iter (fun h -> h ev)
 
     // Function to clear cache when it gets too large
     let trimCache() =
@@ -423,10 +423,9 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
                 
                 do! commitBatch()
                 // Fable.Core.JS.console.log("Batch committed ", path, sprintf "%A" entryType)
-                
 
                 if notify then
-                    notifyOnChange fname
+                    notifyOnChange (FileSystemEvent.Created fname)
             with ex ->
                 // Don't commit partial batch to avoid dangling references
                 // The batch will be automatically discarded
@@ -492,7 +491,7 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
                     failwith ("setFileContent failed: " + s)
 
                 do! commitBatch()
-                notifyOnChange path
+                notifyOnChange (if _isFile then FileSystemEvent.Updated cpath else FileSystemEvent.Created cpath)
             with ex ->
                 do! commitBatch()
                 return raise ex
@@ -556,7 +555,7 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
                     failwith ("Remove failed: " + path + ": " + s)
 
                 do! commitBatch()
-                notifyOnChange path
+                notifyOnChange (FileSystemEvent.Removed path)
             with ex ->
                 do! commitBatch()
                 return raise ex
@@ -587,13 +586,7 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
             beginBatch()
             try
                 let cpath = path |> Internal.canonical
-
                 let npath = newNameOrPath |> Internal.canonical
-                    // if newNameOrPath.StartsWith("/") then
-                    //     newNameOrPath |> Internal.canonical
-                    // else
-                    //     validateFileName newNameOrPath
-                    //     Path.combine (Path.getFolderName cpath) newNameOrPath
 
                 if cpath = "/" || npath = "/" then
                     failwith "Cannot rename to/from '/'"
@@ -647,7 +640,7 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
                                     }
                 
                 do! commitBatch()
-                notifyOnChange path
+                notifyOnChange (FileSystemEvent.Renamed (cpath,npath))
             with ex ->
                 do! commitBatch()
                 return raise ex
@@ -693,7 +686,7 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
         }
 
     let mutable handlerIds = 0
-    let handlers = System.Collections.Generic.Dictionary<int, string -> unit>()
+    let handlers = System.Collections.Generic.Dictionary<int, FileSystemEvent -> unit>()
 
 
 with
@@ -721,7 +714,7 @@ with
                 return None
         }   
 
-    member _.OnChange (cb : string -> unit) = 
+    member _.OnChange (cb : FileSystemEvent -> unit) = 
         let run() =
             // Generate a unique ID for this handler
             let id = handlerIds
@@ -804,7 +797,7 @@ with
         member this.GetContentBatch(path: string array): AsyncPromise<Content option array> = 
             (fun _ -> path |> Array.map this.GetContent |> Promise.all) |> mkResult "GetContentBatch"
 
-        member __.OnChanged (cb : string -> unit) = __.OnChange(cb)
+        member __.OnChanged (cb : FileSystemEvent -> unit) = __.OnChange(cb)
 
     interface System.IDisposable with
         member __.Dispose() =
