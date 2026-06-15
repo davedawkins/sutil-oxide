@@ -4,7 +4,6 @@ module SutilOxide.Types
 // Copyright (c) 2022 David Dawkins
 //
 
-open Sutil
 open Sutil.Core
 open Fable.Core
 
@@ -97,94 +96,9 @@ with
         |Top -> Bottom
         |Bottom -> Top
 
-
-type DockLocation =
-    | LeftTop
-    | LeftBottom
-    | BottomLeft
-    | CentreLeft
-    | CentreRight
-    | BottomRight
-    | RightTop
-    | RightBottom
-    | TopLeft
-    | TopRight
-with
-    static member All =
-        [|
-            LeftTop; LeftBottom; BottomLeft; BottomRight; RightTop; RightBottom; CentreLeft; CentreRight; TopLeft; TopRight
-        |]
-
-    static member AllNames = 
-        DockLocation.All |> Array.map _.ToString()
-
-    static member TryParse (s : string) =
-        let i = DockLocation.AllNames |> Array.findIndex (fun name -> name = s)
-        if i < 0 then 
-            None
-        else
-            DockLocation.All[i] |> Some
-
-    member __.Hand =
-        match __.Primary, __.Secondary with
-        | _,Left | Left,_ -> Left
-        | _ -> Right
-
-    member __.Primary =
-        match __ with
-        | CentreLeft | CentreRight -> Centre
-        | LeftTop | LeftBottom -> Left
-        | RightTop | RightBottom -> Right
-        | BottomLeft | BottomRight -> Bottom
-        | TopLeft | TopRight -> Top
-
-    member __.Secondary=
-        match __ with
-        | LeftTop | RightTop -> Top
-        | LeftBottom | RightBottom -> Bottom
-        | CentreLeft | TopLeft | BottomLeft | TopLeft  -> Left
-        | CentreRight | TopRight | BottomRight | TopRight -> Right
-
-    member __.CssName =
-        __.Primary.LowerName + "-" + __.Secondary.LowerName
-
-// type DockPane = {
-//     Key : string
-//     Label : string
-// }
-
-
 type LabelElement =
     | LabelString of string
     | LabelElement of SutilElement
-
-[<RequireQualifiedAccess>]
-type IsOpenOption = 
-    | Definite of bool
-    | Default of bool
-
-type PaneOptions =
-    | Group of string
-    | Label of string
-    | Icon of string
-    | LabelEl of SutilElement
-    | LabelTooltip of string
-    | HeaderTooltip of string
-    | Tooltip of string
-    | CanMinimize of bool
-    | CanClose of bool
-    | CanFloat of bool
-    | CanMove of bool
-    | Location of DockLocation
-    | Header of SutilElement
-    | Content of SutilElement
-    | IsOpen of IsOpenOption
-    | IsExclusive of bool
-    | IsMinimized of bool
-    | OnClose of (unit -> unit)
-    | OnMinimize of (unit -> unit)
-    | OnShow of (bool -> unit)
-    | OnChildActivate of (string -> bool -> unit)
 
 module StringHelpers =
     open System
@@ -206,123 +120,6 @@ module StringHelpers =
         cleaned.Split([| ' ' |], StringSplitOptions.RemoveEmptyEntries)
         |> Array.map (fun w -> w.[0].ToString().ToUpper() + w.Substring(1))
         |> String.concat " "
-
-type DockPaneKey = Key of string
-    with 
-        static member From(s : string) =
-            if StringHelpers.toPaneId s <> s || s = "" then
-                Fable.Core.JS.console.error( "DockPaneKey: ",  sprintf "Invalid key value: %s: lowercase and '-' only" s ) 
-                failwithf "Invalid key value: %s: lowercase and '-' only" s
-            Key s
-
-        override __.ToString (): string = let (Key s) = __ in s
-        member __.AsLabel = __.ToString() |> StringHelpers.toCapWords
-
-
-type DockPane = 
-    {
-        Label : LabelElement
-        LabelTooltip : string option
-        CanClose : bool
-        CanMinimize : bool
-        CanFloat : bool
-        CanMove : bool
-        StrictKey : DockPaneKey
-        Icon: string
-        Location : DockLocation
-        Group : string
-        Header : SutilElement
-        HeaderTooltip : string option
-        Content : SutilElement
-        IsExclusive : bool
-        IsOpen : IsOpenOption
-        IsMinimized : bool
-        OnClose : unit -> unit
-        OnMinimize : unit -> unit
-        OnShow : bool -> unit
-        OnChildActivate : string -> bool -> unit
-    }
-    member __.IsOpenCalculated = __.IsOpen = IsOpenOption.Default true || __.IsOpen = IsOpenOption.Definite true
-    member __.Key = __.StrictKey.ToString()
-    member __.KeyAsClass = __.StrictKey.ToString()
-    member __.KeyAsLabel = __.StrictKey.AsLabel
-    static member Equals( p1 : DockPane, p2 : DockPane) =
-        p1.Label = p2.Label &&
-        p1.CanClose = p2.CanClose &&
-        p1.Key = p2.Key &&
-        p1.Location = p2.Location &&
-        p1.IsOpen = p2.IsOpen 
-        
-//    static member MakeKey(s:string) = s.ToLower().Replace(".", "_")
-    static member Default( key : string ) =
-        {
-            StrictKey = DockPaneKey.From(key)
-            Label = LabelString (key |> StringHelpers.toCapWords)
-            LabelTooltip = None
-            CanClose = false
-            CanMinimize = false
-            CanFloat = false
-            CanMove = false
-            Location = CentreLeft
-            Header = text key
-            HeaderTooltip = None
-            Content = Html.div key
-            IsOpen = IsOpenOption.Default false
-            IsExclusive = false
-            IsMinimized = false
-            OnClose = ignore
-            OnMinimize = ignore
-            Icon = "fa-folder"
-            OnShow = ignore
-            Group = ""
-            OnChildActivate = fun _ _ -> ()
-        }
-        
-    static member Create( key : string, options : PaneOptions list ) : DockPane =
-        let withOpt cfg opt : DockPane =
-            match opt with 
-            | LabelEl e -> { cfg with Label = LabelElement e }
-            | Label s -> { cfg with Label = LabelString s }
-            | Icon s -> { cfg with Icon = s }
-            | Group s -> { cfg with Group = s }
-            | CanClose s -> { cfg with CanClose = s }
-            | CanMinimize s -> { cfg with CanMinimize = s }
-            | CanFloat s -> { cfg with CanFloat = s }
-            | CanMove s -> { cfg with CanMove = s }
-            | Location s -> { cfg with Location = s }
-            | Content s -> { cfg with Content = s }
-            | Header s -> { cfg with Header = s }
-            | IsOpen s -> { cfg with IsOpen = s }
-            | IsExclusive s -> { cfg with IsExclusive = s }
-            | IsMinimized s -> { cfg with IsMinimized = s }
-            | OnClose s -> { cfg with OnClose = s }
-            | OnMinimize s -> { cfg with OnMinimize = s }
-            | OnChildActivate s -> { cfg with OnChildActivate = s }
-            | OnShow s -> { cfg with OnShow = s }
-            | LabelTooltip s -> { cfg with LabelTooltip = Some s }
-            | HeaderTooltip s -> { cfg with HeaderTooltip = Some s }
-            | Tooltip s -> { cfg with HeaderTooltip = Some s; LabelTooltip = Some s }
-
-        let init = (DockPane.Default(key))
-        options |> List.fold withOpt init
-
-
-type DockStation = {
-    Panes : DockPane list
-}
-with
-    static member Empty = { Panes = [] }
-
-type  DockCollection = {
-    Stations : Map<DockLocation,DockStation>
-}
-with
-    static member Empty =
-        {
-            Stations = DockLocation.All |> Array.fold (fun s e -> s.Add(e, DockStation.Empty)) Map.empty
-        }
-    member __.GetPanes loc = __.Stations[loc].Panes
-
 
 [<Erase>]
 type SpacedList = SpacedList of string

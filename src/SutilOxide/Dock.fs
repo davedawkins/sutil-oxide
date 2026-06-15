@@ -15,6 +15,7 @@ open Fable.Core.JsInterop
 open Browser.Types
 open SutilOxide.DomHelpers
 open SutilOxide.Types
+open SutilOxide.UI
 open SutilOxide.Toolbar
 
 
@@ -884,7 +885,7 @@ with
     member __.AddPane (key : string, label : string, initLoc : DockLocation, header : SutilElement, content : SutilElement, show : bool ) =
         __.AddPane { DockPane.Default(key) with Label = LabelString label; Location = initLoc; Header = header; Content = content; IsOpen = IsOpenOption.Default show}
 
-    member __.AddPane (key, options : PaneOptions list) =
+    member __.AddPane (key, options : PaneOption list) =
         __.AddPane( DockPane.Create(key, options ))
 
     member private __.AddPane (cfg : DockPane) =

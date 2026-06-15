@@ -197,6 +197,8 @@ module ResizeController =
 [<AutoOpen>]
 module DomHelpers =
 
+    open UI
+
     let toEl (et : EventTarget) = et :?> HTMLElement
     let targetEl (e : Event) = e.target |> toEl
     let currentEl (e : Event) = e.currentTarget |> toEl

@@ -74,8 +74,6 @@ module Aria =
         | [<CompiledName("tooltip")>] Tooltip
 
 module Common = 
-    open Reactive
-
     type Orientation = Horizontal | Vertical
 
     [<RequireQualifiedAccess>]
@@ -142,12 +140,12 @@ module Common =
     type Shortcut = 
         Shortcut of string
 
-    type DockLocation =
-        | TopLeft | TopRight
-        | BottomLeft | BottomRight
-        | LeftTop | LeftBottom
-        | RightTop | RightBottom
-        | CenterLeft | CenterRight
+    // type DockLocation =
+    //     | TopLeft | TopRight
+    //     | BottomLeft | BottomRight
+    //     | LeftTop | LeftBottom
+    //     | RightTop | RightBottom
+    //     | CenterLeft | CenterRight
 
 
     /// Pass the component's label as-is, it will be converted to a standard format. For example, "Sign Out" will
@@ -216,7 +214,6 @@ module Tooltip =
     let mutable tooltip : Value<string> -> Core.SutilElement seq = fun string -> []
 
     let registerHandler f = tooltip <- f
-
 
 module Control =
     open Sutil.CoreElements
@@ -782,35 +779,247 @@ module Input =
             ]
         ]
 
-module Controller =
-    open Sutil.Core
+open Types
 
-    type IRibbonController =
-        abstract CreateRibbon: ribbonKey:string * label:string * groups:List<string * string * Control.Control list> -> unit
-        abstract CreateGroup: ribbonKey:string * key:string * label:string * controls : Control.Control list -> unit
+type DockLocation =
+    | LeftTop
+    | LeftBottom
+    | BottomLeft
+    | CentreLeft
+    | CentreRight
+    | BottomRight
+    | RightTop
+    | RightBottom
+    | TopLeft
+    | TopRight
+with
+    static member All =
+        [|
+            LeftTop; LeftBottom; BottomLeft; BottomRight; RightTop; RightBottom; CentreLeft; CentreRight; TopLeft; TopRight
+        |]
 
-    type PaneOption =
-        | Group of string
-        | Location of Common.DockLocation
-        | TabText of Common.Text 
-        | TabTooltip of Common.Text 
-        | HeaderTooltip of Common.Text 
-        | TabIcon of Common.Icon
-        | TabElement of SutilElement
-        | HeaderText of Common.Text
-        | HeaderElement of SutilElement
-        | ControlElement of SutilElement
-        | IsShowing of bool
-        | CanClose of bool
-        | OnClose of (unit -> unit)
+    static member AllNames = 
+        DockLocation.All |> Array.map _.ToString()
 
-    type IDockController =
-        abstract CreatePane: paneKey:string * PaneOption list -> unit
-        abstract ShowPane: paneKey:string -> unit
-        abstract HidePane: paneKey:string -> unit
-        abstract MinimizePane: paneKey:string -> unit
-        abstract ContainsPane: paneKey:string -> bool
-        abstract RemovePane: paneKey: string -> unit
+    static member TryParse (s : string) =
+        let i = DockLocation.AllNames |> Array.findIndex (fun name -> name = s)
+        if i < 0 then 
+            None
+        else
+            DockLocation.All[i] |> Some
+
+    member __.Hand =
+        match __.Primary, __.Secondary with
+        | _,Left | Left,_ -> Left
+        | _ -> Right
+
+    member __.Primary =
+        match __ with
+        | CentreLeft | CentreRight -> Centre
+        | LeftTop | LeftBottom -> Left
+        | RightTop | RightBottom -> Right
+        | BottomLeft | BottomRight -> Bottom
+        | TopLeft | TopRight -> Top
+
+    member __.Secondary=
+        match __ with
+        | LeftTop | RightTop -> Top
+        | LeftBottom | RightBottom -> Bottom
+        | CentreLeft | TopLeft | BottomLeft | TopLeft  -> Left
+        | CentreRight | TopRight | BottomRight | TopRight -> Right
+
+    member __.CssName =
+        __.Primary.LowerName + "-" + __.Secondary.LowerName
+
+open Sutil.Core
+open Types
+
+[<RequireQualifiedAccess>]
+type IsOpenOption = 
+    | Definite of bool
+    | Default of bool
+
+type IRibbonController =
+    abstract CreateRibbon: ribbonKey:string * label:string * groups:List<string * string * Control.Control list> -> unit
+    abstract CreateGroup: ribbonKey:string * key:string * label:string * controls : Control.Control list -> unit
+
+type DockPaneKey = Key of string
+    with 
+        static member From(s : string) =
+            if StringHelpers.toPaneId s <> s || s = "" then
+                Fable.Core.JS.console.error( "DockPaneKey: ",  sprintf "Invalid key value: %s: lowercase and '-' only" s ) 
+                failwithf "Invalid key value: %s: lowercase and '-' only" s
+            Key s
+
+        override __.ToString (): string = let (Key s) = __ in s
+        member __.AsLabel = __.ToString() |> StringHelpers.toCapWords
+
+type DockPane = 
+    {
+        Label : LabelElement
+        LabelTooltip : string option
+        CanClose : bool
+        CanMinimize : bool
+        CanFloat : bool
+        CanMove : bool
+        StrictKey : DockPaneKey
+        Icon: string
+        Location : DockLocation
+        Group : string
+        Header : SutilElement
+        HeaderTooltip : string option
+        Content : SutilElement
+        IsExclusive : bool
+        IsOpen : IsOpenOption
+        IsMinimized : bool
+        OnClose : unit -> unit
+        OnMinimize : unit -> unit
+        OnShow : bool -> unit
+        OnChildActivate : string -> bool -> unit
+    }
+    member __.IsOpenCalculated = __.IsOpen = IsOpenOption.Default true || __.IsOpen = IsOpenOption.Definite true
+    member __.Key = __.StrictKey.ToString()
+    member __.KeyAsClass = __.StrictKey.ToString()
+    member __.KeyAsLabel = __.StrictKey.AsLabel
+    static member Equals( p1 : DockPane, p2 : DockPane) =
+        p1.Label = p2.Label &&
+        p1.CanClose = p2.CanClose &&
+        p1.Key = p2.Key &&
+        p1.Location = p2.Location &&
+        p1.IsOpen = p2.IsOpen 
+        
+    static member Default( key : string ) =
+        {
+            StrictKey = DockPaneKey.From(key)
+            Label = LabelString (key |> StringHelpers.toCapWords)
+            LabelTooltip = None
+            CanClose = false
+            CanMinimize = false
+            CanFloat = false
+            CanMove = false
+            Location = CentreLeft
+            Header = text key
+            HeaderTooltip = None
+            Content = Html.div key
+            IsOpen = IsOpenOption.Default false
+            IsExclusive = false
+            IsMinimized = false
+            OnClose = ignore
+            OnMinimize = ignore
+            Icon = "fa-folder"
+            OnShow = ignore
+            Group = ""
+            OnChildActivate = fun _ _ -> ()
+        }
+        
+[<RequireQualifiedAccess>]
+type PaneOption =
+    | Group of string
+    | Label of string
+    | Icon of string
+    | LabelEl of SutilElement
+    | LabelTooltip of string
+    | HeaderTooltip of string
+    | Tooltip of string
+    | CanMinimize of bool
+    | CanClose of bool
+    | CanFloat of bool
+    | CanMove of bool
+    | Location of DockLocation
+    | Header of SutilElement
+    | Content of SutilElement
+    | IsOpen of IsOpenOption
+    | IsExclusive of bool
+    | IsMinimized of bool
+    | OnClose of (unit -> unit)
+    | OnMinimize of (unit -> unit)
+    | OnShow of (bool -> unit)
+    | OnChildActivate of (string -> bool -> unit)
+
+type IPaneController =
+    abstract CreatePane: paneKey:string * PaneOption list -> unit
+    abstract ShowPane: paneKey:string -> unit
+    abstract HidePane: paneKey:string -> unit
+    abstract MinimizePane: paneKey:string -> unit
+    abstract ContainsPane: paneKey:string -> bool
+    abstract RemovePane: paneKey: string -> unit
+    abstract Panes : ISignal<DockPane[]> 
+    abstract IsActiveSignal: string -> ISignal<bool>
+    abstract IsHiddenSignal: string -> ISignal<bool>
+    abstract IsMinimizedSignal: string -> ISignal<bool>
+    abstract KeyAttr: string -> SutilElement
+    abstract IsActive: string -> bool
+    abstract IsHidden: string -> bool
+    abstract IsMinimized: string -> bool
+    abstract AllAreaNames: string[]
+    abstract AddPaneFactory: key:string * ctor:(unit -> PaneOption list) -> unit
+    abstract RenderPcPaneDiv: key:string * elements:Core.SutilElement seq -> Core.SutilElement
+ 
+
+type DockPane with
+    static member Create( key : string, options : PaneOption list ) : DockPane =
+        let withOpt cfg opt : DockPane =
+            match opt with 
+            | PaneOption.LabelEl e -> { cfg with Label = LabelElement e }
+            | PaneOption.Label s -> { cfg with Label = LabelString s }
+            | PaneOption.Icon s -> { cfg with Icon = s }
+            | PaneOption.Group s -> { cfg with Group = s }
+            | PaneOption.CanClose s -> { cfg with CanClose = s }
+            | PaneOption.CanMinimize s -> { cfg with CanMinimize = s }
+            | PaneOption.CanFloat s -> { cfg with CanFloat = s }
+            | PaneOption.CanMove s -> { cfg with CanMove = s }
+            | PaneOption.Location s -> { cfg with Location = s }
+            | PaneOption.Content s -> { cfg with Content = s }
+            | PaneOption.Header s -> { cfg with Header = s }
+            | PaneOption.IsOpen s -> { cfg with IsOpen = s }
+            | PaneOption.IsExclusive s -> { cfg with IsExclusive = s }
+            | PaneOption.IsMinimized s -> { cfg with IsMinimized = s }
+            | PaneOption.OnClose s -> { cfg with OnClose = s }
+            | PaneOption.OnMinimize s -> { cfg with OnMinimize = s }
+            | PaneOption.OnChildActivate s -> { cfg with OnChildActivate = s }
+            | PaneOption.OnShow s -> { cfg with OnShow = s }
+            | PaneOption.LabelTooltip s -> { cfg with LabelTooltip = Some s }
+            | PaneOption.HeaderTooltip s -> { cfg with HeaderTooltip = Some s }
+            | PaneOption.Tooltip s -> { cfg with HeaderTooltip = Some s; LabelTooltip = Some s }
+
+        let init = (DockPane.Default(key))
+        options |> List.fold withOpt init
+
+
+
+type IDockController = IPaneController
+
+    // type PaneOption =
+    //     | Group of string
+    //     | Location of Common.DockLocation
+    //     | TabText of Common.Text 
+    //     | TabTooltip of Common.Text 
+    //     | HeaderTooltip of Common.Text 
+    //     | TabIcon of Common.Icon
+    //     | TabElement of SutilElement
+    //     | HeaderText of Common.Text
+    //     | HeaderElement of SutilElement
+    //     | ControlElement of SutilElement
+    //     | IsShowing of bool
+    //     | CanClose of bool
+    //     | OnClose of (unit -> unit)
+
+
+type DockStation = {
+    Panes : DockPane list
+}
+with
+    static member Empty = { Panes = [] }
+
+type  DockCollection = {
+    Stations : Map<DockLocation,DockStation>
+}
+with
+    static member Empty =
+        {
+            Stations = DockLocation.All |> Array.fold (fun s e -> s.Add(e, DockStation.Empty)) Map.empty
+        }
+    member __.GetPanes loc = __.Stations[loc].Panes
 
 module Forms =
 
