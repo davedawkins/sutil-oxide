@@ -33,8 +33,14 @@ module Internal =
     open System.Collections.Generic
     open Fable.Core
 
+    /// Non-generic base exposing live subscriber count for leak instrumentation (#394).
+    [<AbstractClass>]
+    type SubscriberCounted() =
+        abstract SubscriberCount : int
+
     [<Mangle>]
     type EventSourceWithResult<'T,'R>() =
+        inherit SubscriberCounted()
         let mutable nextId = 0
         let clients = Dictionary<int, 'T -> 'R>()
 
@@ -62,6 +68,8 @@ module Internal =
 
         member _.Dispose() = clients.Clear()
 
+        override _.SubscriberCount = clients.Count
+
         member this.NotifyAndCollect(value : 'T) : 'R[] =
             [|
                 for client in clients.Values do
@@ -80,6 +88,7 @@ module Internal =
             member this.Notify(v) = this.Notify(v)
 
     type Cell<'T>(init: (unit -> 'T) option) =
+        inherit SubscriberCounted()
         let disposeListeners = new ResizeArray<unit -> unit>()
         let clients = new EventSourceWithResult<'T,unit>()
         
@@ -114,6 +123,8 @@ module Internal =
 
         member _.Set(v) = _set_notify v
         member _.Value with get() = _get(true)
+
+        override _.SubscriberCount = clients.SubscriberCount
 
         member _.OnDispose( f : unit -> unit ) =
             disposeListeners.Add(f)
