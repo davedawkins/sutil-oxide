@@ -88,6 +88,9 @@ type LogMessage =
         Message : string
         Context : obj option
     }
+    override __.ToString() =
+        sprintf "%s:%s:%s" __.Category __.Source __.Message
+
     static member Create(msg : string) = { Source = ""; Id = nextId(); ModelTime = 0; Category = "-"; Message = msg; Context = None; Time = System.DateTime.Now }
     static member Create(cat : string, msg : string) = { Source = ""; Id = nextId(); ModelTime = 0; Category = cat; Message = msg; Context = None; Time = System.DateTime.Now }
     static member Create(src : string, cat : string, msg : string, ctx : obj) = 
@@ -125,6 +128,9 @@ let enableSource (source : string) (enabled : bool) =
 let enableCategory (cat : string) (enabled : bool) =
     categories <- categories.Add(cat.ToLower(), enabled)
 
+let formatMessage( m : LogMessage ) =
+    m.ToString()
+
 let logmessage (m : LogMessage) =
     if categoryIsEnabled m.Category && sourceIsEnabled m.Source then
         // if (m.Message.StartsWith("Error") || m.Category = "Error") then
@@ -133,7 +139,7 @@ let logmessage (m : LogMessage) =
         logMessages.Value.Add(m)
         logMessages.Set( logMessages.Value )
         logListeners.Notify(m)
-        Console.log(m.Category + ":" + m.Source + ":" + m.Message)
+        Console.log( formatMessage m )
 
 //        Console.log( m.Source, m.Category, m.Message)
 
