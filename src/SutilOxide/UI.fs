@@ -1107,7 +1107,7 @@ module Forms =
                     Editor = FieldEditor.BuiltIn BuiltInEditor.Text
                     SystemTypeName = typedefof<System.String>.FullName
                     Parse = fun value -> Result<'T,string>.Error("No parser for '" + value + "'")
-                    Format = fun (v : 'T) -> sprintf "%A" v
+                    Format = fun (v : 'T) -> string v
                     AllowedValues = None
                     Set = None
                     Step = 1.0
@@ -1121,8 +1121,10 @@ module Forms =
             let empty = { Field.Empty<'T>() with  SystemTypeName = sysTypeName }
 
             match (shortName(empty.SystemTypeName)) with
-            | "String" -> 
-                    empty.WithParse( fun s -> Ok ( (s :> obj :?> 'T)  ))
+            | "String" ->
+                    empty
+                        .WithFormat( fun s -> unbox<string> s )
+                        .WithParse( fun s -> Ok ( (s :> obj :?> 'T)  ))
 
             | "Double" | "Float64" | "Float32" | "Float" -> 
                 empty
@@ -1149,7 +1151,7 @@ module Forms =
                                 | None -> Error ("Case not found for type: "  + s + " is not in " + t.FullName)
                     }
                 else
-                    { empty with Format = sprintf "%A" }
+                    { empty with Format = fun v -> string v }
                     //failwith ("Unsupported input for type " + t.FullName )
 
         static member internal CreateWithType( t : System.Type, fullName : string ) : Field<'T> = 
