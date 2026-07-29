@@ -48,13 +48,160 @@ export class KeyedStorageIndexedDB {
         this.batchOperations = [];
         this.batchSize = 25; // Optimal batch size for IndexedDB operations
 
-        // Cache management
+        // Cache management -- #542: byte-budgeted LRU (Map insertion-order-as-recency: a re-set
+        // via delete()+set() moves a key to the MRU end). 8 MB budget / 512 KB per-entry ceiling,
+        // same defaults as Layer 1 (KeyedStorageFileSystemAsync.fs), runtime-settable via
+        // `project fs-stats set kv <bytes>`.
         this.cacheEnabled = true;
         this.cache = new Map();
-        this.cacheLimit = 100;
+        this.cacheBudgetBytes = 8388608;
+        this.entryCeilingBytes = 524288;
+        this._cacheSizes = new Map();
+        this._cacheBytes = 0;
+
+        this.cacheHits = 0;
+        this.cacheMisses = 0;
+        this.cacheFlushes = 0;
+        this.cacheEvictions = 0;
+        this.admissionRefused = 0;
+        this.transactionsOpened = 0;
+        this.cacheHighWaterEntries = 0;
+        this.cacheHighWaterBytes = 0;
+        this.tracingEnabled = false;
+        this.topReads = new Map();
+
+        // #542: same-tick read coalescing -- see get()/_flushGetBatch(). Keyed to an ARRAY of
+        // waiters per key, not a single slot: two concurrent get() calls for the SAME key before
+        // the microtask flush must both resolve (a single-slot map would silently drop the first
+        // caller's resolver -- a hang, not an error; red-team finding, #542).
+        this._pendingGets = new Map();
+        this._getFlushScheduled = false;
 
         // Setup automatic cleanup handlers
         this._setupCleanupHandlers();
+    }
+
+    /**
+     * Approximate byte cost of a cached value, for the budget and high-water mark. #542
+     * @private
+     */
+    _sizeOf(value) {
+        if (value instanceof Uint8Array) return value.length;
+        if (typeof value === 'string') return value.length;
+        return 0;
+    }
+
+    /** @private */
+    _bumpHighWater() {
+        this.cacheHighWaterEntries = Math.max(this.cacheHighWaterEntries, this.cache.size);
+        this.cacheHighWaterBytes = Math.max(this.cacheHighWaterBytes, this._cacheBytes);
+    }
+
+    /** @private */
+    _bumpTopRead(key) {
+        const cur = this.topReads.get(key) || 0;
+        this.topReads.set(key, cur + 1);
+    }
+
+    /**
+     * Insert/replace in the cache under the byte budget + per-entry ceiling. An oversized entry
+     * is refused outright (never admitted), which is what excludes project.json-class entries
+     * without naming them and stops one large entry from evicting the rest of the working set. #542
+     * @private
+     */
+    _cacheSet(key, value) {
+        if (!this.cacheEnabled) return;
+        const size = this._sizeOf(value);
+        if (size > this.entryCeilingBytes) {
+            this.admissionRefused++;
+            this._cacheDelete(key); // no stale smaller copy left behind by a refused re-insert
+            return;
+        }
+        this._cacheDelete(key);
+        this.cache.set(key, value);
+        this._cacheSizes.set(key, size);
+        this._cacheBytes += size;
+        // Map iteration order == insertion order == LRU order; evict the oldest (index 0) one at
+        // a time. `> 1` is what makes "the cache never empties itself wholesale" structural: it
+        // always leaves at least the entry just inserted.
+        while (this._cacheBytes > this.cacheBudgetBytes && this.cache.size > 1) {
+            const oldestKey = this.cache.keys().next().value;
+            this._cacheBytes -= this._cacheSizes.get(oldestKey);
+            this.cache.delete(oldestKey);
+            this._cacheSizes.delete(oldestKey);
+            this.cacheEvictions++;
+        }
+        this._bumpHighWater();
+    }
+
+    /**
+     * Read + touch (moves the key to MRU via delete+set, since Map preserves insertion order).
+     * Does not bump hits/misses -- callers that care about read stats do that themselves, since
+     * "was this key ever cached" (e.g. exists()) and "read this key's content" (get()) are
+     * different questions. #542
+     * @private
+     */
+    _cacheGet(key) {
+        if (!this.cache.has(key)) return undefined;
+        const v = this.cache.get(key);
+        this.cache.delete(key);
+        this.cache.set(key, v);
+        return v;
+    }
+
+    /** Unconditional -- a caller-directed delete, never gated by the eviction guard in _cacheSet. @private */
+    _cacheDelete(key) {
+        if (this._cacheSizes.has(key)) {
+            this._cacheBytes -= this._cacheSizes.get(key);
+            this._cacheSizes.delete(key);
+        }
+        this.cache.delete(key);
+    }
+
+    /**
+     * Explicit wholesale clear -- the ONLY code path that empties the cache, used solely by
+     * close() (the session is genuinely ending). #542: the previous visibility-change forced
+     * flush is deleted outright, not replaced -- it discarded a read cache on a tab switch for no
+     * persistence benefit, and made cache behaviour (and any read-count measurement) depend on
+     * window focus.
+     * @private
+     */
+    _forceClearCache(reason) {
+        this.cacheFlushes++;
+        this.cache.clear();
+        this._cacheSizes.clear();
+        this._cacheBytes = 0;
+        clog("_forceClearCache", reason);
+    }
+
+    /** Zero the counters. Never touches cached entries -- see `project fs-stats reset`. #542 */
+    _resetStats() {
+        this.cacheHits = 0;
+        this.cacheMisses = 0;
+        this.cacheFlushes = 0;
+        this.cacheEvictions = 0;
+        this.admissionRefused = 0;
+        this.transactionsOpened = 0;
+        this.cacheHighWaterEntries = this.cache.size;
+        this.cacheHighWaterBytes = this._cacheBytes;
+    }
+
+    /** @private */
+    _getTopReads(n) {
+        const sorted = [...this.topReads.entries()].sort((a, b) => b[1] - a[1]);
+        return sorted.slice(0, Math.max(0, n)).map(([k, c]) => ({ Key: k, Count: c }));
+    }
+
+    /** @private */
+    _setCacheBudget(bytes) {
+        this.cacheBudgetBytes = bytes;
+        while (this._cacheBytes > this.cacheBudgetBytes && this.cache.size > 1) {
+            const oldestKey = this.cache.keys().next().value;
+            this._cacheBytes -= this._cacheSizes.get(oldestKey);
+            this.cache.delete(oldestKey);
+            this._cacheSizes.delete(oldestKey);
+            this.cacheEvictions++;
+        }
     }
 
     /**
@@ -70,11 +217,6 @@ export class KeyedStorageIndexedDB {
         };
 
         window.addEventListener('beforeunload', cleanupHandler);
-        window.addEventListener('visibilitychange', () => {
-            if (document.visibilityState === 'hidden') {
-                this._flushCacheIfNeeded(true);
-            }
-        });
     }
 
     /**
@@ -161,7 +303,7 @@ export class KeyedStorageIndexedDB {
 
         this.db = null;
         this.initPromise = null;
-        this.cache.clear();
+        this._forceClearCache('close');
     }
 
     /**
@@ -213,6 +355,7 @@ export class KeyedStorageIndexedDB {
         this.batchOperations = [];
 
         return new Promise((resolve, reject) => {
+            this.transactionsOpened++;
             const transaction = this.db.transaction([this.storeName], 'readwrite');
             const store = transaction.objectStore(this.storeName);
 
@@ -241,34 +384,15 @@ export class KeyedStorageIndexedDB {
                 clog("- ", op);
                 if (op.type === 'put') {
                     store.put(op.value, op.key);
-                    // Update cache
-                    if (this.cacheEnabled) {
-                        this.cache.set(op.key, op.value);
-                    }
+                    if (this.cacheEnabled) this._cacheSet(op.key, op.value);
                 } else if (op.type === 'delete') {
                     store.delete(op.key);
-                    // Remove from cache
-                    if (this.cacheEnabled) {
-                        this.cache.delete(op.key);
-                    }
+                    if (this.cacheEnabled) this._cacheDelete(op.key);
                 }
             });
-            clog("(batch flushed) ", operations.length)            
+            clog("(batch flushed) ", operations.length)
 
         });
-    }
-
-    /**
-     * Flush cache if it's getting too large
-     * @param {boolean} force - Whether to force flush regardless of size
-     * @private
-     */
-    _flushCacheIfNeeded(force = false) {
-        if (!this.cacheEnabled) return;
-
-        if (force || this.cache.size > this.cacheLimit) {
-            this.cache.clear();
-        }
     }
 
     /**
@@ -295,6 +419,7 @@ export class KeyedStorageIndexedDB {
      * @returns {Object} Object containing transaction, store and promise
      */
     createTransaction(mode) {
+        this.transactionsOpened++;
         const transaction = this.db.transaction([this.storeName], mode);
         const store = transaction.objectStore(this.storeName);
 
@@ -352,40 +477,78 @@ export class KeyedStorageIndexedDB {
     }
 
     /**
-     * Get a value by key with caching
+     * Get a value by key, with caching and same-tick read coalescing.
+     *
+     * #542: no longer opens its own transaction per call. A cache miss enqueues into
+     * `_pendingGets` and schedules exactly one `queueMicrotask` flush; the flush opens ONE
+     * readonly transaction and issues `store.get()` for every key queued since the last flush.
+     * This is independent of the existing write batch (beginBatch/commitBatch/_flushBatch),
+     * which stays write-only and unchanged -- reusing it for reads would deadlock: the F# call
+     * site (KeyedStorageFileSystemAsync.fs's getEntries) awaits Promise.all on the reads BEFORE
+     * calling commitBatch(), so a read that waited for an explicit commitBatch() to flush would
+     * never resolve. Self-flushing via microtask sidesteps that -- it needs no caller cooperation.
+     *
      * @param {string} key - The key to retrieve
      * @returns {Promise<any>} The value or null if not found
      */
     async get(key) {
         clog("get", key);
+        if (this.tracingEnabled) this._bumpTopRead(key);
 
-        // Check cache first if enabled
         if (this.cacheEnabled && this.cache.has(key)) {
-            return this.cache.get(key);
+            this.cacheHits++;
+            return this._cacheGet(key);
+        }
+        this.cacheMisses++;
+        return this._batchedGet(key);
+    }
+
+    /**
+     * Queue a cache-miss read for the next microtask's batched transaction. Waiters are stored
+     * as an ARRAY per key (not a single slot) so two concurrent get()s for the SAME key before
+     * the flush both resolve -- a single-slot map would silently drop the first caller's resolver
+     * (a hang, not an error; #542 red-team finding).
+     * @private
+     */
+    _batchedGet(key) {
+        if (!this._pendingGets.has(key)) this._pendingGets.set(key, []);
+        return new Promise((resolve, reject) => {
+            this._pendingGets.get(key).push({ resolve, reject });
+            if (!this._getFlushScheduled) {
+                this._getFlushScheduled = true;
+                queueMicrotask(() => this._flushGetBatch());
+            }
+        });
+    }
+
+    /** @private */
+    async _flushGetBatch() {
+        this._getFlushScheduled = false;
+        const pending = this._pendingGets;
+        this._pendingGets = new Map();
+        if (pending.size === 0) return;
+
+        try {
+            await this.ensureConnection();
+        } catch (err) {
+            for (const waiters of pending.values()) for (const { reject } of waiters) reject(err);
+            return;
         }
 
-        await this.ensureConnection();
-
         const { store, transactionPromise } = this.createTransaction('readonly');
-
-        return new Promise((resolve, reject) => {
+        for (const key of pending.keys()) {
             const request = store.get(key);
-
-            request.onerror = () => reject(request.error);
             request.onsuccess = () => {
                 const result = request.result === undefined ? null : request.result;
-
-                // Update cache
-                if (this.cacheEnabled && result !== null) {
-                    this.cache.set(key, result);
-                    this._flushCacheIfNeeded();
-                }
-
-                resolve(result);
+                if (this.cacheEnabled && result !== null) this._cacheSet(key, result);
+                for (const { resolve } of pending.get(key)) resolve(result);
             };
-
-            // Also wait for transaction to complete
-            transactionPromise.catch(reject);
+            request.onerror = () => {
+                for (const { reject } of pending.get(key)) reject(request.error);
+            };
+        }
+        transactionPromise.catch(err => {
+            for (const waiters of pending.values()) for (const { reject } of waiters) reject(err);
         });
     }
 
@@ -411,10 +574,7 @@ export class KeyedStorageIndexedDB {
         }
 
         // Update cache immediately for faster subsequent reads
-        if (this.cacheEnabled) {
-            this.cache.set(key, value);
-            this._flushCacheIfNeeded();
-        }
+        if (this.cacheEnabled) this._cacheSet(key, value);
 
         await this.ensureConnection();
 
@@ -438,11 +598,9 @@ export class KeyedStorageIndexedDB {
      */
     async remove(key) {
         clog("remove", key);
-        
+
         // Remove from cache immediately
-        if (this.cacheEnabled) {
-            this.cache.delete(key);
-        }
+        if (this.cacheEnabled) this._cacheDelete(key);
 
         // If in batch mode, add to batch operations
         if (this.batchMode) {
@@ -1410,6 +1568,29 @@ export function createKeyedStorageIndexedDB(rootKey) {
         CheckConsistency: () => db.checkConsistency(),
         FixDanglingReferences: () => db.fixDanglingReferences(),
         FixOrphanedEntries: () => db.fixOrphanedEntries(),
-        LogConsistencyCheck: () => db.logConsistencyCheck()
+        LogConsistencyCheck: () => db.logConsistencyCheck(),
+
+        // #542: cache diagnostics -- field names are PascalCase to match the F# LayerStats record
+        // that Get/SetStats unbox into (SutilOxide.FileSystem.LayerStats/ITopReadsEntry).
+        GetStats: () => ({
+            Hits: db.cacheHits,
+            Misses: db.cacheMisses,
+            Evictions: db.cacheEvictions,
+            Flushes: db.cacheFlushes,
+            AdmissionRefused: db.admissionRefused,
+            Entries: db.cache.size,
+            Bytes: db._cacheBytes,
+            HighWaterEntries: db.cacheHighWaterEntries,
+            HighWaterBytes: db.cacheHighWaterBytes,
+            BudgetBytes: db.cacheBudgetBytes || 0,
+            EntryCeilingBytes: db.entryCeilingBytes || 0,
+            Enabled: db.cacheEnabled,
+            TransactionsOpened: db.transactionsOpened,
+            ReadsIssued: db.cacheMisses,
+        }),
+        ResetStats: () => db._resetStats(),
+        SetCacheBudget: (bytes) => db._setCacheBudget(bytes),
+        SetTracingEnabled: (on) => { db.tracingEnabled = !!on; if (!on) db.topReads.clear(); },
+        GetTopReads: (n) => db._getTopReads(n),
     };
 }

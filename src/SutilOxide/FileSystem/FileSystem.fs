@@ -244,6 +244,39 @@ module Internal =
 
 open JsHelpers
 
+/// Counters + live configuration for one cache layer (#542). Shared shape for both the F#
+/// in-memory entry cache (Layer 1, KeyedStorageFileSystemAsync) and the JS IndexedDB key/value
+/// cache (Layer 2, KeyedStorageIndexedDB) so `project fs-stats` can report them side by side.
+/// Layer 1 has no IndexedDB transactions of its own, so TransactionsOpened/ReadsIssued read 0 there.
+type LayerStats =
+    { Hits: int
+      Misses: int
+      Evictions: int
+      Flushes: int
+      AdmissionRefused: int
+      Entries: int
+      Bytes: int
+      HighWaterEntries: int
+      HighWaterBytes: int
+      BudgetBytes: int
+      EntryCeilingBytes: int
+      Enabled: bool
+      TransactionsOpened: int
+      ReadsIssued: int }
+
+type ITopReadsEntry =
+    abstract Key: string
+    abstract Count: int
+
+/// Implemented by a cache layer so `EntryCacheDiagnostics`'s global registry can report and
+/// control it without depending on the concrete type. #542
+type IEntryCacheDiagnostics =
+    abstract GetStats: unit -> LayerStats
+    abstract ResetStats: unit -> unit
+    abstract SetCacheBudget: int -> unit
+    abstract SetTracingEnabled: bool -> unit
+    abstract GetTopReads: int -> ITopReadsEntry[]
+
 type IKeyedStorageAsync =
     abstract Exists: string -> Promise<bool>
     abstract Get: string -> Promise<obj>
@@ -257,6 +290,11 @@ type IKeyedStorageAsync =
     abstract LogConsistencyCheck: unit -> Promise<bool>
     abstract FixDanglingReferences: unit -> Promise<int>
     abstract FixOrphanedEntries: unit -> Promise<int>
+    abstract GetStats: unit -> LayerStats
+    abstract ResetStats: unit -> unit
+    abstract SetCacheBudget: int -> unit
+    abstract SetTracingEnabled: bool -> unit
+    abstract GetTopReads: int -> ITopReadsEntry[]
 
 module private BrowserStorage =
     let mk rootKey key = sprintf "%s/%s" rootKey key

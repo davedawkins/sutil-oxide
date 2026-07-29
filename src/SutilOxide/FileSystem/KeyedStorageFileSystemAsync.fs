@@ -18,21 +18,32 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
     let mutable root = { NextUid = 1 }
     let mutable onChange : (FileSystemEvent -> unit) list = []
     
-    // Add a cache for frequently accessed entries
-    let entryCache = System.Collections.Generic.Dictionary<int, EntryStorage option>()
-    let [<Literal>]  CacheLimit = 100
+    // #542: byte-budgeted LRU entry cache (Layer 1). 8 MB comfortably covers a real project's
+    // source-file working set (measured ~416 KB for ContactLens's 223 files) with headroom for a
+    // session touching several projects; 512 KB per-entry ceiling excludes project.json-class
+    // oversized entries automatically, without naming them. Both are runtime-settable via
+    // `project fs-stats set entry <bytes>`.
+    let [<Literal>] DefaultBudgetBytes = 8388608
+    let [<Literal>] DefaultEntryCeilingBytes = 524288
+    let entrySizeOf (v: EntryStorage option) = match v with Some e -> e.Meta.Size | None -> 0
+    let entryCache = SutilOxide.FileSystem.EntryCache.LruByteCache<EntryStorage option>(entrySizeOf, DefaultBudgetBytes, DefaultEntryCeilingBytes)
     let [<Literal>]  RootKeyName = "(root)"
     let [<Literal>]  RootName = "/"
     let [<Literal>]  RootUid : Uid = 0
 
+    // #542: per-key read histogram for `project fs-stats top` -- unbounded, so it only accumulates
+    // while tracing is enabled (the same flag `project compile-trace on/off` already toggles).
+    let mutable tracingEnabled = false
+    let topReads = System.Collections.Generic.Dictionary<int, int>()
+
+    let bumpTopRead (uid: int) =
+        if tracingEnabled then
+            let cur = match topReads.TryGetValue uid with | true, v -> v | _ -> 0
+            topReads.[uid] <- cur + 1
+
     let uidKey uid = sprintf "uid:%d" uid
 
     let notifyOnChange (ev ) = onChange |> List.iter (fun h -> h ev)
-
-    // Function to clear cache when it gets too large
-    let trimCache() =
-        if entryCache.Count > CacheLimit then
-            entryCache.Clear()
 
     let beginBatch() =
         keyStorage.BeginBatch()
@@ -44,8 +55,7 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
     // Initialization
 
     let putEntryUnsafe (e : EntryStorage) =
-        entryCache.[e.Uid] <- Some e
-        trimCache()
+        entryCache.Put(e.Uid, Some e)
         keyStorage.Put( uidKey e.Uid, fileEntryToByteArray e)
 
     let putRoot() =
@@ -133,7 +143,7 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
     let delEntry (e : EntryStorage) =
         promise {
             do! init()
-            entryCache.Remove(e.Uid) |> ignore
+            entryCache.Remove(e.Uid)
             do! keyStorage.Remove (uidKey e.Uid)
         }
 
@@ -143,47 +153,33 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
             do! putEntryUnsafe e
         }
 
-    let getEntry (uid : Uid) : PromiseResult<EntryStorage,string> = 
+    let getEntry (uid : Uid) : PromiseResult<EntryStorage,string> =
+        bumpTopRead uid
         // Check cache first
-        if entryCache.ContainsKey(uid) then
-            entryCache.[uid] |> (function Some x -> Ok x | None -> Error "Missing") |> Promise.lift
-        else
+        match entryCache.TryGet(uid) with
+        | Some cached ->
+            cached |> (function Some x -> Ok x | None -> Error "Missing") |> Promise.lift
+        | None ->
             promise {
                 do! init()
 
                 let! entry = getDecodedEntry (uidKey uid) // keyStorage.Get (uidKey uid)
 
-                // if entry = null then
-                //     return (Error ("Not entry for UID: " + string uid))
-                // else
-                //     match fileEntryFromJSON entry with
-                //     | Ok r -> 
-                //         // Cache the result
-                //         entryCache.[uid] <- Some r
-                //         trimCache()
-                //         return Ok r
-                //     | Error msg ->
-                //         entryCache.[uid] <- None
-                //         return Error msg
-
-
                 match entry with
-                | Ok r -> 
-                    // Cache the result
-                    entryCache.[uid] <- Some r
-                    trimCache()
+                | Ok r ->
+                    entryCache.Put(uid, Some r)
                     return Ok r
                 | Error msg ->
-                    entryCache.[uid] <- None
+                    entryCache.Put(uid, None)
                     return Error msg
 
             }
 
     let entryExists uid =
         promise {
-            if entryCache.ContainsKey(uid) then
-                return entryCache.[uid].IsSome
-            else
+            match entryCache.TryGet(uid) with
+            | Some cached -> return cached.IsSome
+            | None ->
                 do! init()
                 return! keyStorage.Exists (uidKey uid)
         }
@@ -691,6 +687,34 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
 
 with
     member this.Initialise() = initRoot()
+
+    // #542: Layer-1 (in-memory entry cache) diagnostics -- see IEntryCacheDiagnostics.
+    member this.GetCacheStats() : LayerStats = entryCache.Stats()
+
+    member this.ResetCacheStats() = entryCache.ResetCounters()
+
+    member this.SetCacheBudget(bytes: int) = entryCache.SetBudget(bytes)
+
+    member this.SetTracingEnabled(enabled: bool) =
+        tracingEnabled <- enabled
+        if not enabled then topReads.Clear()
+
+    member this.GetTopReadsList(n: int) : ITopReadsEntry[] =
+        topReads
+        |> Seq.sortByDescending (fun kv -> kv.Value)
+        |> Seq.truncate (max 0 n)
+        |> Seq.map (fun kv ->
+            { new ITopReadsEntry with
+                member _.Key = uidKey kv.Key
+                member _.Count = kv.Value })
+        |> Seq.toArray
+
+    interface IEntryCacheDiagnostics with
+        member this.GetStats() = this.GetCacheStats()
+        member this.ResetStats() = this.ResetCacheStats()
+        member this.SetCacheBudget(bytes) = this.SetCacheBudget(bytes)
+        member this.SetTracingEnabled(enabled) = this.SetTracingEnabled(enabled)
+        member this.GetTopReads(n) = this.GetTopReadsList(n)
 
     // member this.LogCheckConsistency() =
     //     keyStorage.LogConsistencyCheck()
