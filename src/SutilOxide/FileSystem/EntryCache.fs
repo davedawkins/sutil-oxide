@@ -1,18 +1,22 @@
 /// #542: byte-budgeted LRU cache of int -> 'v, with a per-entry size ceiling. Overflow evicts the
 /// least-recently-used entry one at a time; there is no code path that empties the cache wholesale.
 /// Used by KeyedStorageFileSystemAsync as the Layer-1 in-memory entry cache.
-module SutilOxide.FileSystem.EntryCache
+module SutilOxide.EntryCache
 
 open System.Collections.Generic
+open SutilOxide.FileSystem
 
-// Recency order lives in a plain ResizeArray (index 0 = least-recently-used, last = most-recently-
-// used) rather than a System.Collections.Generic.LinkedList<'T> -- Fable does not support LinkedList.
-// Touch/remove are O(n) (IndexOf + RemoveAt), acceptable at the entry counts a byte budget bounds
-// this to in practice (thousands, not millions).
+// #552: recency is a monotonic access-tick per entry (Dictionary<uid,tick>) rather than an
+// explicit order list -- touch is then a single dictionary write, O(1) regardless of entry count.
+// The tradeoff (per the issue's own suggested fix) is that finding the LRU victim on eviction is
+// an O(n) scan over resident entries; that's acceptable because evictions are rare once the
+// working set is warm (the entry count stays roughly stable under a byte budget), while touch is
+// the hot path -- 234,544 touches measured in one compile vs a comparatively tiny eviction count.
 type LruByteCache<'v>(sizeOf: 'v -> int, initialBudgetBytes: int, entryCeilingBytes: int) =
     let store = Dictionary<int, 'v>()
     let sizes = Dictionary<int, int>()
-    let order = ResizeArray<int>()
+    let accessTick = Dictionary<int, int64>()
+    let mutable clock = 0L
     let mutable totalBytes = 0
     let mutable budgetBytes = initialBudgetBytes
 
@@ -24,10 +28,8 @@ type LruByteCache<'v>(sizeOf: 'v -> int, initialBudgetBytes: int, entryCeilingBy
     let mutable highWaterBytes = 0
 
     let touch (uid: int) =
-        let idx = order.IndexOf uid
-        if idx >= 0 then
-            order.RemoveAt idx
-            order.Add uid
+        clock <- clock + 1L
+        accessTick.[uid] <- clock
 
     let removeInternal (uid: int) =
         match store.TryGetValue uid with
@@ -35,13 +37,21 @@ type LruByteCache<'v>(sizeOf: 'v -> int, initialBudgetBytes: int, entryCeilingBy
             totalBytes <- totalBytes - sizes.[uid]
             store.Remove uid |> ignore
             sizes.Remove uid |> ignore
-            let idx = order.IndexOf uid
-            if idx >= 0 then order.RemoveAt idx
+            accessTick.Remove uid |> ignore
         | false, _ -> ()
 
+    let findLruUid () =
+        let mutable lruUid = -1
+        let mutable lruTick = System.Int64.MaxValue
+        for kv in accessTick do
+            if kv.Value < lruTick then
+                lruTick <- kv.Value
+                lruUid <- kv.Key
+        lruUid
+
     let evictOneLru () =
-        if order.Count > 0 then
-            let uid = order.[0]
+        let uid = findLruUid ()
+        if uid >= 0 then
             removeInternal uid
             evictions <- evictions + 1
 
@@ -85,7 +95,7 @@ type LruByteCache<'v>(sizeOf: 'v -> int, initialBudgetBytes: int, entryCeilingBy
             store.[uid] <- v
             sizes.[uid] <- size
             totalBytes <- totalBytes + size
-            order.Add uid
+            touch uid
             evictWhileOverBudget ()
         bumpHighWater ()
 

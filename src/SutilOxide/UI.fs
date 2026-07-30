@@ -1154,7 +1154,7 @@ module Forms =
                     { empty with Format = fun v -> string v }
                     //failwith ("Unsupported input for type " + t.FullName )
 
-        static member internal CreateWithType( t : System.Type, fullName : string ) : Field<'T> = 
+        static member CreateWithType( t : System.Type, fullName : string ) : Field<'T> =
             Field<'T>.Init(t, fullName)
 
         static member inline Create() : Field<'T> = 
