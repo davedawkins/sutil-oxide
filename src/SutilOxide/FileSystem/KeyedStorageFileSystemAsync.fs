@@ -815,7 +815,30 @@ with
                 else
                     mkResult "CreateFolder" <| fun () -> createFolder path true
 
-        member this.GetEntryBatch(path: string array): AsyncPromise<Entry option array> = 
+        // #569: takes the lock ONCE and drives the private per-entry path -- calling the interface
+        // WriteEntry here would re-enter mkResult's non-reentrant getLock and hang forever.
+        member this.WriteEntries(entries: (string * Content)[]): AsyncPromise<unit> =
+            mkResult "WriteEntries" <| fun () ->
+                promise {
+                    keyStorage.BeginBulk()
+                    try
+                        for (path, content) in entries do
+                            match content with
+                            | Content.Bytes data ->
+                                do! setFileContent(path, ByteBlob data)
+                            | Content.Entries empty ->
+                                if empty.Length <> 0 then
+                                    failwithf "Entries must be an empty array for folder creation: %s" path
+                                do! createFolder path true
+                        do! keyStorage.CommitBulk()
+                    with ex ->
+                        // Discard the chunk whole; the entry cache recorded writes that no longer exist.
+                        keyStorage.AbortBulk()
+                        entryCache.Clear()
+                        return raise ex
+                }
+
+        member this.GetEntryBatch(path: string array): AsyncPromise<Entry option array> =
             (fun _ -> path |> Array.map this.GetEntry |> Promise.all) |> mkResult "GetEntryBatch"
 
         member this.GetContentBatch(path: string array): AsyncPromise<Content option array> = 

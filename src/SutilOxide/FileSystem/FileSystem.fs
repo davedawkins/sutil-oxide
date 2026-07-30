@@ -285,6 +285,10 @@ type IKeyedStorageAsync =
     abstract Remove: string -> Promise<unit>
     abstract BeginBatch: unit -> unit
     abstract CommitBatch: unit -> Promise<unit>
+    // fsimgo#569: bulk write -- inner BeginBatch/CommitBatch pairs become no-ops until CommitBulk/AbortBulk.
+    abstract BeginBulk: unit -> unit
+    abstract CommitBulk: unit -> Promise<unit>
+    abstract AbortBulk: unit -> unit
     abstract Close: unit -> Promise<unit>
     abstract CheckConsistency: unit -> Promise<obj>
     abstract LogConsistencyCheck: unit -> Promise<bool>
@@ -398,6 +402,11 @@ type IWriteOnlyFileSystemOf<'Unit> =
     abstract member RemoveEntry : path : string -> 'Unit
     abstract member RenameEntry : string * string -> 'Unit
 
+/// Write-side counterpart to IReadOnlyBatchingFileSystemOf. fsimgo#569
+type IWriteOnlyBatchingFileSystemOf<'Unit> =
+    inherit IWriteOnlyFileSystemOf<'Unit>
+    abstract member WriteEntries : (string * Content)[] -> 'Unit
+
 type IReadOnlyFileSystem = 
     inherit IReadOnlyFileSystemOf<SyncThrowable<Entry option>, SyncThrowable<Content option>, SyncThrowable<IDisposable>>
 
@@ -411,16 +420,23 @@ type IReadOnlyFileSystemAsync=
 type IReadOnlyBatchingFileSystemAsync= 
     inherit IReadOnlyBatchingFileSystemOf<Entry option, Content option, IDisposable>
 
-type IFileSystemAsync= 
-    inherit IWriteOnlyFileSystemOf<AsyncPromise<unit>>
+type IFileSystemAsync=
+    inherit IWriteOnlyBatchingFileSystemOf<AsyncPromise<unit>>
     inherit IReadOnlyBatchingFileSystemAsync
 
 type IFileSystemAsync with
-    member self.GetEntryBatchDefault (paths: string array): AsyncPromise<Entry option array> = 
+    member self.GetEntryBatchDefault (paths: string array): AsyncPromise<Entry option array> =
         paths |> Array.map self.GetEntry |> Promise.all
 
-    member self.GetContentBatchDefault (paths: string array): AsyncPromise<Content option array> = 
+    member self.GetContentBatchDefault (paths: string array): AsyncPromise<Content option array> =
         paths |> Array.map self.GetContent |> Promise.all
+
+    /// Sequential fallback for filesystems that cannot batch -- same order and failure point as a caller's own loop. fsimgo#569
+    member self.WriteEntriesDefault (entries: (string * Content)[]): AsyncPromise<unit> =
+        promise {
+            for (path, content) in entries do
+                do! self.WriteEntry(path, content)
+        }
 
 [<AutoOpen>]
 module FileSystemExt =
