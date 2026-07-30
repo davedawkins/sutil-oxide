@@ -300,8 +300,14 @@ export class KeyedStorageIndexedDB {
         }
 
         if (this.db && !this.db.closed) {
-            // #569: await the flush -- fire-and-forget resumed after this.db was nulled and threw.
-            try { await this._flushBatch(true); } catch (_) { /* connection is going away regardless */ }
+            if (this.bulkDepth > 0) {
+                // #569: a bulk is all-or-nothing. Flushing half a chunk on unload can commit a
+                // parent entry whose child was never written -- a dangling reference on reload.
+                this._discardBulk();
+            } else {
+                // #569: await the flush -- fire-and-forget resumed after this.db was nulled and threw.
+                try { await this._flushBatch(true); } catch (_) { /* connection is going away regardless */ }
+            }
             if (this.db && !this.db.closed) this.db.close();
         }
 
@@ -360,9 +366,16 @@ export class KeyedStorageIndexedDB {
      */
     async commitBulk() {
         if (this.bulkDepth === 0) return;
-        this.bulkDepth--;
-        if (this.bulkDepth > 0) return;
-        await this._flushBatch(true);
+        if (this.bulkDepth > 1) { this.bulkDepth--; return; }
+        try {
+            await this._flushBatch(true);
+        } catch (err) {
+            // #569: clean up here. Decrementing the depth before the await would make the caller's
+            // AbortBulk a no-op, leaving discarded writes readable for the rest of the session.
+            this._discardBulk();
+            throw err;
+        }
+        this.bulkDepth = 0;
         this.batchMode = false;
     }
 
@@ -373,11 +386,20 @@ export class KeyedStorageIndexedDB {
         if (this.bulkDepth === 0) return;
         this.bulkDepth--;
         if (this.bulkDepth > 0) return;
+        this._discardBulk();
+    }
+
+    /**
+     * Drop any open bulk and everything it queued. Unconditional -- the queued writes never
+     * reached storage, so no cache may go on describing them. #569
+     * @private
+     */
+    _discardBulk() {
+        this.bulkDepth = 0;
+        this.batchMode = false;
         this.batchOperations = [];
-        // The queued writes are gone; neither cache may keep describing them.
         for (const key of this.batchPending.keys()) this._cacheDelete(key);
         this.batchPending.clear();
-        this.batchMode = false;
     }
 
     /**
@@ -405,6 +427,30 @@ export class KeyedStorageIndexedDB {
         const operations = [...byKey.values()];
         this.batchOperations = [];
 
+        // #569: retire a pending value only if it is still the one this flush wrote -- a put issued
+        // while the flush was in flight must survive it. On failure nothing landed, so the
+        // optimistic _cacheSet below must not survive either.
+        const retirePending = (landed) => {
+            for (const op of operations) {
+                const written = op.type === 'put' ? op.value : null;
+                if (this.batchPending.get(op.key) === written) this.batchPending.delete(op.key);
+                if (!landed) this._cacheDelete(op.key);
+            }
+        };
+
+        try {
+            return await this._runFlush(operations, retirePending);
+        } catch (err) {
+            // Covers the paths that never reach a transaction at all (connection refused, closing
+            // database): without this the queue is already empty and batchPending would go on
+            // serving writes that no transaction ever carried.
+            retirePending(false);
+            throw err;
+        }
+    }
+
+    /** @private */
+    async _runFlush(operations, retirePending) {
         await this.ensureConnection();
         if (!this.db || this.db.closed) throw new Error('Database closed before batch could be flushed');
 
@@ -416,17 +462,6 @@ export class KeyedStorageIndexedDB {
             // Add this transaction to pending set
             const transactionId = Date.now() + Math.random();
             this.pendingTransactions.add(transactionId);
-
-            // #569: retire a pending value only if it is still the one this transaction wrote --
-            // a put issued while the flush was in flight must survive it.
-            const retirePending = (landed) => {
-                for (const op of operations) {
-                    const written = op.type === 'put' ? op.value : null;
-                    if (this.batchPending.get(op.key) === written) this.batchPending.delete(op.key);
-                    // #569: nothing landed, so the optimistic _cacheSet below must not survive.
-                    if (!landed) this._cacheDelete(op.key);
-                }
-            };
 
             transaction.oncomplete = () => {
                 retirePending(true);
