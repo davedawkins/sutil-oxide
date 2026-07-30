@@ -17,10 +17,61 @@ open Sutil.Styling
 
 open type Feliz.length
 open PromiseResult
+open SutilOxide.JsHelpers
 
 type UI =
     static member divc (cls:string) (items : seq<SutilElement>) =
         Html.div [ Attr.className cls ; yield! items ]
+
+let private norm (s : string) = s.Trim('/')
+
+/// True if a change at `path` could affect the listing shown for `cwd` -- i.e. `path`'s parent
+/// directory is `cwd`. Paths may arrive with a leading slash from a mounted
+/// SubFolderFileSystemAsync (#563); Cwd never does, so normalise both before comparing.
+let private cwdMatches (cwd : string) (path : string) =
+    norm (Path.getFolderName path) = norm cwd
+
+/// True if `path` IS `cwd`, or is an ancestor directory of it (including `cwd`'s immediate
+/// parent) -- e.g. the folder the user is browsing, or any directory above it, gets renamed or
+/// removed out from under them. `cwdMatches` alone never catches this: it compares against the
+/// *parent* of the changed entry, which only ever equals a direct child relationship, not an
+/// ancestor several levels up (#563 redteam finding; a rename cascades no descendant
+/// notification -- `KeyedStorageFileSystemAsync.renameFile` emits exactly one event for the
+/// renamed entry itself, unlike `removeDeep`, which does cascade -- so this has to be checked by
+/// path prefix, not by waiting for a per-descendant event). Segment-bounded (`npath + "/"`) so
+/// "docs" never falsely matches an unrelated "docsother".
+let private isCwdUnderPath (cwd : string) (path : string) =
+    let ncwd = norm cwd
+    let npath = norm path
+    ncwd = npath || npath = "" || ncwd.StartsWith(npath + "/")
+
+/// True if `cwd` is `path` itself or an ancestor of it -- the mirror check to `isCwdUnderPath`,
+/// needed for `Created`. `setFileContent`/`createFolderRecursive` auto-create every missing
+/// intermediate folder along a nested write with notification suppressed (`notify=false`); only
+/// the leaf entry's own event fires (#563 redteam finding, confirmed against
+/// KeyedStorageFileSystemAsync.fs). So writing "docs/newsub/readme.md" when "newsub" doesn't yet
+/// exist silently creates "newsub" as a new child of "docs" with no event of its own -- `cwd`
+/// must refresh on the leaf's Created event too, not just on a direct child. This can trigger one
+/// extra coalesced refresh for a write nested arbitrarily deep under an already-fully-existing
+/// subtree; the leading+trailing debounce still bounds the total dispatch count per burst, so
+/// that cost is acceptable against the alternative of a silently-stale listing.
+let private cwdIsAncestorOf (cwd : string) (path : string) =
+    let ncwd = norm cwd
+    let npath = norm path
+    ncwd = "" || npath = ncwd || npath.StartsWith(ncwd + "/")
+
+/// Whether a filesystem-change event can change a names-only listing rooted at `cwd`.
+/// `Updated` (content changed, name unchanged) never can -- the explorer only renders the
+/// Files/Folders name arrays (#563). If a future feature reads file content here (a size
+/// column, a preview), this becomes wrong -- update it then.
+let shouldRefreshListing (cwd : string) (ev : FileSystemEvent) : bool =
+    match ev.event with
+    | FileSystemEventType.Updated -> false
+    | FileSystemEventType.Created -> cwdIsAncestorOf cwd ev.path
+    | FileSystemEventType.Removed -> cwdMatches cwd ev.path || isCwdUnderPath cwd ev.path
+    | FileSystemEventType.Renamed newPath ->
+        cwdMatches cwd ev.path || cwdMatches cwd newPath
+        || isCwdUnderPath cwd ev.path || isCwdUnderPath cwd newPath
 
 type Msg =
     | DropFiles of FileList
@@ -301,6 +352,38 @@ let buttons m dispatch=
 
 let isRoot f = f = "/" || f = ""
 
+/// Leading-plus-trailing coalescing: the first qualifying call after a quiet period runs `f`
+/// immediately (so a single user action -- New File, Rename, Delete -- refreshes with no added
+/// latency, matching pre-#563 behaviour); further calls within `delayMs` are absorbed and, if any
+/// arrived, `f` runs once more when the burst goes quiet (so a bulk create/extract/checkout still
+/// converges on the final state instead of missing entries created after the leading refresh).
+/// Trailing-only would leave every single action (delayMs) slower than before #563 -- a redteam
+/// finding on this issue.
+let private leadingAndTrailing (schedule : TimeoutFn) (delayMs : int) (f : unit -> unit) : unit -> unit =
+    let mutable inCooldown = false
+    let mutable pendingTrailing = false
+    fun () ->
+        if inCooldown then
+            pendingTrailing <- true
+        else
+            inCooldown <- true
+            f()
+            schedule delayMs (fun () ->
+                inCooldown <- false
+                if pendingTrailing then
+                    pendingTrailing <- false
+                    f())
+
+/// Wires filesystem-change events to `dispatch FetchListing`, filtered by `shouldRefreshListing`
+/// and coalesced via `leadingAndTrailing` so a burst of relevant events (bulk create/extract/
+/// checkout) produces at most two refreshes -- immediate + one final -- instead of one per event,
+/// while a single event still refreshes immediately (#563).
+let wireFsEvents (schedule : TimeoutFn) (getCwd : unit -> string) (dispatch : Msg -> unit) : FileSystemEvent -> unit =
+    let refresh = leadingAndTrailing schedule 500 (fun () -> dispatch FetchListing)
+    fun ev ->
+        if shouldRefreshListing (getCwd()) ev then
+            refresh()
+
 let fileExplorer (classifier : string -> string) iconselector dispatch (m : Model) =
 
 
@@ -491,7 +574,7 @@ type FileExplorer( fs : IFsAsync ) =
         items |> Array.exists (fun f -> path = Path.combine (model.Value.Cwd) f)
 
     do
-        fs.OnChanged( fun _ -> dispatch FetchListing ) |> Promise.start
+        fs.OnChanged( wireFsEvents (createTimeout()) (fun () -> model.Value.Cwd) dispatch ) |> Promise.start
 
     with
         member _.View( classifier : string -> string, iconselector : string -> string ) = view classifier iconselector 
