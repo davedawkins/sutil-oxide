@@ -168,18 +168,32 @@ module CellInternal =
 module Cell =
     let set (cell : ICell<'a>) (v : 'a) = cell.Set v
 
-    let make<'T> (init : 'T) : ICell<'T> = CellInternal.make init 
+    let make<'T> (init : 'T) : ICell<'T> = CellInternal.make init
 
     let makef<'T> (init : unit -> 'T) : ICell<'T> = CellInternal.makef init
 
     /// <summary>
-    /// Make with uninitialized value. 
+    /// Make with uninitialized value.
     /// Will throw if read before initialized.
     /// Won't initialize new subscribers until initialized.
     /// </summary>
     let makeu<'T> () : ICell<'T> = CellInternal.makeu ()
 
+    // Set/modify always notify, even for an identical value — Log.fs's `logMessages.Set(logMessages.Value)`
+    // relies on exactly that to force a re-render after an in-place mutation (#596). setDistinct/modifyDistinct
+    // below are the guarded forms; client/src/ts/framework.ts's MemoryCell guards unconditionally instead,
+    // so the two primitives differ deliberately (#596).
     let modify (f : 'T -> 'T) (cell : ICell<'T>) = cell.Value |> f |> cell.Set
+
+    /// Guarded set: skips the notify when v equals the cell's current value (#596).
+    let setDistinct<'T when 'T : equality> (v : 'T) (cell : ICell<'T>) =
+        if cell.Value <> v then cell.Set v
+
+    /// Guarded modify: skips the notify when f's result equals the current value (#596).
+    let modifyDistinct<'T when 'T : equality> (f : 'T -> 'T) (cell : ICell<'T>) =
+        let v = cell.Value
+        let v' = f v
+        if v <> v' then cell.Set v'
 
 
 [<RequireQualifiedAccess>]
