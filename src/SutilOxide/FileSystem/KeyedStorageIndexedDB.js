@@ -48,6 +48,11 @@ export class KeyedStorageIndexedDB {
         this.batchOperations = [];
         this.batchSize = 25; // Optimal batch size for IndexedDB operations
 
+        // #569: bulk write mode -- one owner (WriteEntries), inner beginBatch/commitBatch become no-ops.
+        this.bulkDepth = 0;
+        // #569: queued-but-unflushed values, so reads inside a long batch are not served stale. null = delete.
+        this.batchPending = new Map();
+
         // Cache management -- #542: byte-budgeted LRU (Map insertion-order-as-recency: a re-set
         // via delete()+set() moves a key to the MRU end). 8 MB budget / 512 KB per-entry ceiling,
         // same defaults as Layer 1 (KeyedStorageFileSystemAsync.fs), runtime-settable via
@@ -212,8 +217,7 @@ export class KeyedStorageIndexedDB {
     _setupCleanupHandlers() {
         // Close DB when page is unloaded to prevent resource leaks
         const cleanupHandler = () => {
-            this._flushBatch(true);
-            this.close();
+            this.close(); // #569: close() flushes; a second fire-and-forget flush only raced it
         };
 
         window.addEventListener('beforeunload', cleanupHandler);
@@ -289,21 +293,33 @@ export class KeyedStorageIndexedDB {
     /**
      * Close the database connection and clean up resources
      */
-    close() {
+    async close() {
         // Wait for any pending transactions to complete
         if (this.pendingTransactions.size > 0) {
             console.warn(`Closing database with ${this.pendingTransactions.size} pending transactions`);
         }
 
         if (this.db && !this.db.closed) {
-            // Flush any pending batch operations
-            this._flushBatch(true);
-            this.db.close();
+            if (this.bulkDepth > 0) {
+                // #569: a bulk is all-or-nothing. Flushing half a chunk on unload can commit a
+                // parent entry whose child was never written -- a dangling reference on reload.
+                this._discardBulk();
+            } else {
+                // #569: await the flush -- fire-and-forget resumed after this.db was nulled and threw.
+                try { await this._flushBatch(true); } catch (_) { /* connection is going away regardless */ }
+            }
+            if (this.db && !this.db.closed) this.db.close();
         }
 
         this.db = null;
         this.initPromise = null;
         this._forceClearCache('close');
+
+        // #569: never leave a closed instance pinned in bulk mode -- reuse would queue forever.
+        this.bulkDepth = 0;
+        this.batchMode = false;
+        this.batchOperations = [];
+        this.batchPending.clear();
     }
 
     /**
@@ -311,6 +327,7 @@ export class KeyedStorageIndexedDB {
      * Operations will be queued and executed together
      */
     beginBatch() {
+        if (this.bulkDepth > 0) return; // #569: a bulk write owns the batch; nested pairs must not reset it
         if (!this.batchMode) {
             clog("beginBatch", "batchMode");
             this.batchMode = true;
@@ -324,11 +341,65 @@ export class KeyedStorageIndexedDB {
      */
     async commitBatch() {
         clog("commitBatch", this.batchMode);
+        if (this.bulkDepth > 0) return; // #569: only commitBulk closes a bulk write
         if (!this.batchMode) {
             return;
         }
         await this._flushBatch();
         this.batchMode = false;
+    }
+
+    /**
+     * Begin a bulk write: many logical filesystem operations committed as one transaction. #569
+     */
+    beginBulk() {
+        this.bulkDepth++;
+        if (this.bulkDepth === 1 && !this.batchMode) {
+            this.batchMode = true;
+            this.batchOperations = [];
+        }
+    }
+
+    /**
+     * Commit a bulk write. Flush points are chosen by the caller, between whole entries. #569
+     * @returns {Promise<void>}
+     */
+    async commitBulk() {
+        if (this.bulkDepth === 0) return;
+        if (this.bulkDepth > 1) { this.bulkDepth--; return; }
+        try {
+            await this._flushBatch(true);
+        } catch (err) {
+            // #569: clean up here. Decrementing the depth before the await would make the caller's
+            // AbortBulk a no-op, leaving discarded writes readable for the rest of the session.
+            this._discardBulk();
+            throw err;
+        }
+        this.bulkDepth = 0;
+        this.batchMode = false;
+    }
+
+    /**
+     * Discard a bulk write whole, so a failure cannot commit a half-written entry. #569
+     */
+    abortBulk() {
+        if (this.bulkDepth === 0) return;
+        this.bulkDepth--;
+        if (this.bulkDepth > 0) return;
+        this._discardBulk();
+    }
+
+    /**
+     * Drop any open bulk and everything it queued. Unconditional -- the queued writes never
+     * reached storage, so no cache may go on describing them. #569
+     * @private
+     */
+    _discardBulk() {
+        this.bulkDepth = 0;
+        this.batchMode = false;
+        this.batchOperations = [];
+        for (const key of this.batchPending.keys()) this._cacheDelete(key);
+        this.batchPending.clear();
     }
 
     /**
@@ -349,10 +420,39 @@ export class KeyedStorageIndexedDB {
             return;
         }
 
-        await this.ensureConnection();
-
-        const operations = [...this.batchOperations];
+        // #569: snapshot BEFORE the await -- close() calls _flushBatch(true) without awaiting it.
+        // #569: last operation per key wins; createChildEntry re-queues the parent once per sibling.
+        const byKey = new Map();
+        for (const op of this.batchOperations) byKey.set(op.key, op);
+        const operations = [...byKey.values()];
         this.batchOperations = [];
+
+        // #569: retire a pending value only if it is still the one this flush wrote -- a put issued
+        // while the flush was in flight must survive it. On failure nothing landed, so the
+        // optimistic _cacheSet below must not survive either.
+        const retirePending = (landed) => {
+            for (const op of operations) {
+                const written = op.type === 'put' ? op.value : null;
+                if (this.batchPending.get(op.key) === written) this.batchPending.delete(op.key);
+                if (!landed) this._cacheDelete(op.key);
+            }
+        };
+
+        try {
+            return await this._runFlush(operations, retirePending);
+        } catch (err) {
+            // Covers the paths that never reach a transaction at all (connection refused, closing
+            // database): without this the queue is already empty and batchPending would go on
+            // serving writes that no transaction ever carried.
+            retirePending(false);
+            throw err;
+        }
+    }
+
+    /** @private */
+    async _runFlush(operations, retirePending) {
+        await this.ensureConnection();
+        if (!this.db || this.db.closed) throw new Error('Database closed before batch could be flushed');
 
         return new Promise((resolve, reject) => {
             this.transactionsOpened++;
@@ -364,16 +464,19 @@ export class KeyedStorageIndexedDB {
             this.pendingTransactions.add(transactionId);
 
             transaction.oncomplete = () => {
+                retirePending(true);
                 this.pendingTransactions.delete(transactionId);
                 resolve();
             };
 
             transaction.onerror = () => {
+                retirePending(false);
                 this.pendingTransactions.delete(transactionId);
                 reject(transaction.error);
             };
 
             transaction.onabort = () => {
+                retirePending(false);
                 this.pendingTransactions.delete(transactionId);
                 reject(new Error('Transaction was aborted'));
             };
@@ -456,6 +559,9 @@ export class KeyedStorageIndexedDB {
     async exists(key) {
         clog("exists", key);
 
+        // #569: a queued write (or delete tombstone) is newer than the cache or storage.
+        if (this.batchPending.has(key)) return this.batchPending.get(key) !== null;
+
         // Check cache first if enabled
         if (this.cacheEnabled && this.cache.has(key)) {
             return true;
@@ -494,6 +600,9 @@ export class KeyedStorageIndexedDB {
     async get(key) {
         clog("get", key);
         if (this.tracingEnabled) this._bumpTopRead(key);
+
+        // #569: a queued write is newer than anything in the cache or in storage.
+        if (this.batchPending.has(key)) return this.batchPending.get(key);
 
         if (this.cacheEnabled && this.cache.has(key)) {
             this.cacheHits++;
@@ -564,9 +673,11 @@ export class KeyedStorageIndexedDB {
         // If in batch mode, add to batch operations
         if (this.batchMode) {
             this.batchOperations.push({ type: 'put', key, value });
+            this.batchPending.set(key, value);
 
-            // Flush if we've hit batch size
-            if (this.batchOperations.length >= this.batchSize) {
+            // #569: during a bulk write the caller picks flush points between whole entries, so a
+            // size-triggered flush here would split one entry's writes across two transactions.
+            if (this.bulkDepth === 0 && this.batchOperations.length >= this.batchSize) {
                 await this._flushBatch();
             }
 
@@ -605,9 +716,9 @@ export class KeyedStorageIndexedDB {
         // If in batch mode, add to batch operations
         if (this.batchMode) {
             this.batchOperations.push({ type: 'delete', key });
+            this.batchPending.set(key, null); // #569: tombstone -- a read must not see the pre-batch value
 
-            // Flush if we've hit batch size
-            if (this.batchOperations.length >= this.batchSize) {
+            if (this.bulkDepth === 0 && this.batchOperations.length >= this.batchSize) {
                 await this._flushBatch();
             }
 
@@ -1561,6 +1672,9 @@ export function createKeyedStorageIndexedDB(rootKey) {
         // Additional methods that could be useful for optimizing the F# code
         BeginBatch: () => db.beginBatch(),
         CommitBatch: () => db.commitBatch(),
+        BeginBulk: () => db.beginBulk(),
+        CommitBulk: () => db.commitBulk(),
+        AbortBulk: () => db.abortBulk(),
         GetKeysWithPrefix: (prefix) => db.getKeysWithPrefix(prefix),
         Close: () => db.close(),
 

@@ -104,6 +104,10 @@ type LruByteCache<'v>(sizeOf: 'v -> int, initialBudgetBytes: int, entryCeilingBy
     /// decision, so it must succeed even when this is the last cached entry (#542 red-team finding).
     member _.Remove(uid: int) = removeInternal uid
 
+    /// Drop every cached entry -- for when the backing store has discarded writes this cache recorded. fsimgo#569
+    member _.Clear() =
+        store.Clear(); sizes.Clear(); accessTick.Clear(); totalBytes <- 0
+
     member _.SetBudget(bytes: int) =
         budgetBytes <- bytes
         evictWhileOverBudget ()

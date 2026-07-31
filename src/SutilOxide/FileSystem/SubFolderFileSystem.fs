@@ -24,6 +24,10 @@ type SubFolderFileSystemAsync( fs : IFsAsync, mountPoint : string) =
         member this.WriteEntry(path: string, content: Content): AsyncPromise<unit> =
             fs.WriteEntry(makePath path, content)
 
+        // fsimgo#569: forward, don't loop -- import into a sub-root must keep the underlying batching.
+        member this.WriteEntries(entries: (string * Content)[]): AsyncPromise<unit> =
+            fs.WriteEntries(entries |> Array.map (fun (path, content) -> makePath path, content))
+
         member this.RemoveEntry(path: string): AsyncPromise<unit> =
             fs.RemoveEntry(makePath path)
 
