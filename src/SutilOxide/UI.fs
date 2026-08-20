@@ -1080,10 +1080,12 @@ module Forms =
         | Select
         | Input
 
-    [<RequireQualifiedAccess>]
-    type FieldEditor<'T> = 
+    type FieldEditorCtor<'T> = (Field<'T> * IStore<string>) -> Core.SutilElement
+
+    and [<RequireQualifiedAccess>]
+        FieldEditor<'T> = 
         | BuiltIn of BuiltInEditor
-        | Ctor of ((Field<'T> * IStore<string>) -> Core.SutilElement)
+        | Ctor of FieldEditorCtor<'T>
 
     and Field<'T> = 
         {
