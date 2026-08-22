@@ -239,6 +239,19 @@ module Signal =
         cell.OnDispose(fun _ -> unsub.Dispose()) 
         cell
 
+    let bind (f : 'T -> ISignal<'U>) (source : ISignal<'T>) : ISignal<'U> =
+        let cell = CellInternal.make( (f(source.Value)).Value )
+        let mutable unsub2 : System.IDisposable option = None
+
+        let unsub1 = source.Subscribe( fun v -> 
+            let s2 = f v
+            unsub2 |> Option.iter _.Dispose()
+            unsub2 <- Some (s2.Subscribe(cell.Set))
+        )
+
+        cell.OnDispose(fun _ -> unsub1.Dispose(); unsub2 |> Option.iter _.Dispose()) 
+        cell
+
     let mapDistinct<'T,'U when 'U : equality> (f : 'T -> 'U) (source : ISignal<'T>) : ISignal<'U> =
         let cell = CellInternal.make( f(source.Value) )
 
