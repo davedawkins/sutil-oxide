@@ -1080,6 +1080,9 @@ module Forms =
         | Select
         | Input
 
+    open Fable.Core
+    
+
     type FieldEditorCtor<'T> = (Field<'T> * IStore<string>) -> Core.SutilElement
 
     and [<RequireQualifiedAccess>]
@@ -1553,7 +1556,8 @@ module Forms =
                             editFieldInput builtIn __ 
 
                         | FieldEditor.Ctor ctor ->
-                            fun errors -> ctor(__,errors)
+                            fun errors -> 
+                                ctor (__,errors)
 
                 __.BuildWith( fun _ error -> editor error )
                 // FieldElement.Of( fun () -> withLabelError __ editor |> f )

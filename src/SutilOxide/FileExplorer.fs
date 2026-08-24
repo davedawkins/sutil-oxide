@@ -279,6 +279,7 @@ let css = [
         Css.flexDirectionColumn
         Css.gap (rem 0.5)
         Css.userSelectNone
+        Css.height (percent 100)
     ]
 
     rule ".file-explorer-buttons" [
