@@ -28,6 +28,54 @@ type IAsyncEventSource<'T> =
     abstract Subscribe: ('T -> Promise<unit>) -> System.IDisposable
     abstract NotifyAsync: 'T -> Promise<unit>
 
+/// #782: Fable mangles the function-taking Subscribe, leaving the IObservable one as the only
+/// plain `Subscribe` a JS caller can reach. These normalise whatever JS actually passed.
+[<RequireQualifiedAccess>]
+module private Observer =
+    open Fable.Core.JsInterop
+
+    let private hasCallable (o: obj) (name: string) : bool =
+        emitJsExpr (o, name) "($0 != null && typeof $0[$1] === 'function')"
+
+    let private isFunction (o: obj) : bool = emitJsExpr o "(typeof $0 === 'function')"
+
+    /// Report and contain, matching fable-library's Observer: one bad subscriber must not abort
+    /// delivery to the rest of the notify loop, but it must not vanish either (#782).
+    let private report (context: string) (e: exn) =
+        Fable.Core.JS.console.error("SutilOxide " + context + ".Subscribe: subscriber threw", e)
+
+    /// Accept an observer, or wrap a bare callback, or fail here — never at the next Notify (#782).
+    let ofJs<'T> (context: string) (observer: IObserver<'T>) : IObserver<'T> =
+        // Observer first, so something callable that also carries OnNext keeps its observer behaviour.
+        if hasCallable observer "OnNext" then
+            if hasCallable observer "OnCompleted" && hasCallable observer "OnError" then
+                observer
+            else
+                // Fill what a hand-written JS observer omits, so trace's error path cannot TypeError (#782).
+                let hasCompleted = hasCallable observer "OnCompleted"
+                let hasError = hasCallable observer "OnError"
+                { new IObserver<'T> with
+                    member _.OnNext(v) = observer.OnNext v
+                    member _.OnCompleted() = if hasCompleted then observer.OnCompleted()
+                    member _.OnError(e) = if hasError then observer.OnError e else report context e }
+        elif isFunction observer then
+            let f : 'T -> unit = unbox observer
+            { new IObserver<'T> with
+                member _.OnNext(v) = f v
+                member _.OnCompleted() = ()
+                member _.OnError(e) = report context e }
+        else
+            failwithf "%s.Subscribe expects an observer with OnNext, or a callback function — received %s (#782)"
+                context (jsTypeof observer)
+
+    /// The async surface takes a callback, not an observer — fail at subscribe, not at NotifyAsync (#782).
+    let asCallback<'T,'R> (context: string) (handler: 'T -> 'R) : 'T -> 'R =
+        if isFunction handler then
+            handler
+        else
+            failwithf "%s.Subscribe expects a callback function — received %s (#782)"
+                context (jsTypeof handler)
+
 module Internal =
 
     open System.Collections.Generic
@@ -80,7 +128,8 @@ module Internal =
         inherit EventSourceWithResult<'T,unit>()
         
         interface IObservable<'T> with
-            member this.Subscribe (observer: IObserver<'T>): IDisposable = 
+            member this.Subscribe (observer: IObserver<'T>): IDisposable =
+                let observer = Observer.ofJs "EventSource" observer
                 this.Subscribe( fun v -> observer.OnNext(v) )
 
         interface IEventSource<'T> with
@@ -139,6 +188,7 @@ module Internal =
 
         interface System.IObservable<'T> with
             member _.Subscribe( observer : System.IObserver<'T> ) =
+                let observer = Observer.ofJs "Cell" observer
                 _init(false)
                 if _value_initialized then observer.OnNext(_value)
                 clients.Subscribe( fun v -> observer.OnNext(v) )
@@ -151,8 +201,8 @@ module Internal =
 
         interface IAsyncEventSource<'T> with
 
-            member __.Subscribe (arg: 'T -> Promise<unit>)= 
-                _es.Subscribe(arg)
+            member __.Subscribe (arg: 'T -> Promise<unit>)=
+                _es.Subscribe( Observer.asCallback "AsyncEventSource" arg )
 
             member this.NotifyAsync(value: 'T) : Promise<unit> =
                 let allPromises = _es.NotifyAndCollect(value)
@@ -219,6 +269,7 @@ module Signal =
             member _.Value = value
             member _.Dispose() = dispose0.Dispose()
             member _.Subscribe( h : IObserver<'T> ) =
+                let h = Observer.ofJs "Signal.fromObservable" h
                 let dispose = source.Subscribe( fun next ->
                     h.OnNext next
                 )
@@ -232,6 +283,7 @@ module Signal =
             member _.Value = value
             member _.Dispose() = ()
             member _.Subscribe( h : IObserver<'T> ) =
+                let h = Observer.ofJs "Signal.fromStore" h
                 let dispose = source.Subscribe( fun next ->
                     value <- next
                     h.OnNext next
@@ -294,10 +346,11 @@ module Signal =
         { new ISignal<'T> with 
             member __.Dispose() = src.Dispose()
             member __.Value with get() = src.Value
-            member __.Subscribe (observer: IObserver<'T>): IDisposable = 
+            member __.Subscribe (observer: IObserver<'T>): IDisposable =
+                let observer = Observer.ofJs "Signal.trace" observer
 
                 let clientId = nextId
-                nextId <- nextId
+                nextId <- nextId + 1   // drive-by: was `nextId <- nextId`, so every traced subscriber was id 0
 
                 let dispose = src.Subscribe(
                     { new IObserver<'T> with
@@ -326,13 +379,21 @@ module Signal =
 
 
 module Observable =
+    /// Give a plain Fable observable the same JS-argument normalisation as SutilOxide's own
+    /// surfaces — fable-library's combinators build observers with no guard of their own (#782).
+    let forJs<'T> (context: string) (src : System.IObservable<'T>) : System.IObservable<'T> =
+        { new System.IObservable<'T> with
+            member _.Subscribe( observer : IObserver<'T> ) =
+                src.Subscribe( Observer.ofJs context observer ) }
+
     let trace<'T> (log: Signal.TraceEvent<'T> -> unit) (src : System.IObservable<'T>) : IObservable<'T> =
         let mutable nextId = 0
-        { new IObservable<'T> with 
-            member __.Subscribe (observer: IObserver<'T>): IDisposable = 
+        { new IObservable<'T> with
+            member __.Subscribe (observer: IObserver<'T>): IDisposable =
+                let observer = Observer.ofJs "Observable.trace" observer
 
                 let clientId = nextId
-                nextId <- nextId
+                nextId <- nextId + 1   // drive-by: was `nextId <- nextId`, so every traced subscriber was id 0
 
                 let dispose = src.Subscribe(
                     { new IObserver<'T> with
