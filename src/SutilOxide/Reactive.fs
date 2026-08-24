@@ -205,6 +205,13 @@ module Signal =
 
     let make (init : 'T) : ISignal<'T> = new Internal.Cell<_>(Some(fun () -> init))
 
+    let fromSingle( v : 'T ) = make v
+    
+    let fromPromise (init : 'T)  (p : JS.Promise<'T>) =
+        let s = Cell.make init
+        p |> Promise.iter(s.Set)
+        s
+
     let fromObservable<'T> (init : 'T) (source:IObservable<'T>) : ISignal<'T> =
         let mutable value = init
         let dispose0 = source.Subscribe( fun next -> value <- next )
