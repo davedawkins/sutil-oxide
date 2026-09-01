@@ -1350,13 +1350,18 @@ module Forms =
         let value = field.Value.AsSignal()
         let enabled = field.Enabled.AsSignal()
 
+        // A checkbox ignores `readonly` — only `disabled` stops it. Without this a field with
+        // no setter still toggles under the pointer while nothing records the change, which
+        // reads as an edit that silently failed. Text inputs and selects are fine on readonly.
+        let writable = field.Set |> Option.isSome
+
         Html.input [
-            Bind.booleanAttr( "disabled",  enabled .>> (Option.defaultValue false>>not) )
+            Bind.booleanAttr( "disabled", enabled .>> (fun e -> not writable || not (Option.defaultValue false e)) )
             Attr.typeCheckbox
             Bind.attr( "checked", value )
-            // Attr.isChecked (field.Get())   
+            // Attr.isChecked (field.Get())
 
-            match field.Set with 
+            match field.Set with
             | Some f ->
                 Ev.onCheckedChange f
             | None ->

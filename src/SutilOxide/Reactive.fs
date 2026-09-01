@@ -250,6 +250,15 @@ module Cell =
 module EventSource =
     let inline make<'t>() : IEventSource<'t> = new Internal.EventSource<'t>()
 
+
+[<RequireQualifiedAccess>]
+module Event =
+
+    let fromObservable<'T> (source:IObservable<'T>) : IEvent<'T> =
+        { new IEvent<_> with
+            member _.Subscribe (observer: IObserver<'T>): IDisposable = source.Subscribe observer
+            member _.Dispose() = () }
+
 [<RequireQualifiedAccess>]
 module Signal =
 
