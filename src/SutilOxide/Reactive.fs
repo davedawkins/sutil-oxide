@@ -136,6 +136,7 @@ module Internal =
             member this.Dispose() = this.Dispose()
             member this.Notify(v) = this.Notify(v)
 
+    [<AttachMembers>]
     type Cell<'T>(init: (unit -> 'T) option) =
         inherit SubscriberCounted()
         let disposeListeners = new ResizeArray<unit -> unit>()
@@ -162,16 +163,19 @@ module Internal =
             _init assert_is_set
             _value
 
-        member _.Subscribe(handler) = 
+        member _.subscribe(handler) = 
             let unsub = clients.Subscribe(handler)
 
             _init(false)
             if _value_initialized then handler(_value)
 
-            unsub
+            fun () -> unsub.Dispose() // Honour signal.ts
+ 
+        member _.set(v) = _set_notify v
+        member _.value with get() = _get(true)
 
-        member _.Set(v) = _set_notify v
-        member _.Value with get() = _get(true)
+        member inline __.Set(v) = __.set(v)
+        member inline __.Value = __.value
 
         override _.SubscriberCount = clients.SubscriberCount
 
@@ -180,7 +184,7 @@ module Internal =
 
         interface ICell<'T> with
             member _.Value with get() = _get(true) 
-            member __.Set(v) = __.Set(v)
+            member __.Set(v) = __.set(v)
             member _.Dispose() = 
                 clients.Dispose()
                 disposeListeners |> Seq.iter (fun f -> f())
