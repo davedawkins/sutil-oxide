@@ -1055,7 +1055,7 @@ module Forms =
     let isEnum( t : System.Type ) =
         try
             Reflection.FSharpType.IsUnion(t) && (Reflection.FSharpType.GetUnionCases(t) |> Array.exists (fun cs -> cs.GetFields().Length > 0) |> not)
-        with x -> Log.log("Error: " + x.Message + ": " + t.FullName); false
+        with x -> Log.logError("UI", x.Message + ": " + t.FullName); false
 
     let parseDouble ( s : string ) : Result<double, string> =
         try
