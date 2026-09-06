@@ -38,8 +38,7 @@ module SutilKeyed =
         fun ctx ->
             let mutable keyMap : Map<'K,KeyedInfo<'T>> = Map.empty
             // Items build immediately before the anchor, which pins the block's position (fsimgo #896).
-            let anchor : Browser.Types.Node = upcast ctx.Document.createComment "keyedUnordered"
-            ctx.AddChild anchor
+            let anchor = bindingAnchor "keyedUnordered" ctx
 
             // Listen for changes to collection
             let unsub = items.Subscribe( fun newItems ->
