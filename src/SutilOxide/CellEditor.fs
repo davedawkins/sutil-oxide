@@ -376,7 +376,7 @@ let findBest (allowed : string array) (value : string) =
 
 let bindFocus (isFocused : IObservable<bool>) : SutilElement =
     SutilElement.Define("bindFocus",fun ctx ->
-        let inputEl = ctx.Parent.AsDomNode :?> Browser.Types.HTMLInputElement
+        let inputEl = ctx.Parent :?> Browser.Types.HTMLInputElement
 
         let un = isFocused.Subscribe( fun f ->
             if f then
