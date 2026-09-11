@@ -1358,8 +1358,11 @@ module Forms =
         Html.input [
             Bind.booleanAttr( "disabled", enabled .>> (fun e -> not writable || not (Option.defaultValue false e)) )
             Attr.typeCheckbox
-            Bind.attr( "checked", value )
-            // Attr.isChecked (field.Get())
+            // The property, not the attribute: once the user clicks a checkbox the browser stops
+            // reflecting the attribute, so a later model change left the box showing the click.
+            // The dispatch is ignored because onCheckedChange carries user edits, and this binding
+            // reads the element back after mount, which would otherwise write the model on every render.
+            Bind.isChecked( value .>> Option.defaultValue false, ignore )
 
             match field.Set with
             | Some f ->
