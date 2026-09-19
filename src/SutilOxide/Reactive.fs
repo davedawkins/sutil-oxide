@@ -16,6 +16,11 @@ type IEventSource<'T> =
 type ISignal<'T> =
     inherit IEvent<'T>
     abstract Value: 'T with get
+
+/// A signal whose value comes from a source that can be re-read on demand. Only a signal actually
+/// backed by one implements this: on a constant or a map, sampling has no meaning to give.
+type ISampledSignal<'T> =
+    inherit ISignal<'T>
     abstract Sample: unit -> 'T
     
 type ICell<'T> =
@@ -179,7 +184,6 @@ module Internal =
  
         member _.set(v) = _set_notify v
         member _.value with get() = _get(true)
-        member _.sample() = _sample(true); _get(true)
 
         member inline __.Set(v) = __.set(v)
         member inline __.Value = __.value
@@ -191,7 +195,6 @@ module Internal =
 
         interface ICell<'T> with
             member __.Value with get() = __.value
-            member __.Sample() = __.sample()
             member __.Set(v) = __.set(v)
             member _.Dispose() = 
                 clients.Dispose()
@@ -282,14 +285,12 @@ module Signal =
         p |> Promise.iter(s.Set)
         s
 
-    /// Signal is initialized from sampler function, and updated when Sample is called
-    /// Downstream signals will be notified the value has been updated as per usual
-    /// Reading 'Value' will return the last sampled value.
-
-    let fromSampler<'T> (source : unit -> 'T) : ISignal<'T> =
+    /// Initialized from the sampler, and re-read when Sample is called. Value serves the last
+    /// sampled value, so reading stays idempotent and every subscriber sees the same one.
+    let fromSampler<'T> (source : unit -> 'T) : ISampledSignal<'T> =
         let clients = EventSource.make<'T>()
         let mutable value = source()
-        { new ISignal<'T> with
+        { new ISampledSignal<'T> with
             member _.Value = value
             member _.Sample() = 
                 value <- source()
@@ -310,7 +311,6 @@ module Signal =
         let dispose0 = source.Subscribe( fun next -> value <- next )
         { new ISignal<'T> with
             member _.Value = value
-            member _.Sample() = value
             member _.Dispose() = dispose0.Dispose()
             member _.Subscribe( h : IObserver<'T> ) =
                 let h = Observer.ofJs "Signal.fromObservable" h
@@ -325,7 +325,6 @@ module Signal =
         let mutable value = source.Value
         { new ISignal<'T> with
             member _.Value = value
-            member _.Sample() = value
             member _.Dispose() = ()
             member _.Subscribe( h : IObserver<'T> ) =
                 let h = Observer.ofJs "Signal.fromStore" h
@@ -391,7 +390,6 @@ module Signal =
         { new ISignal<'T> with 
             member __.Dispose() = src.Dispose()
             member __.Value with get() = src.Value
-            member _.Sample() = src.Sample()
             member __.Subscribe (observer: IObserver<'T>): IDisposable =
                 let observer = Observer.ofJs "Signal.trace" observer
 
