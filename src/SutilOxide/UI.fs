@@ -1104,6 +1104,7 @@ module Forms =
             AllowedValues: (unit -> string[]) option
             Step : float
             SystemTypeName : string
+            Attrs : (string * string)[]
         }
 
         static member Empty<'T>() = 
@@ -1118,6 +1119,7 @@ module Forms =
                     Step = 1.0
                     Enabled = Value.Const true
                     Tooltip = Value.Const ""
+                    Attrs = [||]
                     Value = Value.Const Unchecked.defaultof<'T> } : Field<'T>
 
         /// Map system types to input type
@@ -1183,6 +1185,7 @@ module Forms =
         member __.WithEnabled( v : Value<bool> ) : Field<'T> = { __ with Enabled = v }
         member __.WithTooltip( v : Value<string> ) : Field<'T> = { __ with Tooltip = v }
         member __.WithGet( g : unit -> 'T ) : Field<'T> = { __ with Value = Value.Getter (g>>Some) }
+        member __.WithAttrs( attrs ) : Field<'T> = { __ with Attrs = Array.append __.Attrs attrs }
 
         member __.WithAllowedValues( vals : unit -> string[] ) : Field<'T> = 
             { __ with AllowedValues = Some vals}
@@ -1514,7 +1517,7 @@ module Forms =
 
     let internal editFieldInput (builtIn : BuiltInEditor) (f : Field<'t>) (error : IStore<string>) =
         let typ : string = builtIn |> string |> _.ToLower()
-        mkInput [ Attr.custom("type", typ) ] f error
+        mkInput [ Attr.custom("type", typ); yield! (f.Attrs |> Array.map Attr.custom) ] f error
 
 //    open FrameworkTypes
 

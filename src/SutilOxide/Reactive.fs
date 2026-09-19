@@ -16,6 +16,7 @@ type IEventSource<'T> =
 type ISignal<'T> =
     inherit IEvent<'T>
     abstract Value: 'T with get
+    abstract Sample: unit -> 'T
     
 type ICell<'T> =
     inherit IEvent<'T>
@@ -137,7 +138,7 @@ module Internal =
             member this.Notify(v) = this.Notify(v)
 
     [<AttachMembers>]
-    type Cell<'T>(init: (unit -> 'T) option) =
+    type Cell<'T>(sample: (unit -> 'T) option) =
         inherit SubscriberCounted()
         let disposeListeners = new ResizeArray<unit -> unit>()
         let clients = new EventSourceWithResult<'T,unit>()
@@ -153,11 +154,16 @@ module Internal =
             _set v
             clients.Notify(_value)
             
+        let _sample( assert_sampler : bool ) =
+            match sample with
+            | Some i -> _set(i())
+            | None -> if assert_sampler then failwithf "Cell has no sampler function"
+            
         let _init( assert_is_set : bool ) = 
             if not _value_initialized then
-                match init with
-                | Some i -> _set(i())
-                | None -> if assert_is_set then failwithf "Cell read before initialized"
+                _sample(false)
+                if assert_is_set && not _value_initialized then
+                    failwithf "Cell read before initialized"
         
         let _get( assert_is_set : bool ) = 
             _init assert_is_set
@@ -173,6 +179,7 @@ module Internal =
  
         member _.set(v) = _set_notify v
         member _.value with get() = _get(true)
+        member _.sample() = _sample(true); _get(true)
 
         member inline __.Set(v) = __.set(v)
         member inline __.Value = __.value
@@ -183,7 +190,8 @@ module Internal =
             disposeListeners.Add(f)
 
         interface ICell<'T> with
-            member _.Value with get() = _get(true) 
+            member __.Value with get() = __.value
+            member __.Sample() = __.sample()
             member __.Set(v) = __.set(v)
             member _.Dispose() = 
                 clients.Dispose()
@@ -199,7 +207,6 @@ module Internal =
 
     type Promise<'T> = Fable.Core.JS.Promise<'T>
 
-    open Fable.Core
     type PromiseEventSource<'T>() =
         let _es = new EventSourceWithResult< 'T, Promise<unit> >()
 
@@ -275,11 +282,35 @@ module Signal =
         p |> Promise.iter(s.Set)
         s
 
+    /// Signal is initialized from sampler function, and updated when Sample is called
+    /// Downstream signals will be notified the value has been updated as per usual
+    /// Reading 'Value' will return the last sampled value.
+
+    let fromSampler<'T> (source : unit -> 'T) : ISignal<'T> =
+        let clients = EventSource.make<'T>()
+        let mutable value = source()
+        { new ISignal<'T> with
+            member _.Value = value
+            member _.Sample() = 
+                value <- source()
+                clients.Notify(value)
+                value
+            member _.Dispose() = clients.Dispose()
+            member _.Subscribe( h : IObserver<'T> ) =
+                let h = Observer.ofJs "Signal.fromObservable" h
+                let dispose = clients.Subscribe( fun next ->
+                    h.OnNext next
+                )
+                h.OnNext value
+                dispose
+        }
+
     let fromObservable<'T> (init : 'T) (source:IObservable<'T>) : ISignal<'T> =
         let mutable value = init
         let dispose0 = source.Subscribe( fun next -> value <- next )
         { new ISignal<'T> with
             member _.Value = value
+            member _.Sample() = value
             member _.Dispose() = dispose0.Dispose()
             member _.Subscribe( h : IObserver<'T> ) =
                 let h = Observer.ofJs "Signal.fromObservable" h
@@ -294,6 +325,7 @@ module Signal =
         let mutable value = source.Value
         { new ISignal<'T> with
             member _.Value = value
+            member _.Sample() = value
             member _.Dispose() = ()
             member _.Subscribe( h : IObserver<'T> ) =
                 let h = Observer.ofJs "Signal.fromStore" h
@@ -359,6 +391,7 @@ module Signal =
         { new ISignal<'T> with 
             member __.Dispose() = src.Dispose()
             member __.Value with get() = src.Value
+            member _.Sample() = src.Sample()
             member __.Subscribe (observer: IObserver<'T>): IDisposable =
                 let observer = Observer.ofJs "Signal.trace" observer
 
