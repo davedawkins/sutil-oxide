@@ -6,6 +6,8 @@ open SutilOxide.Reactive
 [<Emit("console.log")>]
 let _console_log : obj = jsNative
 
+let devconsole = Fable.Core.JS.console
+
 type ILog =
     abstract group: message:string -> unit
     abstract groupEnd: unit -> unit
@@ -41,6 +43,9 @@ let mutable private categories : Map<string,bool> =
 let sourceIsEnabled src = not (sources.ContainsKey src) || sources[src]
 let categoryIsEnabled (src : string)= let lc = src.ToLower() in not (categories.ContainsKey lc) || categories[lc]
 
+[<RequireQualifiedAccess>]
+[<StringEnum>]
+[<Erase>]
 type LogCategory =
     | Info 
     | Debug 
@@ -143,20 +148,55 @@ let logmessage (m : LogMessage) =
 
 //        Console.log( m.Source, m.Category, m.Message)
 
-let logm (src : string) (cat : string) (msg : string) (ctx : obj) =
+let private logm (src : string) (cat : string) (msg : string) (ctx : obj) =
     LogMessage.Create(src, cat, msg, ctx) |> logmessage
 
-let log(s : string) =
-    LogMessage.Create(s) |> logmessage
+// let logs(s : string) =
+    // LogMessage.Create(s) |> logmessage
     
-let logc (cat : string) (s : string) =
-    LogMessage.Create(cat,s) |> logmessage
+// let logc (cat : string) (s : string) =
+    // LogMessage.Create(cat,s) |> logmessage
+
+let logInfo( src : string, s : string ) =
+    logm src (LogCategory.Info.ToString()) s null 
+
+let logTrace( src : string, s : string ) =
+    logm src (LogCategory.Trace.ToString()) s null 
+
+let logError( src : string, s : string ) =
+    logm src (LogCategory.Error.ToString()) s null 
+
+let logErrorWith( src : string, s : string, ctx : obj ) =
+    logm src (LogCategory.Error.ToString()) s ctx 
+
+let logWarning( src : string, s : string ) =
+    logm src (LogCategory.Warning.ToString()) s null 
 
 let listen ( cb : LogMessage -> unit ) =
     logListeners.Subscribe(cb)
 
-let inline private  fmt msg args =
-    ( args |> Array.append [| msg :> obj |] |> Array.map string |> String.concat " " )
+let rec private builtin_toStr (expand : bool) (x : obj) : string =
+    if JsHelpers.jsIsArray x then
+        if expand then
+            sprintf "[%s]" ((unbox x) |> Array.map (builtin_toStr false) |> String.concat ", ")
+        else
+            sprintf "[<%d items>]" ((unbox x) |> Array.length)
+    else
+        match JsHelpers.jsTypeOf x with
+        | "object" -> 
+            if expand then
+                JS.JSON.stringify( x )
+            else
+                sprintf "{%s}" (JsHelpers.jsObjectKeys x |> String.concat ", ")
+        | "function" -> "<function>"
+        | _ -> string x
+
+let mutable private objectToString : obj -> string = builtin_toStr true
+
+let setFormatter( f : obj -> string ) = objectToString <- f
+
+let private  fmt msg args =
+    ( args |> Array.append [| msg :> obj |] |> Array.map objectToString |> String.concat " " )
 
 let createWith (baselog : string -> string -> string -> obj -> unit) (source : string) =
     {

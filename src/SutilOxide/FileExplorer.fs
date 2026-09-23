@@ -387,7 +387,6 @@ let wireFsEvents (schedule : TimeoutFn) (getCwd : unit -> string) (dispatch : Ms
 
 let fileExplorer (classifier : string -> string) iconselector dispatch (m : Model) =
 
-
     let handleDragOver dispatch (e : Browser.Types.DragEvent) =
         // Fable.Core.JS.console.log( e.dataTransfer.types )
         let types : string[] = unbox e.dataTransfer.types
@@ -399,36 +398,6 @@ let fileExplorer (classifier : string -> string) iconselector dispatch (m : Mode
         e.preventDefault();
         let files = e.dataTransfer.files;
         dispatch (DropFiles files)
-        // Fable.Core.JS.console.log(files); // FileList object        ()
-
-        // if debugLevel >=5 then console.log("handleDrop")
-
-        // let containerEl = e.target :?> HTMLElement
-        // let graphId = getGraphIdFromEl containerEl
-
-        // let vts =    
-        //     Transform2D.GetTransformStack( containerEl )
-
-        // let screenToLocal (x,y) = Transform2D.ScaleStackInverse( vts,(x,y))
-
-        // let x,y = clientXY e
-        // // let nodeName = e.dataTransfer.getData("x/name")
-        // let nodeType = e.dataTransfer.getData("x/type")
-
-        // let offsetX, offsetY : float*float = 
-        //     match e.dataTransfer.getData("x/offset") with
-        //     | s when System.String.IsNullOrEmpty s -> 0.0, 0.0
-        //     | s -> s |> NodeHelpers.fromJsonString
-
-        // let nodeX, nodeY = (x - offsetX, y - offsetY) |> screenToLocal
-
-        // if not (System.String.IsNullOrEmpty nodeType) then 
-        //     // match  options.OnDrop( nodeType, (nodeX, nodeY) ) with
-        //     match  options.OnDrop( nodeType, (nodeX, nodeY) ) with
-        //     | DropAccepted ->
-        //         e.preventDefault()
-        //         e.stopPropagation()
-        //     | _ -> ()
 
     let cwd = m.Cwd
     let fs = m.Fs

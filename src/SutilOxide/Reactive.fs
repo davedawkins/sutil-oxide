@@ -16,6 +16,12 @@ type IEventSource<'T> =
 type ISignal<'T> =
     inherit IEvent<'T>
     abstract Value: 'T with get
+
+/// A signal whose value comes from a source that can be re-read on demand. Only a signal actually
+/// backed by one implements this: on a constant or a map, sampling has no meaning to give.
+type ISampledSignal<'T> =
+    inherit ISignal<'T>
+    abstract Sample: unit -> 'T
     
 type ICell<'T> =
     inherit IEvent<'T>
@@ -137,7 +143,7 @@ module Internal =
             member this.Notify(v) = this.Notify(v)
 
     [<AttachMembers>]
-    type Cell<'T>(init: (unit -> 'T) option) =
+    type Cell<'T>(sample: (unit -> 'T) option) =
         inherit SubscriberCounted()
         let disposeListeners = new ResizeArray<unit -> unit>()
         let clients = new EventSourceWithResult<'T,unit>()
@@ -153,11 +159,16 @@ module Internal =
             _set v
             clients.Notify(_value)
             
+        let _sample( assert_sampler : bool ) =
+            match sample with
+            | Some i -> _set(i())
+            | None -> if assert_sampler then failwithf "Cell has no sampler function"
+            
         let _init( assert_is_set : bool ) = 
             if not _value_initialized then
-                match init with
-                | Some i -> _set(i())
-                | None -> if assert_is_set then failwithf "Cell read before initialized"
+                _sample(false)
+                if assert_is_set && not _value_initialized then
+                    failwithf "Cell read before initialized"
         
         let _get( assert_is_set : bool ) = 
             _init assert_is_set
@@ -183,7 +194,7 @@ module Internal =
             disposeListeners.Add(f)
 
         interface ICell<'T> with
-            member _.Value with get() = _get(true) 
+            member __.Value with get() = __.value
             member __.Set(v) = __.set(v)
             member _.Dispose() = 
                 clients.Dispose()
@@ -199,7 +210,6 @@ module Internal =
 
     type Promise<'T> = Fable.Core.JS.Promise<'T>
 
-    open Fable.Core
     type PromiseEventSource<'T>() =
         let _es = new EventSourceWithResult< 'T, Promise<unit> >()
 
@@ -274,6 +284,27 @@ module Signal =
         let s = Cell.make init
         p |> Promise.iter(s.Set)
         s
+
+    /// Initialized from the sampler, and re-read when Sample is called. Value serves the last
+    /// sampled value, so reading stays idempotent and every subscriber sees the same one.
+    let fromSampler<'T> (source : unit -> 'T) : ISampledSignal<'T> =
+        let clients = EventSource.make<'T>()
+        let mutable value = source()
+        { new ISampledSignal<'T> with
+            member _.Value = value
+            member _.Sample() = 
+                value <- source()
+                clients.Notify(value)
+                value
+            member _.Dispose() = clients.Dispose()
+            member _.Subscribe( h : IObserver<'T> ) =
+                let h = Observer.ofJs "Signal.fromObservable" h
+                let dispose = clients.Subscribe( fun next ->
+                    h.OnNext next
+                )
+                h.OnNext value
+                dispose
+        }
 
     let fromObservable<'T> (init : 'T) (source:IObservable<'T>) : ISignal<'T> =
         let mutable value = init

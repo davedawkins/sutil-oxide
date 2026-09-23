@@ -732,7 +732,7 @@ with
             let! e = getEntryByPath path
             match e with
             | Ok e -> 
-                return Some { Name = e.Name; Meta = e.Meta }
+                return Some { Name = e.Name; Meta = { e.Meta with Size = e.Content.Size }  }
             | Error s -> 
                 // Fable.Core.JS.console.log("GetEntry: Non-existent: ", path)
                 return None
@@ -781,7 +781,7 @@ with
                         childEntries 
                         |> Array.map (fun (name, uid) -> getEntry uid) 
                         |> Promise.all
-                    let children = childrenResults |> Array.choose (function Ok entry -> Some { Name = entry.Name; Meta = entry.Meta } | _ -> None)
+                    let children = childrenResults |> Array.choose (function Ok entry -> Some { Name = entry.Name; Meta = { entry.Meta with Size = entry.Size } } | _ -> None)
                     return Some (Content.Entries children)
             | Error s ->
                 return None

@@ -1055,7 +1055,7 @@ module Forms =
     let isEnum( t : System.Type ) =
         try
             Reflection.FSharpType.IsUnion(t) && (Reflection.FSharpType.GetUnionCases(t) |> Array.exists (fun cs -> cs.GetFields().Length > 0) |> not)
-        with x -> Log.log("Error: " + x.Message + ": " + t.FullName); false
+        with x -> Log.logError("UI", x.Message + ": " + t.FullName); false
 
     let parseDouble ( s : string ) : Result<double, string> =
         try
@@ -1104,6 +1104,7 @@ module Forms =
             AllowedValues: (unit -> string[]) option
             Step : float
             SystemTypeName : string
+            Attrs : (string * string)[]
         }
 
         static member Empty<'T>() = 
@@ -1118,6 +1119,7 @@ module Forms =
                     Step = 1.0
                     Enabled = Value.Const true
                     Tooltip = Value.Const ""
+                    Attrs = [||]
                     Value = Value.Const Unchecked.defaultof<'T> } : Field<'T>
 
         /// Map system types to input type
@@ -1183,6 +1185,7 @@ module Forms =
         member __.WithEnabled( v : Value<bool> ) : Field<'T> = { __ with Enabled = v }
         member __.WithTooltip( v : Value<string> ) : Field<'T> = { __ with Tooltip = v }
         member __.WithGet( g : unit -> 'T ) : Field<'T> = { __ with Value = Value.Getter (g>>Some) }
+        member __.WithAttrs( attrs ) : Field<'T> = { __ with Attrs = Array.append __.Attrs attrs }
 
         member __.WithAllowedValues( vals : unit -> string[] ) : Field<'T> = 
             { __ with AllowedValues = Some vals}
@@ -1358,8 +1361,11 @@ module Forms =
         Html.input [
             Bind.booleanAttr( "disabled", enabled .>> (fun e -> not writable || not (Option.defaultValue false e)) )
             Attr.typeCheckbox
-            Bind.attr( "checked", value )
-            // Attr.isChecked (field.Get())
+            // The property, not the attribute: once the user clicks a checkbox the browser stops
+            // reflecting the attribute, so a later model change left the box showing the click.
+            // The dispatch is ignored because onCheckedChange carries user edits, and this binding
+            // reads the element back after mount, which would otherwise write the model on every render.
+            Bind.isChecked( value .>> Option.defaultValue false, ignore )
 
             match field.Set with
             | Some f ->
@@ -1511,7 +1517,7 @@ module Forms =
 
     let internal editFieldInput (builtIn : BuiltInEditor) (f : Field<'t>) (error : IStore<string>) =
         let typ : string = builtIn |> string |> _.ToLower()
-        mkInput [ Attr.custom("type", typ) ] f error
+        mkInput [ Attr.custom("type", typ); yield! (f.Attrs |> Array.map Attr.custom) ] f error
 
 //    open FrameworkTypes
 
