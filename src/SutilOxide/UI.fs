@@ -1023,12 +1023,15 @@ with
 
 module Forms =
 
-    type FieldElement = FieldElement of (unit -> Core.SutilElement)
+    /// Errors is the store the rendered control writes its parse failures into. IsTextEditable
+    /// says that control can hold typed text which failed to parse, so a caller can tell a
+    /// discarded edit from an advisory message on a select, a checkbox or a readonly field.
+    type FieldElement = FieldElement of (unit -> Core.SutilElement) * IStore<string> * bool
         with 
-            static member Of( f : unit -> Core.SutilElement ) = FieldElement f
-            member __.Render() =
-                let (FieldElement f) = __
-                f()
+            static member Of( f : unit -> Core.SutilElement ) = FieldElement (f, Store.make "", false)
+            member __.Render() = let (FieldElement (f,_,_)) = __ in f()
+            member __.Errors = let (FieldElement (_,e,_)) = __ in e
+            member __.IsTextEditable = let (FieldElement (_,_,t)) = __ in t
 
     let allEqual<'T when 'T : equality> (xs : 'T[]) : bool = 
         if xs.Length = 0 then
@@ -1286,8 +1289,7 @@ module Forms =
     let viewFields (fields : FieldElement seq) =
         fields |> renderFields
 
-    let internal withLabelError (field: Field<_>) (editor: IStore<string> -> Core.SutilElement) =
-        let error = Store.make ""
+    let internal withLabelError (field: Field<_>) (error : IStore<string>) (editor: IStore<string> -> Core.SutilElement) =
         let enabled = field.Enabled.AsSignal()
 
         Html.divc "ui-field" [
@@ -1541,37 +1543,40 @@ module Forms =
     module FormExt =
 
         type Field<'T> with
+            member private __.BuildInto( isTextEditable : bool, editor : Field<'T> -> IStore<string> -> Core.SutilElement) =
+                let error = Store.make ""
+                FieldElement( (fun () -> withLabelError __ error (editor __)), error, isTextEditable )
+
             member __.BuildWith( editor : Field<'T> -> IStore<string> -> Core.SutilElement) =
-                FieldElement.Of( fun () -> withLabelError __ (editor __))
+                __.BuildInto( false, editor )
 
             member __.BuildWithBuiltIn() =
-                let editor : (IStore<string> -> Core.SutilElement) =
+                let isTextEditable, (editor : IStore<string> -> Core.SutilElement) =
                     match shortName(__.SystemTypeName) with
 
                     | "MultiLineText" ->
-                        editMultiLineText (__ :> obj :?> Field<Types.MultiLineText>)
+                        __.Set.IsSome, editMultiLineText (__ :> obj :?> Field<Types.MultiLineText>)
 
                     | _ ->
                         match __.Editor with
 
                         | FieldEditor.BuiltIn (BuiltInEditor.Select) ->
-                            editFieldSelect __  
+                            false, editFieldSelect __  
 
                         | FieldEditor.BuiltIn (BuiltInEditor.Text) when __.AllowedValues.IsSome ->
-                            editFieldSelect __  
+                            false, editFieldSelect __  
 
                         | FieldEditor.BuiltIn (BuiltInEditor.Checkbox) ->
-                            editFieldCheckbox (__ :> obj :?> Field<bool>)
+                            false, editFieldCheckbox (__ :> obj :?> Field<bool>)
 
                         | FieldEditor.BuiltIn builtIn ->
-                            editFieldInput builtIn __ 
+                            __.Set.IsSome, editFieldInput builtIn __ 
 
                         | FieldEditor.Ctor ctor ->
-                            fun errors -> 
+                            false, fun errors -> 
                                 ctor (__,errors)
 
-                __.BuildWith( fun _ error -> editor error )
-                // FieldElement.Of( fun () -> withLabelError __ editor |> f )
+                __.BuildInto( isTextEditable, fun _ error -> editor error )
 
             member __.Build() =
                 __.BuildWithBuiltIn()
