@@ -27,18 +27,18 @@ module SutilKeyed =
             v :?> 'T
 
     type KeyedInfo<'T> = {
-        Node : SutilEffect
+        // The item's stable top-level nodes; binding-rooted views keep their anchor here (fsimgo #896).
+        Nodes : Browser.Types.Node[]
         Value : IStore<'T>
     }
 
-    let keyedUnordered (items : System.IObservable<'T seq>) (view: IReadOnlyStore<'T> -> SutilElement) (key : 'T -> 'K) = 
+    let keyedUnordered (items : System.IObservable<'T seq>) (view: IReadOnlyStore<'T> -> SutilElement) (key : 'T -> 'K) =
         SutilElement.Define("keyedUnordered",
 
         fun ctx ->
             let mutable keyMap : Map<'K,KeyedInfo<'T>> = Map.empty
-            let group = SutilEffect.MakeGroup("keyed",ctx.Parent,ctx.Previous)
-            let keyedNode = Group group
-            let keyedCtx = ctx |> ContextHelpers.withParent keyedNode
+            // Items build immediately before the anchor, which pins the block's position (fsimgo #896).
+            let anchor = bindingAnchor "keyedUnordered" ctx
 
             // Listen for changes to collection
             let unsub = items.Subscribe( fun newItems ->
@@ -53,10 +53,10 @@ module SutilKeyed =
                         match keyMap.TryFind k with
                         | None ->
                             let store = Store.make item
-                            let sutilNode = keyedCtx |> build (view store)
+                            let nodes = (ctx |> ContextHelpers.withAnchor anchor) |> build (view store)
                             {
-                                Node = sutilNode
-                                Value =store
+                                Nodes = nodes
+                                Value = store
                             }
                         | Some r ->
                             item |> Store.set r.Value
@@ -65,17 +65,20 @@ module SutilKeyed =
                     newKeyMap <- newKeyMap.Add(k, itemRec) )
 
                 // Remove missing items from document
-                keyMap |> Seq.iter( fun kv ->if not (newKeyMap.ContainsKey kv.Key) then kv.Value.Node.Dispose())
+                keyMap |> Seq.iter( fun kv ->
+                    if not (newKeyMap.ContainsKey kv.Key) then
+                        kv.Value.Nodes |> Array.iter Sutil.DomHelpers.removeNode )
 
                 // Update current items
                 keyMap <- newKeyMap
+                Sutil.DomHelpers.setBindNodes anchor (keyMap |> Seq.collect (fun kv -> kv.Value.Nodes) |> Array.ofSeq)
             )
 
-            group.RegisterUnsubscribe ( fun () -> 
+            SutilEffect.RegisterUnsubscribe ( anchor, fun () ->
                 unsub.Dispose()
             )
 
-            keyedNode
+            [| anchor |]
         )
     
 [<AutoOpen>]
