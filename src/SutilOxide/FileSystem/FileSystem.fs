@@ -355,8 +355,16 @@ module Path =
     let stripTrailingSlash (path : string) = path.TrimEnd([| '/'; '\\' |] )
     let stripLeadingSlash (path : string) = path.TrimStart([| '/'; '\\' |] )
 
+    /// The part of `path` below `parent`, or None when `path` is not inside `parent`.
+    /// Compares components, so "/models/x" is not inside "/model" (fsimgo#996).
+    let relativeTo (parent : string) (path : string) : string option =
+        let p, c = parsePath parent, parsePath path
+        if c.Length >= p.Length && Array.forall2 (=) p c[0 .. p.Length - 1]
+        then Some (c[p.Length ..] |> buildPath)
+        else None
+
     let getRelativePath (parent : string) (path : string) =
-        if path.StartsWith parent then path.Substring( 0, parent.Length ) |> stripTrailingSlash else path
+        relativeTo parent path |> Option.defaultValue path
 
     let getExtension (path : string) =
         let fileName = getFileNameWithExt path
