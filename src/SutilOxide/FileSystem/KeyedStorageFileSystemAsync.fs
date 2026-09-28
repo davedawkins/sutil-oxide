@@ -10,6 +10,11 @@ open JsHelpers
 let inline private encode (e : 't) = Thoth.Json.Encode.Auto.toString e
 let inline private decode<'t> s : Result<'t,string> = Thoth.Json.Decode.Auto.fromString<'t> s
 
+// POSIX allows any byte in a component except '/' and NUL; '.' and '..' name entries this store does not hold (#997)
+let validateFileName (file:string) =
+    if file = "" || file = "." || file = ".." || file.Contains("/") || file.Contains("\000") then
+        failwith ("Invalid file name: " + file)
+
 open Fable.Core
 
 type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
@@ -291,10 +296,6 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
 
     let makeKey (path:string) =
         "fs:" + path
-
-    let validateFileName (file:string) =
-        if file.Contains("..") || file.Contains("/") || file.Contains("\\") then
-            failwith ("Invalid file name: " + file)
 
     let hasEntries (path : string) =
         promise {
@@ -594,6 +595,7 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
                 let nparent = Path.getFolderName npath
                 let cname = Path.getFileNameWithExt cpath
                 let nname = Path.getFileNameWithExt npath
+                validateFileName nname // rename was the one write path that skipped validation (#997)
 
                 do! assertTrue (isEntry nparent) ("Parent folder for rename target does not exist: " + nparent)
 
