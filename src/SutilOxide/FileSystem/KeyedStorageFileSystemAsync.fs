@@ -273,7 +273,8 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
                         | Some (_,uid) -> return! findUid uid parts (i+1)
                 }
 
-        findUid 0 parts 0
+        if path = "" then Promise.lift (Error "Invalid path: empty string -- the root's spelling is '/' (#998)")
+        else findUid 0 parts 0
 
     let getEntryByPath path = 
         promise {
@@ -293,9 +294,6 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
 
     let isFolder (path:string) =
         path |> getEntryByPath |> Promise.map (fun e -> e |> Result.map (fun e -> e.Type = Folder) |> Result.defaultValue false)
-
-    let makeKey (path:string) =
-        "fs:" + path
 
     let hasEntries (path : string) =
         promise {
@@ -366,9 +364,8 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
             else 
                 let! pathIsFolder = isFolder path
                 if not pathIsFolder then
-                    match Path.getFolderName path with 
-                    | "" -> ()
-                    | parent -> 
+                    let parent = Path.getFolderName path
+                    if parent <> path then // the root is its own parent (#998)
                         do! createFolderRecursive parent notify
                     do! createChildEntry path notify Folder
         }
@@ -520,10 +517,12 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
         promise {
             beginBatch()
             try
+                let path = path |> Internal.canonical // Removed events must carry canonical paths, like every other event (#998)
+                if path = "/" then failwith "Cannot remove '/'"
                 do! assertExists path
                 do! assertEmptyFolder path
-                
-                let! remove = 
+
+                let! remove =
                     getEntryByPath path
                     >>= fun entry ->
                         let folderName = Path.getFolderName path
@@ -560,6 +559,8 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
 
     let rec removeDeep (path : string) : Promise<unit> =
         promise {
+            let path = path |> Internal.canonical
+            if path = "/" then failwith "Cannot remove '/'" // guard before the walk, or the children die first (#998)
             let! entry = getEntryByPath path
 
             match entry with
