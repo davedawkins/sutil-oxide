@@ -35,8 +35,12 @@ type SubFolderFileSystemAsync( fs : IFsAsync, mountPoint : string) =
             fs.GetContent(makePath path)
 
         member this.OnChanged(callback: FileSystemEvent -> unit): AsyncPromise<IDisposable> =
-            fs.OnChanged(fun ev -> 
-                if belongs ev.path then callback( ev.map(fixPath) )
+            fs.OnChanged(fun ev ->
+                if belongs ev.path then
+                    match ev.event with
+                    // a rename OUT of the mount would leak the foreign rooted target as if it were ours (fsimgo#998)
+                    | Renamed npath when not (belongs npath) -> callback { path = fixPath ev.path; event = Removed }
+                    | _ -> callback( ev.map(fixPath) )
             )
 
         // IReadOnlyBatchingFileSystemOf members
@@ -126,13 +130,15 @@ type VirtualFileSystem( mounts : (string * IFsAsync) [] ) =
 
         // IReadOnlyFileSystemOf members  
         member this.GetEntry(path: string): AsyncPromise<Entry option> =
-            if path = "/" then
+            if path = "" then Promise.lift None // same "" contract as the store: reads resolve nothing (fsimgo#998)
+            elif path = "/" then
                 { Name = ""; Meta = { EntryType = EntryType.Folder; CreatedAt = DateTime.MinValue; ModifiedAt = DateTime.MinValue; Size = 0} } |> Some |> Promise.lift
             else
                 dispatch1 path (fun fs path -> fs.GetEntry(path))
 
         member this.GetContent(path: string): AsyncPromise<Content option> =
-            if path = "/" then
+            if path = "" then Promise.lift None // same "" contract as the store (fsimgo#998)
+            elif path = "/" then
                 mounts |> Array.map (fun (name,fs) -> fs.GetEntry("/") |> Promise.map (Option.map (fun e -> { e with Name = name }))) |> Promise.all |> Promise.map (Array.choose id>>Entries>>Some)
             else
                 dispatch1 path (fun fs path -> fs.GetContent(path))
