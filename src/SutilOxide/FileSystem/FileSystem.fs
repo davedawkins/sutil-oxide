@@ -321,6 +321,8 @@ type FsDateTime = System.DateTime
 module Path =
     open Internal
     let combine a b  = Internal.combine a b
+    /// The one normalizer (#998): rooted rendering, '.' dropped, '..' resolved or thrown, "" refused.
+    let canonical (path : string) = Internal.canonical path
     let getFolderName path = getFolderName path
     let getFileName path = getFileNameWithExt path
     let getFileNameWithExt path = getFileNameWithExt path

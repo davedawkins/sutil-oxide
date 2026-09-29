@@ -132,7 +132,7 @@ type VirtualFileSystem( mounts : (string * IFsAsync) [] ) =
         member this.GetEntry(path: string): AsyncPromise<Entry option> =
             if path = "" then Promise.lift None // same "" contract as the store: reads resolve nothing (fsimgo#998)
             elif path = "/" then
-                { Name = ""; Meta = { EntryType = EntryType.Folder; CreatedAt = DateTime.MinValue; ModifiedAt = DateTime.MinValue; Size = 0} } |> Some |> Promise.lift
+                { Name = "/"; Meta = { EntryType = EntryType.Folder; CreatedAt = DateTime.MinValue; ModifiedAt = DateTime.MinValue; Size = 0} } |> Some |> Promise.lift // the root spells "/" (#998)
             else
                 dispatch1 path (fun fs path -> fs.GetEntry(path))
 
