@@ -6,18 +6,10 @@ open SutilOxide.FileSystem
 type SubFolderFileSystemAsync( fs : IFsAsync, mountPoint : string) =
     let makePath( path : string ) = Path.combine mountPoint path
 
-    let fixPath ( path :string ) = 
-        let start = path.IndexOf mountPoint
-        path.Substring( start + mountPoint.Length )
+    // fsimgo#996: containment and remainder by component, so mount "model" never claims "models/x"
+    let fixPath ( path : string ) = Path.relativeTo mountPoint path |> Option.defaultValue path
 
-    let fixFiles ( files :string[] ) = files
-
-    let fixFolders ( folders :string[] ) = folders 
-
-    let trimSlash (path : string) = path.TrimStart( [| '/' |] )
-
-    let belongs (path : string) =
-        (trimSlash path).StartsWith( trimSlash mountPoint )
+    let belongs (path : string) = (Path.relativeTo mountPoint path).IsSome
 
     interface IFsAsync with
         // IWriteOnlyFileSystemOf<AsyncPromise<unit>> members
@@ -72,8 +64,11 @@ type VirtualFileSystem( mounts : (string * IFsAsync) [] ) =
     let getMountFs (path : string) = 
         path |> FileSystem.Internal.parsePath |> Array.tryHead |> Option.bind (mountPoints.TryFind)
         
-    let pathToInternal ( path :string ) = 
-        path |> FileSystem.Internal.parsePath |> Array.skip 1 |> String.concat "/"
+    // fsimgo#996: the remainder below the mount name, total on the empty path
+    let pathToInternal ( path :string ) =
+        match getMountName path with
+        | Some m -> Path.relativeTo m path |> Option.defaultValue ""
+        | None -> ""
 
     let dispatch1 (path : string) (cmd : IFsAsync -> string -> AsyncPromise<'r>) =
         match getMountFs path with
