@@ -213,7 +213,8 @@ let update edit drop msg (model : Model) =
         { model with Error = Some x }, Cmd.none
 
     | SetSelected (s : string) ->
-        { model with Selected = s.TrimStart( [| '/' |] ) ; Renaming = false}, Cmd.none
+        // canonical, not stripped: rows compare Selected against Path.combine output, rooted since fsimgo#998
+        { model with Selected = (if s = "" then "" else FileSystem.Internal.canonical s) ; Renaming = false}, Cmd.none
 
     | SelectPath path ->
         let folder = Path.getFolderName(path)
