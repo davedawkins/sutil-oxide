@@ -6,18 +6,11 @@ open SutilOxide.FileSystem
 type SubFolderFileSystemAsync( fs : IFsAsync, mountPoint : string) =
     let makePath( path : string ) = Path.combine mountPoint path
 
-    let fixPath ( path :string ) = 
-        let start = path.IndexOf mountPoint
-        path.Substring( start + mountPoint.Length )
+    // fsimgo#996: containment and remainder by component, so mount "model" never claims "models/x"
+    // fsimgo#998: the remainder is re-rooted -- "/" names the mount root, never "" -- so sub-fs paths obey the model
+    let fixPath ( path : string ) = Path.relativeTo mountPoint path |> Option.map (fun r -> "/" + r) |> Option.defaultValue path
 
-    let fixFiles ( files :string[] ) = files
-
-    let fixFolders ( folders :string[] ) = folders 
-
-    let trimSlash (path : string) = path.TrimStart( [| '/' |] )
-
-    let belongs (path : string) =
-        (trimSlash path).StartsWith( trimSlash mountPoint )
+    let belongs (path : string) = (Path.relativeTo mountPoint path).IsSome
 
     interface IFsAsync with
         // IWriteOnlyFileSystemOf<AsyncPromise<unit>> members
@@ -42,8 +35,12 @@ type SubFolderFileSystemAsync( fs : IFsAsync, mountPoint : string) =
             fs.GetContent(makePath path)
 
         member this.OnChanged(callback: FileSystemEvent -> unit): AsyncPromise<IDisposable> =
-            fs.OnChanged(fun ev -> 
-                if belongs ev.path then callback( ev.map(fixPath) )
+            fs.OnChanged(fun ev ->
+                if belongs ev.path then
+                    match ev.event with
+                    // a rename OUT of the mount would leak the foreign rooted target as if it were ours (fsimgo#998)
+                    | Renamed npath when not (belongs npath) -> callback { path = fixPath ev.path; event = Removed }
+                    | _ -> callback( ev.map(fixPath) )
             )
 
         // IReadOnlyBatchingFileSystemOf members
@@ -72,8 +69,11 @@ type VirtualFileSystem( mounts : (string * IFsAsync) [] ) =
     let getMountFs (path : string) = 
         path |> FileSystem.Internal.parsePath |> Array.tryHead |> Option.bind (mountPoints.TryFind)
         
-    let pathToInternal ( path :string ) = 
-        path |> FileSystem.Internal.parsePath |> Array.skip 1 |> String.concat "/"
+    // fsimgo#996: the remainder below the mount name, total on the empty path; rooted since #998
+    let pathToInternal ( path :string ) =
+        match getMountName path with
+        | Some m -> Path.relativeTo m path |> Option.map (fun r -> "/" + r) |> Option.defaultValue "/"
+        | None -> "/"
 
     let dispatch1 (path : string) (cmd : IFsAsync -> string -> AsyncPromise<'r>) =
         match getMountFs path with
@@ -130,13 +130,15 @@ type VirtualFileSystem( mounts : (string * IFsAsync) [] ) =
 
         // IReadOnlyFileSystemOf members  
         member this.GetEntry(path: string): AsyncPromise<Entry option> =
-            if path = "" || path = "/" then
-                { Name = ""; Meta = { EntryType = EntryType.Folder; CreatedAt = DateTime.MinValue; ModifiedAt = DateTime.MinValue; Size = 0} } |> Some |> Promise.lift
+            if path = "" then Promise.lift None // same "" contract as the store: reads resolve nothing (fsimgo#998)
+            elif path = "/" then
+                { Name = "/"; Meta = { EntryType = EntryType.Folder; CreatedAt = DateTime.MinValue; ModifiedAt = DateTime.MinValue; Size = 0} } |> Some |> Promise.lift // the root spells "/" (#998)
             else
                 dispatch1 path (fun fs path -> fs.GetEntry(path))
 
         member this.GetContent(path: string): AsyncPromise<Content option> =
-            if path = "" || path = "/" then
+            if path = "" then Promise.lift None // same "" contract as the store (fsimgo#998)
+            elif path = "/" then
                 mounts |> Array.map (fun (name,fs) -> fs.GetEntry("/") |> Promise.map (Option.map (fun e -> { e with Name = name }))) |> Promise.all |> Promise.map (Array.choose id>>Entries>>Some)
             else
                 dispatch1 path (fun fs path -> fs.GetContent(path))

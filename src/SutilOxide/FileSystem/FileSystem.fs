@@ -172,34 +172,6 @@ module Internal =
 
     let isRooted (p : string) = p.StartsWith "/"
 
-    let collapseDotDot (path : string) =
-
-        match path with
-        | "" | "/" ->
-            path
-        | _ ->
-            let items = path.Split([|'/'|], StringSplitOptions.RemoveEmptyEntries ) |> List.ofArray
-
-            let rec go (items,pitems) =
-                match items,pitems with
-                | [],_ -> 
-                    [], pitems
-
-                | x::xs, _ when x = "." ->
-                    go (xs, pitems)
-
-                | x::_, [] when x = ".." ->
-                    failwith ("Invalid path: " + path)
-
-                | x::xs, y::ys when x = ".." ->
-                    go (xs, ys)
-
-                | x::xs,_ -> 
-                    go (xs, x :: pitems)
-
-            go (items,[]) |> snd |> List.rev |> String.concat "/" 
-            |> fun p -> if isRooted path then "/" + p else p
-
     let parsePath (path:string) =
         path.Split([|'/'|], StringSplitOptions.RemoveEmptyEntries)
 
@@ -209,17 +181,29 @@ module Internal =
     let buildPathRooted (parts : seq<string>) =
         "/" + buildPath(parts)
 
-    let canonical (path : string ) =
-        path |> parsePath |> buildPath
+    // #998: the canonical component list -- '.' dropped, '..' resolved; '..' escaping the root throws
+    // rather than clamping to '/' as POSIX does, because a store with no symlinks makes that a caller bug.
+    let private canonicalParts (path : string) =
+        if path = "" then failwith "Invalid path: empty string"
+        path
+        |> parsePath
+        |> Array.fold (fun acc part ->
+            match part, acc with
+            | ".", _ -> acc
+            | "..", [] -> failwith ("Invalid path: " + path)
+            | "..", _ :: rest -> rest
+            | p, _ -> p :: acc) []
+        |> List.rev
+
+    // #998: the one normalizer -- every valid input renders rooted, and the root spells "/"
+    let canonical (path : string) =
+        path |> canonicalParts |> buildPathRooted
 
     let getFolderName (path : string) =
-        match path.Trim() with
-        | "/" | "" -> ""
-        | _ ->
-            let items = path |> parsePath
-            if (items.Length = 0) then failwith ("Invalid path for getFolderName: " + path)
-            if (items.Length = 1) then "" else
-            items |> Array.take (items.Length - 1) |> buildPath
+        match path |> canonicalParts with
+        // the root is its own parent, as POSIX dirname has it (#998)
+        | [] | [ _ ] -> "/"
+        | parts -> parts |> List.take (parts.Length - 1) |> buildPathRooted
 
     let getFileNameWithExt path =
         let items = path |> parsePath
@@ -232,15 +216,8 @@ module Internal =
         let dot = fname.LastIndexOf '.'
         if dot < 0 then fname else fname.Substring(0,dot)
 
-    let cleanSlash (f:string) =
-        f.Replace("\\", "/").Replace("//", "/")
-
     let combine (path:string) (file:string) =
-        (path.TrimEnd([|'/'|]), file.TrimStart([|'/'|]))
-        |> fun (p,f) ->
-            if p = "" then f
-            else sprintf "%s/%s" p f 
-        |> canonical
+        canonical (path + "/" + file)
 
 open JsHelpers
 
@@ -344,19 +321,30 @@ type FsDateTime = System.DateTime
 module Path =
     open Internal
     let combine a b  = Internal.combine a b
+    /// The one normalizer (#998): rooted rendering, '.' dropped, '..' resolved or thrown, "" refused.
+    let canonical (path : string) = Internal.canonical path
     let getFolderName path = getFolderName path
     let getFileName path = getFileNameWithExt path
     let getFileNameWithExt path = getFileNameWithExt path
     let getFileNameNoExt path = getFileNameNoExt path
     
-    let getFirstFolder( path : string ) : string =
-        Internal.parsePath path |> Array.head
+    let getFirstFolder( path : string ) : string option =
+        Internal.parsePath path |> Array.tryHead
 
-    let stripTrailingSlash (path : string) = path.TrimEnd([| '/'; '\\' |] )
-    let stripLeadingSlash (path : string) = path.TrimStart([| '/'; '\\' |] )
+    // '/' only: '\\' is a legal name character (#997). Boundary helpers for archive/wire formats (#998).
+    let stripTrailingSlash (path : string) = path.TrimEnd([| '/' |] )
+    let stripLeadingSlash (path : string) = path.TrimStart([| '/' |] )
+
+    /// The part of `path` below `parent`, or None when `path` is not inside `parent`.
+    /// Compares components, so "/models/x" is not inside "/model" (fsimgo#996).
+    let relativeTo (parent : string) (path : string) : string option =
+        let p, c = parsePath parent, parsePath path
+        if c.Length >= p.Length && Array.forall2 (=) p c[0 .. p.Length - 1]
+        then Some (c[p.Length ..] |> buildPath)
+        else None
 
     let getRelativePath (parent : string) (path : string) =
-        if path.StartsWith parent then path.Substring( 0, parent.Length ) |> stripTrailingSlash else path
+        relativeTo parent path |> Option.defaultValue path
 
     let getExtension (path : string) =
         let fileName = getFileNameWithExt path

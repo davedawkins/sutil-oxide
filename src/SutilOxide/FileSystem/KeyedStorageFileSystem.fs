@@ -110,10 +110,6 @@ open SutilOxide.FileSystem.Types
 //     //    putEntry root
 //         //Storage.setContents "(root)" (Json.serialize(root))
 
-//     let validateFileName (file:string) =
-//         if file.Contains("..") || file.Contains("/") || file.Contains("\\") then
-//             failwith ("Invalid file name: " + file)
-
 //     let hasEntries (path : string) =
 //         path
 //         |> Internal.canonical

@@ -79,21 +79,22 @@ let getProperty<'T> (data: obj) (name : string) (defaultValue:'T) : 'T =
 let getObjProperty<'T> (data: obj) (name : string) (defaultValue:'T) : 'T =
     jsGetObj(data, name, defaultValue)
 
+// #997: '/' alone separates; a backslash is an ordinary filename byte, as Path already holds
 let stripTrailingSlash (name : string) =
-    name.TrimEnd([| '\\'; '/' |])
+    name.TrimEnd([| '/' |])
 
 let pathFileName (name : string) =
-    let parts = (stripTrailingSlash name).Split( [| '/'; '\\' |])
+    let parts = (stripTrailingSlash name).Split( [| '/' |])
     let fileWithExt = parts[ parts.Length-1 ]
     let lastDot = fileWithExt.LastIndexOf('.')
     if lastDot < 0 then fileWithExt else fileWithExt.Substring(0,lastDot)
 
 let pathFileNameWithExt (name : string) =
-    let parts = (stripTrailingSlash name).Split( [| '/'; '\\' |])
+    let parts = (stripTrailingSlash name).Split( [| '/' |])
     parts[ parts.Length-1 ]
 
 let pathFileExt (name : string) =
-    let parts = (stripTrailingSlash name).Split( [| '/'; '\\' |])
+    let parts = (stripTrailingSlash name).Split( [| '/' |])
     let fileWithExt = parts[ parts.Length-1 ]
     let lastDot = fileWithExt.LastIndexOf('.')
     if lastDot < 0 then "" else fileWithExt.Substring(lastDot)
