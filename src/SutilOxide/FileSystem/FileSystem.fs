@@ -479,20 +479,6 @@ module FileSystemExt =
 
         member private __.EntryNamesWhere( path : string, pred : Entry -> bool ) : AsyncPromise<string[]> =
             __.GetEntries path |> Promise.map(Array.filter pred>>Array.map _.Name)
-            // let _path = path
-            // promise {
-            //     let! e = __.GetEntry(path)
-            //     match e with
-            //     | Some entry when entry.Meta.EntryType = EntryType.Folder ->
-            //         let! c = __.GetContent(path)
-            //         match c with
-            //         | Some (Content.Entries entries) ->
-            //             return entries |> Array.filter pred |> Array.map _.Name
-            //         | _ -> 
-            //             return failwithf "Internal error: Not a folder: %s" path
-            //     | x ->
-            //         return failwithf "Not a folder: '%s' '%s' (%A)" _path path x
-            // }
 
         member __.EntryNames( path : string ) : AsyncPromise<string[]> =
             promise {
@@ -565,34 +551,24 @@ module FileSystemExt =
             promise {
                 let! c = __.GetContent( path )
                 match c with 
-                // | Some (Content.TextUtf8 text) -> return text |> ByteArray.textEncode
                 | Some (Content.Bytes data) -> return data 
                 | None -> return failwithf "File not found: %s" path
                 | _ -> return failwithf "Not a file: %s" path
             }
 
+        member __.AppendFileBytes( path : string, data : ByteArray ) =
+            promise {
+                let! current = __.TryGetFileBytes( path )
+                match current with
+                | Ok data0 -> return! __.WriteEntry( path, Content.Bytes (ByteArray.appendByteArray data0 data))
+                | Error _ -> return! __.WriteEntry( path, Content.Bytes data)
+            }
+
+        member __.AppendFileText( path : string, text : string ) =
+            __.AppendFileBytes( path, ByteArray.textEncode text)
+
         member __.GetFileContent(path : string) =
             __.GetFileText path
-
-        // member __.TryGetFileBytes(path : string) =
-        //     promise {
-        //         let! f = __.IsFile(path)
-        //         if f then 
-        //             let! data = __.GetFileBytes path
-        //             return Some data
-        //         else
-        //             return None
-        //     }
-
-        // member __.TryGetFileText(path : string) =
-        //     promise {
-        //         let! f = __.IsFile(path)
-        //         if f then 
-        //             let! text = __.GetFileText path
-        //             return Some text
-        //         else
-        //             return None
-        //     }
 
         member __.GetCreatedAt(path : string) =
             promise {
