@@ -183,6 +183,29 @@ module Internal =
 
     // #998: the canonical component list -- '.' dropped, '..' resolved; '..' escaping the root throws
     // rather than clamping to '/' as POSIX does, because a store with no symlinks makes that a caller bug.
+    //
+    // Rendered through buildPathRooted by `canonical`, these are the answers (every line below is a
+    // row of the "canonical golden table" test, so they are checked, not remembered):
+    //
+    //   "/"              -> "/"          the root is the empty component list
+    //   "/a/"            -> "/a"         a trailing slash is not a component
+    //   "//a", "///a"    -> "/a"         repeated slashes collapse, however many
+    //   "/a//b"          -> "/a/b"       including in the middle
+    //   "a//b"           -> "/a/b"       an UNROOTED input roots; this is not an early-return case
+    //   "/a/./b"         -> "/a/b"       '.' names the folder it sits in, so it drops
+    //   "."              -> "/"          a path of nothing but '.' is the root
+    //   "/a/."           -> "/a"
+    //   "/a/../b"        -> "/b"         '..' pops the component before it
+    //   "/a/b/../.."     -> "/"          popping back to the root is legal
+    //   "/notes..md"     -> "/notes..md" '..' inside a name is a name, not a traversal (#997)
+    //   "/dir/we\ird.txt" -> unchanged   '\' is a legal name character (#997)
+    //
+    // These throw:
+    //
+    //   ""               empty string is not a path -- callers meaning the root pass "/"
+    //   "/.."            '..' from the root has nothing to pop
+    //   "/a/../../b"     the second '..' escapes the root
+    //
     let private canonicalParts (path : string) =
         if path = "" then failwith "Invalid path: empty string"
         path
