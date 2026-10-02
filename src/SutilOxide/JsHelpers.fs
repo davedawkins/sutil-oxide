@@ -118,6 +118,8 @@ module ByteArray =
     [<Emit("new Uint8Array($0)")>]
     let createByteArray (size: int) : ByteArray = jsNative
     
+    let empty() : ByteArray = createByteArray(0)
+    
     let collectByteArrays (arrays : ByteArray[]) =
         let size = arrays |> Array.fold (fun n a -> n + a.byteLength) 0
         let fullBytes = createByteArray(size)

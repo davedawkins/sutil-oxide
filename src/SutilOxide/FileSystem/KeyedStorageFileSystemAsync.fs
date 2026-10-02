@@ -299,7 +299,6 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
         promise {
             let! uid = 
                 path
-                |> Internal.canonical
                 |> uidOf
             match uid with
             | Ok uid -> return! hasEntries uid
@@ -310,7 +309,6 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
         promise {
             let! uid = 
                 path
-                |> Internal.canonical
                 |> uidOf
 
             match uid with

@@ -183,6 +183,29 @@ module Internal =
 
     // #998: the canonical component list -- '.' dropped, '..' resolved; '..' escaping the root throws
     // rather than clamping to '/' as POSIX does, because a store with no symlinks makes that a caller bug.
+    //
+    // Rendered through buildPathRooted by `canonical`, these are the answers (every line below is a
+    // row of the "canonical golden table" test, so they are checked, not remembered):
+    //
+    //   "/"              -> "/"          the root is the empty component list
+    //   "/a/"            -> "/a"         a trailing slash is not a component
+    //   "//a", "///a"    -> "/a"         repeated slashes collapse, however many
+    //   "/a//b"          -> "/a/b"       including in the middle
+    //   "a//b"           -> "/a/b"       an UNROOTED input roots; this is not an early-return case
+    //   "/a/./b"         -> "/a/b"       '.' names the folder it sits in, so it drops
+    //   "."              -> "/"          a path of nothing but '.' is the root
+    //   "/a/."           -> "/a"
+    //   "/a/../b"        -> "/b"         '..' pops the component before it
+    //   "/a/b/../.."     -> "/"          popping back to the root is legal
+    //   "/notes..md"     -> "/notes..md" '..' inside a name is a name, not a traversal (#997)
+    //   "/dir/we\ird.txt" -> unchanged   '\' is a legal name character (#997)
+    //
+    // These throw:
+    //
+    //   ""               empty string is not a path -- callers meaning the root pass "/"
+    //   "/.."            '..' from the root has nothing to pop
+    //   "/a/../../b"     the second '..' escapes the root
+    //
     let private canonicalParts (path : string) =
         if path = "" then failwith "Invalid path: empty string"
         path
@@ -467,20 +490,6 @@ module FileSystemExt =
 
         member private __.EntryNamesWhere( path : string, pred : Entry -> bool ) : AsyncPromise<string[]> =
             __.GetEntries path |> Promise.map(Array.filter pred>>Array.map _.Name)
-            // let _path = path
-            // promise {
-            //     let! e = __.GetEntry(path)
-            //     match e with
-            //     | Some entry when entry.Meta.EntryType = EntryType.Folder ->
-            //         let! c = __.GetContent(path)
-            //         match c with
-            //         | Some (Content.Entries entries) ->
-            //             return entries |> Array.filter pred |> Array.map _.Name
-            //         | _ -> 
-            //             return failwithf "Internal error: Not a folder: %s" path
-            //     | x ->
-            //         return failwithf "Not a folder: '%s' '%s' (%A)" _path path x
-            // }
 
         member __.EntryNames( path : string ) : AsyncPromise<string[]> =
             promise {
@@ -553,34 +562,24 @@ module FileSystemExt =
             promise {
                 let! c = __.GetContent( path )
                 match c with 
-                // | Some (Content.TextUtf8 text) -> return text |> ByteArray.textEncode
                 | Some (Content.Bytes data) -> return data 
                 | None -> return failwithf "File not found: %s" path
                 | _ -> return failwithf "Not a file: %s" path
             }
 
+        member __.AppendFileBytes( path : string, data : ByteArray ) =
+            promise {
+                let! current = __.TryGetFileBytes( path )
+                match current with
+                | Ok data0 -> return! __.WriteEntry( path, Content.Bytes (ByteArray.appendByteArray data0 data))
+                | Error _ -> return! __.WriteEntry( path, Content.Bytes data)
+            }
+
+        member __.AppendFileText( path : string, text : string ) =
+            __.AppendFileBytes( path, ByteArray.textEncode text)
+
         member __.GetFileContent(path : string) =
             __.GetFileText path
-
-        // member __.TryGetFileBytes(path : string) =
-        //     promise {
-        //         let! f = __.IsFile(path)
-        //         if f then 
-        //             let! data = __.GetFileBytes path
-        //             return Some data
-        //         else
-        //             return None
-        //     }
-
-        // member __.TryGetFileText(path : string) =
-        //     promise {
-        //         let! f = __.IsFile(path)
-        //         if f then 
-        //             let! text = __.GetFileText path
-        //             return Some text
-        //         else
-        //             return None
-        //     }
 
         member __.GetCreatedAt(path : string) =
             promise {

@@ -26,8 +26,7 @@ type UI =
 let private norm (s : string) = s.Trim('/')
 
 /// True if a change at `path` could affect the listing shown for `cwd` -- i.e. `path`'s parent
-/// directory is `cwd`. Paths may arrive with a leading slash from a mounted
-/// SubFolderFileSystemAsync (#563); Cwd never does, so normalise both before comparing.
+/// directory is `cwd`. norm also maps the root to "", which the ancestor tests below rely on.
 let private cwdMatches (cwd : string) (path : string) =
     norm (Path.getFolderName path) = norm cwd
 
