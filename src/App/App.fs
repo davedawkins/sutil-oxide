@@ -325,7 +325,6 @@ let initPanes  (fileExplorer : FileExplorer.FileExplorer) (textEditor : TextEdit
     ()
 
 open Toolbar
-open KeyedStorageFileSystem
 open FileSystemExt
 
 let view () =

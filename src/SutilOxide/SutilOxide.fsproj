@@ -27,7 +27,6 @@
     <Compile Include="FileSystem/SubFolderFileSystem.fs" />
     <Compile Include="FileSystem/FileSystemExt.fs" />
     <Compile Include="FileSystem/CacheFileSystem.fs" />
-    <Compile Include="FileSystem/KeyedStorageFileSystem.fs" />
     <Compile Include="FileSystem/KeyedStorageFileSystemAsync.fs" />
     <Compile Include="FileSystem/EntryCacheDiagnostics.fs" />
     
