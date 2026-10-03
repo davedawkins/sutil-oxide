@@ -834,11 +834,6 @@ with
 open Sutil.Core
 open Types
 
-[<RequireQualifiedAccess>]
-type IsOpenOption = 
-    | Definite of bool
-    | Default of bool
-
 type IRibbonController =
     abstract CreateRibbon: ribbonKey:string * label:string * groups:List<string * string * Control.Control list> -> unit
     abstract CreateGroup: ribbonKey:string * key:string * label:string * controls : Control.Control list -> unit
@@ -869,15 +864,10 @@ type DockPane =
         Header : SutilElement
         HeaderTooltip : string option
         Content : SutilElement
-        IsExclusive : bool
-        IsOpen : IsOpenOption
-        IsMinimized : bool
+        ShowAtCreate : bool
         OnClose : unit -> unit
-        OnMinimize : unit -> unit
         OnShow : bool -> unit
-        OnChildActivate : string -> bool -> unit
     }
-    member __.IsOpenCalculated = __.IsOpen = IsOpenOption.Default true || __.IsOpen = IsOpenOption.Definite true
     member __.Key = __.StrictKey.ToString()
     member __.KeyAsClass = __.StrictKey.ToString()
     member __.KeyAsLabel = __.StrictKey.AsLabel
@@ -886,7 +876,7 @@ type DockPane =
         p1.CanClose = p2.CanClose &&
         p1.Key = p2.Key &&
         p1.Location = p2.Location &&
-        p1.IsOpen = p2.IsOpen 
+        p1.ShowAtCreate = p2.ShowAtCreate
         
     static member Default( key : string ) =
         {
@@ -901,15 +891,11 @@ type DockPane =
             Header = text key
             HeaderTooltip = None
             Content = Html.div key
-            IsOpen = IsOpenOption.Default false
-            IsExclusive = false
-            IsMinimized = false
+            ShowAtCreate = false
             OnClose = ignore
-            OnMinimize = ignore
             Icon = "fa-folder"
             OnShow = ignore
             Group = ""
-            OnChildActivate = fun _ _ -> ()
         }
         
 [<RequireQualifiedAccess>]
@@ -928,29 +914,20 @@ type PaneOption =
     | Location of DockLocation
     | Header of SutilElement
     | Content of SutilElement
-    | IsOpen of IsOpenOption
-    | IsExclusive of bool
-    | IsMinimized of bool
+    | ShowAtCreate of bool
     | OnClose of (unit -> unit)
-    | OnMinimize of (unit -> unit)
     | OnShow of (bool -> unit)
-    | OnChildActivate of (string -> bool -> unit)
 
 type IPaneController =
     abstract CreatePane: paneKey:string * PaneOption list -> unit
     abstract ShowPane: paneKey:string -> unit
     abstract HidePane: paneKey:string -> unit
-    abstract MinimizePane: paneKey:string -> unit
     abstract ContainsPane: paneKey:string -> bool
     abstract RemovePane: paneKey: string -> unit
-    abstract Panes : ISignal<DockPane[]> 
-    abstract IsActiveSignal: string -> ISignal<bool>
-    abstract IsHiddenSignal: string -> ISignal<bool>
-    abstract IsMinimizedSignal: string -> ISignal<bool>
+    abstract Panes : ISignal<DockPane[]>
+    abstract IsShowingSignal: string -> ISignal<bool>
     abstract KeyAttr: string -> SutilElement
-    abstract IsActive: string -> bool
-    abstract IsHidden: string -> bool
-    abstract IsMinimized: string -> bool
+    abstract IsShowing: string -> bool
     abstract AllAreaNames: string[]
     abstract AddPaneFactory: key:string * ctor:(unit -> PaneOption list) -> unit
     abstract RenderPcPaneDiv: key:string * elements:Core.SutilElement seq -> Core.SutilElement
@@ -971,12 +948,8 @@ type DockPane with
             | PaneOption.Location s -> { cfg with Location = s }
             | PaneOption.Content s -> { cfg with Content = s }
             | PaneOption.Header s -> { cfg with Header = s }
-            | PaneOption.IsOpen s -> { cfg with IsOpen = s }
-            | PaneOption.IsExclusive s -> { cfg with IsExclusive = s }
-            | PaneOption.IsMinimized s -> { cfg with IsMinimized = s }
+            | PaneOption.ShowAtCreate s -> { cfg with ShowAtCreate = s }
             | PaneOption.OnClose s -> { cfg with OnClose = s }
-            | PaneOption.OnMinimize s -> { cfg with OnMinimize = s }
-            | PaneOption.OnChildActivate s -> { cfg with OnChildActivate = s }
             | PaneOption.OnShow s -> { cfg with OnShow = s }
             | PaneOption.LabelTooltip s -> { cfg with LabelTooltip = Some s }
             | PaneOption.HeaderTooltip s -> { cfg with HeaderTooltip = Some s }
