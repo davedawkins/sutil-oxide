@@ -234,7 +234,7 @@ let private _update (options : unit -> Options) (unmount : string -> unit) msg (
         {
             model with
                 Docks = { Stations = model.Docks.Stations.Add( pane.Location, station' ) }
-        } , Cmd.batch [ if pane.IsOpenCalculated then Cmd.ofMsg (ShowPane pane.Key) else Cmd.none; cmdMonitorAll ]
+        } , Cmd.batch [ if pane.ShowAtCreate then Cmd.ofMsg (ShowPane pane.Key) else Cmd.none; cmdMonitorAll ]
 
     // | SelectPane (loc,pane) ->
     //     let currentPane = model.SelectedPanes[loc]
@@ -883,7 +883,7 @@ with
         model.Value.SelectedPanes.Values |> Seq.toArray |> Array.choose id
 
     member __.AddPane (key : string, label : string, initLoc : DockLocation, header : SutilElement, content : SutilElement, show : bool ) =
-        __.AddPane { DockPane.Default(key) with Label = LabelString label; Location = initLoc; Header = header; Content = content; IsOpen = IsOpenOption.Default show}
+        __.AddPane { DockPane.Default(key) with Label = LabelString label; Location = initLoc; Header = header; Content = content; ShowAtCreate = show}
 
     member __.AddPane (key, options : PaneOption list) =
         __.AddPane( DockPane.Create(key, options ))
