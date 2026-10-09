@@ -938,22 +938,22 @@ type PaneOption =
 
 type IPaneController =
     abstract CreatePane: paneKey:string * PaneOption list -> unit
-    abstract ShowPane: paneKey:string -> unit
-    abstract HidePane: paneKey:string -> unit
+    abstract UnlistPane: paneKey:string -> unit
     abstract MinimizePane: paneKey:string -> unit
     abstract ContainsPane: paneKey:string -> bool
     abstract RemovePane: paneKey: string -> unit
     abstract Panes : ISignal<DockPane[]> 
     abstract IsActiveSignal: string -> ISignal<bool>
-    abstract IsHiddenSignal: string -> ISignal<bool>
+    abstract IsUnlistedSignal: string -> ISignal<bool>
     abstract IsMinimizedSignal: string -> ISignal<bool>
     abstract KeyAttr: string -> SutilElement
     abstract IsActive: string -> bool
-    abstract IsHidden: string -> bool
+    abstract IsUnlisted: string -> bool
     abstract IsMinimized: string -> bool
     abstract AllAreaNames: string[]
     abstract AddPaneFactory: key:string * ctor:(unit -> PaneOption list) -> unit
     abstract RenderPcPaneDiv: key:string * elements:Core.SutilElement seq -> Core.SutilElement
+    abstract ShowPane: paneKey:string * ?show:bool -> unit
  
 
 type DockPane with
@@ -1228,15 +1228,15 @@ module Forms =
             // Css.fontWeightBold
         ]
 
-        rule ".ui-field input" [
+        rule ".ui-field input:not([type='checkbox'])" [
             Css.borderStyleNone
             Css.borderBottom (px 1, Feliz.borderStyle.solid, "transparent")
             Css.width (percent 100)
         ]
 
-        rule ".ui-field input[type='checkbox']" [
-            Css.custom("width", "fit-content")
-        ]
+        // rule ".ui-field input[type='checkbox']" [
+        //     Css.custom("width", "fit-content")
+        // ]
 
         rule ".ui-field input:focus" [
             Css.outlineStyleNone
@@ -1374,6 +1374,8 @@ module Forms =
                 Ev.onCheckedChange f
             | None ->
                 Attr.readOnly true
+        
+            yield! field.Attrs |> Array.map Attr.custom
         ]
 
     open Fable.Core

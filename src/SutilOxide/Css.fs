@@ -835,7 +835,7 @@ let private toolbarStyling () = [
 ]
 
 let overrides () = [
-    rule ".hidden" [
+    rule ".dock-container .hidden" [
         Css.displayNone
     ]
     rule ".dock-pane-wrapper" [
@@ -850,28 +850,28 @@ let overrides () = [
     ]
 
     CssMedia.maxWidth( px 768, [
-        rule ".tabs-left" [
+        rule ".dock-container .tabs-left" [
             Css.displayNone
         ]
-        rule ".tabs-right" [
+        rule ".dock-container .tabs-right" [
             Css.displayNone
         ]
-        rule ".dock-left-container" [
+        rule ".dock-container .dock-left-container" [
             Css.displayNone
         ]
-        rule ".dock-right-container" [
+        rule ".dock-container .dock-right-container" [
             Css.displayNone
         ]
     ])
 
     CssMedia.maxWidth( px 768, [
-        rule ".dock-tabs" [
+        rule ".dock-container .dock-tabs" [
             Css.displayNone
         ]
-        rule ".dock-top-container" [
+        rule ".dock-container .dock-top-container" [
             Css.displayNone
         ]
-        rule ".dock-bottom-container" [
+        rule ".dock-container .dock-bottom-container" [
             Css.displayNone
         ]
     ])
