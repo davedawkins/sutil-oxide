@@ -936,6 +936,8 @@ type PaneOption =
     | OnShow of (bool -> unit)
     | OnChildActivate of (string -> bool -> unit)
 
+type IsActiveSignal = DockPane -> ISignal<bool>
+
 type IPaneController =
     abstract CreatePane: paneKey:string * PaneOption list -> unit
     abstract UnlistPane: paneKey:string -> unit
@@ -945,6 +947,7 @@ type IPaneController =
     abstract Panes : ISignal<DockPane[]> 
     abstract IsActiveSignal: string -> ISignal<bool>
     abstract IsUnlistedSignal: string -> ISignal<bool>
+    abstract IsShowingSignal: string -> ISignal<bool>
     abstract IsMinimizedSignal: string -> ISignal<bool>
     abstract KeyAttr: string -> SutilElement
     abstract IsActive: string -> bool
@@ -954,6 +957,9 @@ type IPaneController =
     abstract AddPaneFactory: key:string * ctor:(unit -> PaneOption list) -> unit
     abstract RenderPcPaneDiv: key:string * elements:Core.SutilElement seq -> Core.SutilElement
     abstract ShowPane: paneKey:string * ?show:bool -> unit
+    abstract BindArea: area : string * ?onEnter:(DockPane -> Browser.Types.HTMLElement -> unit) -> Core.SutilElement 
+    abstract BindVisibilityToShowing: pane : DockPane -> Core.SutilElement seq
+    abstract AddRenderer: areaKey:string * renderer:(DockPane * IsActiveSignal -> Core.SutilElement) -> unit
  
 
 type DockPane with
