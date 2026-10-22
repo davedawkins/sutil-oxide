@@ -320,7 +320,6 @@ module Control =
     let controlClasses (iconOnly: bool) =
         [ "theme-tool-control"; "ui-control"; if iconOnly then "ui-icon-only" ] 
 
-
     let textValueToElement textValue (text : string -> Core.SutilElement) =
         match textValue with
         | Value.Const s -> text s
@@ -347,18 +346,20 @@ module Control =
             | _ -> ()
         |]
 
+    let attrTabIndex (ro : bool) =
+        Attr.tabIndex (if ro then -1 else 0)
+
     let renderLabelledControlElement 
             (key : string) 
             (cls : string)
             (icon : Icon option) 
             (label : Text option) 
             (tooltip : string option)
-            // (role : AriaRole) 
+            (readonly : bool)
             (controlElement : Core.SutilElement ) : Core.SutilElement =
 
         Html.divc ([cls; yield! controlClasses(false) ] |> ToolInternal.makeClass) [
-            Attr.tabIndex 0
-            // Attr.role (role.ToString())
+            attrTabIndex readonly
             attrDataCmd key
             Html.label [
                 Attr.for' key
@@ -396,36 +397,21 @@ module Control =
 
         let controlClass = controlClasses iconOnly |> ToolInternal.makeClass
 
-        // Html.divc ([ "theme-tool-control"; "ui-control"; if iconOnly then "ui-icon-only" ] |> ToolInternal.makeClass) [
-        //     Attr.tabIndex 0
-
-            // yield!
         match item.Type with
 
         | ControlLabel -> [ Html.divc controlClass iconLabel.Value ]
         | ControlTextField (_, value) ->
-            [ renderLabelledControlElement "" item.Key item.Icon item.Text item.Tooltip (Html.span [ Attr.role "label"; (textValueToElement value Html.span) ]) ]
-            // Html.divc (controlClass) [
-                // Html.label [
-                    // yield! iconLabel.Value
-                // ]
-                // textValueToElement value Html.span
-            // ]
+            [ renderLabelledControlElement "" item.Key item.Icon item.Text item.Tooltip item.ReadOnly (Html.span [ Attr.role "label"; (textValueToElement value Html.span) ]) ]
 
         | ControlCustom el -> el |> Array.toList
 
         | ControlCheck (cb, value) ->
-            [ renderLabelledControlElement "ui-check" item.Key item.Icon item.Text item.Tooltip (makeControlCheck (cb,value)) ]
-            // Html.divc (controlClass) [ 
-                // Attr.tabIndex 0
-                // makeControlCheck (cb,value)
-                // yield! iconLabel.Value
-            // ]
+            [ renderLabelledControlElement "ui-check" item.Key item.Icon item.Text item.Tooltip item.ReadOnly (makeControlCheck (cb,value)) ]
 
         | ControlButton onClick -> 
             [ Html.buttonc (controlClass) [
                 Attr.id (item.Key)
-                Attr.tabIndex 0
+                attrTabIndex item.ReadOnly
                 Attr.roleButton
                 attrDataCmd (item.Key)
                 
@@ -438,7 +424,7 @@ module Control =
             let itemStore : IStore<Control list> = Store.make []
             [ Html.divc ([ controlClass; "flex items-center justify-between" ] |> ToolInternal.makeClass) [
                 Attr.id (item.Key)
-                Attr.tabIndex 0
+                attrTabIndex item.ReadOnly
                 Attr.roleMenu
                 attrDataCmd (item.Key)
                 
@@ -476,7 +462,7 @@ module Control =
             let itemStore : IStore<Control list> = Store.make []
 
             [ Html.divc (controlClass) [ 
-                Attr.tabIndex 0
+                attrTabIndex item.ReadOnly
                 Attr.roleListBox
 
                 Html.label [
@@ -484,7 +470,7 @@ module Control =
                 ]
 
                 Html.divc "ui-select" [
-                    Attr.tabIndex 0
+                    attrTabIndex item.ReadOnly
                     attrDataCmd (item.Key)
                     disposeOnUnmount [ itemStore ]
                     
@@ -1276,6 +1262,10 @@ module Forms =
         rule ".ui-field .error:empty" [
             Css.displayNone
         ]
+
+        rule ".ui-field-hint" [
+            Css.displayNone
+        ]
     ]
 
     let mutable private cssInstalled = false
@@ -1304,6 +1294,10 @@ module Forms =
             Html.label [
                 text (field.Label)
             ]
+            // The tooltip text as an on-page hint; hidden unless a stylesheet shows it.
+            match field.Tooltip with
+            | Value.Const s when s <> "" -> Html.divc "ui-field-hint" [ text s ]
+            | _ -> ()
             Html.div [
                 if field.Suffix <> "" then
                     Html.divc "flex gap-1" [ editor error; Html.span [ text field.Suffix ] ]
@@ -1495,6 +1489,8 @@ module Forms =
         Html.input [    
             Bind.attr("value", formatted)
 
+            Control.attrTabIndex (f.Set.IsNone)
+
             Ev.onFocus(fun e ->
                 let input = (e.target :?> Browser.Types.HTMLInputElement)
 
@@ -1571,7 +1567,7 @@ module Forms =
                         | FieldEditor.BuiltIn (BuiltInEditor.Select) ->
                             false, editFieldSelect __  
 
-                        | FieldEditor.BuiltIn (BuiltInEditor.Text) when __.AllowedValues.IsSome ->
+                        | FieldEditor.BuiltIn (BuiltInEditor.Text) when __.AllowedValues.IsSome && __.Set.IsSome ->
                             false, editFieldSelect __  
 
                         | FieldEditor.BuiltIn (BuiltInEditor.Checkbox) ->
