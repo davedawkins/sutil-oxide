@@ -529,13 +529,14 @@ type FileExplorer( fs : IFsAsync ) =
 
     let mutable onEdit : string -> unit = ignore
     let mutable onDrop : FileList -> IFsAsync -> string -> bool = fun _ _ _ -> false
-    let selection = SutilOxide.Reactive.Cell.make ""
 
     let create fs =
-        //let sessionState = loadSessionState() |> Option.defaultWith defaultSessionState
         (fs,defaultSessionState()) |> Sutil.Store.makeElmish init (updateWithSaveSession (fun f -> onEdit f) (fun _ -> onDrop)) ignore
 
     let model, dispatch = create fs
+
+    let currentFolderSignal = 
+        model .> _.Cwd |> SutilOxide.Reactive.Signal.fromObservable (model.Value.Cwd)
 
     let view  classifier iconselector =
         Bind.el( model, fileExplorer classifier iconselector dispatch )
@@ -555,6 +556,7 @@ type FileExplorer( fs : IFsAsync ) =
         member _.SelectedSignal = model .> _.Selected |> SutilOxide.Reactive.Signal.fromObservable ""
         
         member _.CurrentFolder = model.Value.Cwd
+        member _.CurrentFolderSignal = currentFolderSignal
 
         member __.SelectPath( path : string ) =
             dispatch (SelectPath path)
@@ -565,7 +567,7 @@ type FileExplorer( fs : IFsAsync ) =
             exists (__.Files) path || exists (__.Folders) path
         member __.IsFileInCwd( path : string ) = 
             exists (__.Files) path
-        member __.IsFolderInCmd( path : string ) = 
+        // member __.IsFolderInCwd( path : string ) = 
             // Fable.Core.JS.console.log("IsFolder: ", path, __.Folders)
-            path = "/" || exists (__.Folders) path
+            // path = "/" || exists (__.Folders) path
 
