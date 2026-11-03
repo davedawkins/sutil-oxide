@@ -242,6 +242,12 @@ module Internal =
     let combine (path:string) (file:string) =
         canonical (path + "/" + file)
 
+    let rooted (cwd : string) (path:string) =
+        if isRooted path then
+            path
+        else
+            combine cwd path
+
 open JsHelpers
 
 /// Counters + live configuration for one cache layer (#542). Shared shape for both the F#
@@ -344,6 +350,7 @@ type FsDateTime = System.DateTime
 module Path =
     open Internal
     let combine a b  = Internal.combine a b
+    let rooted a b  = Internal.rooted a b
     /// The one normalizer (#998): rooted rendering, '.' dropped, '..' resolved or thrown, "" refused.
     let canonical (path : string) = Internal.canonical path
     let getFolderName path = getFolderName path
