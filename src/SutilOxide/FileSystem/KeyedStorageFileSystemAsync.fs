@@ -493,7 +493,7 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
         promise {
             let! _isFolder = isFolder path
             if _isFolder then
-                do! assertFalse( hasEntries path) ("Folder is not empty" )
+                do! assertFalse( hasEntries path) ("Folder is not empty: " + path)
         }
 
     let assertExists path =
@@ -682,6 +682,18 @@ type KeyedStorageFileSystemAsync( keyStorage : IKeyedStorageAsync ) =
                 releaseLock(name + string _lockid)
         }
 
+    // Repair rewrites rows under this layer: drop cached entries and re-read (root), or a repaired
+    // folder still reads as not empty and the next UID reuses the one the repair reserved. The lock
+    // keeps an in-flight operation from writing a pre-repair parent or NextUid back over it.
+    let repairThenReload (name : string) (repair : unit -> Promise<int>) =
+        mkResult name <| fun () ->
+            promise {
+                let! fixedCount = repair()
+                entryCache.Clear()
+                do! initRoot()
+                return fixedCount
+            }
+
     let mutable handlerIds = 0
     let handlers = System.Collections.Generic.Dictionary<int, FileSystemEvent -> unit>()
 
@@ -717,16 +729,11 @@ with
         member this.SetTracingEnabled(enabled) = this.SetTracingEnabled(enabled)
         member this.GetTopReads(n) = this.GetTopReadsList(n)
 
-    // member this.LogCheckConsistency() =
-    //     keyStorage.LogConsistencyCheck()
+    member this.LogConsistencyCheck() = keyStorage.LogConsistencyCheck()
 
-    // member this.FixDanglingReferences() = 
-    //     promise {
-    //         SutilOxide.Log.Trace.log("Starting dangling reference cleanup...")
-    //         let! fixedCount = keyStorage.FixDanglingReferences()
-    //         SutilOxide.Log.Trace.log(sprintf "Dangling reference cleanup completed. Fixed %d references." fixedCount)
-    //         return fixedCount
-    //     }
+    member this.FixDanglingReferences() = repairThenReload "FixDanglingReferences" keyStorage.FixDanglingReferences
+
+    member this.FixOrphanedEntries() = repairThenReload "FixOrphanedEntries" keyStorage.FixOrphanedEntries
 
     member this.GetEntry(path: string): AsyncPromise<Entry option> = 
         promise {
