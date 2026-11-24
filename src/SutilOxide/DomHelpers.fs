@@ -31,7 +31,7 @@ module ResizeController =
             if widthStr = "auto" then // Probably hidden
                 el.clientWidth |> int
             else
-                widthStr[..(-3)] |> System.Double.Parse |> int
+                widthStr[.. widthStr.Length - 3] |> System.Double.Parse |> int
         with
         | x ->
             Fable.Core.JS.console.error( sprintf "Could not parse width: '%s'" widthStr, el )
@@ -41,8 +41,8 @@ module ResizeController =
         el.style.width <- $"{w}px"
 
     let getPaneHeight (el : HTMLElement) =
-        // console.log((window.getComputedStyle el).height)
-        (window.getComputedStyle el).height[..(-3)] |> System.Double.Parse |> int
+        let heightStr = (window.getComputedStyle el).height
+        heightStr[.. heightStr.Length - 3] |> System.Double.Parse |> int
 
     let setPaneHeight (el : HTMLElement) (h : int) =
         el.style.height <- $"{h}px"
