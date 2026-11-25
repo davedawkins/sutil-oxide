@@ -1285,12 +1285,25 @@ module Forms =
     let viewFields (fields : FieldElement seq) =
         fields |> renderFields
 
+    let mutable private nextFieldId = 0
+
+    // The label names the field's control by <label for>, so clicking it focuses the control and it is the control's accessible name.
+    let private linkLabel (e : Browser.Types.HTMLElement) =
+        let label = e.querySelector ":scope > label" :?> Browser.Types.HTMLElement
+        let control = e.querySelector "input:not([type=hidden]), select, textarea" :?> Browser.Types.HTMLElement
+        if not (isNull label) && not (isNull control) then
+            if control.id = "" then
+                nextFieldId <- nextFieldId + 1
+                control.id <- sprintf "ui-field-%d" nextFieldId
+            label.setAttribute("for", control.id)
+
     let internal withLabelError (field: Field<_>) (error : IStore<string>) (editor: IStore<string> -> Core.SutilElement) =
         let enabled = field.Enabled.AsSignal()
 
         Html.divc "ui-field" [
             Bind.toggleClass( enabled .>> ((Option.defaultValue false)>>not), "disabled")
             CoreElements.disposeOnUnmount [ error ]
+            Ev.onMount (fun e -> linkLabel (e.target :?> Browser.Types.HTMLElement))
             Html.label [
                 text (field.Label)
             ]
